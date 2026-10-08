@@ -20,6 +20,7 @@ Object.assign(ICONES, {
   cadastros: '<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>',
   roadmap: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   patrimonio: '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+  comercial: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -190,11 +191,11 @@ document.getElementById('senha').onclick = trocarSenha;
 document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
-  ['Comercial', [['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
+  ['Comercial', [['comercial', 'Painel'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Sociedade', [['societario', 'Quadro societário']]],
   ['Pessoas', [['dp', 'Departamento de Pessoas']]],
   ['Sistema', [['fluxo', 'Mapa do fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
@@ -1150,6 +1151,38 @@ async function fichaFuncionario(id, depois) {
     await api(id ? `/api/dp/funcionarios/${id}` : '/api/dp/funcionarios', { method: id ? 'PUT' : 'POST', body: corpo });
     m.fechar(); await depois();
   }, 'Ficha salva');
+}
+
+// ---- painel comercial: resumo de tudo o que o time comercial usa ----
+async function comercial() {
+  const d = await api('/api/comercial/painel');
+  const m = d.mes_atual, h = d.dia;
+  const conv = m.qtd ? Math.round((m.qtd_ganho / m.qtd) * 100) + '%' : '—';
+  const linhaOrc = (o, acoes) => `<div class="fu-item" data-id="${o.id}"><div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
+    <small class="mut">Orçamento de ${dataBR(o.data)} · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
+    ${acoes ? '<div class="fu-acoes"><button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>' : ''}</div>`;
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)}</p></div>
+      <div class="row" style="margin:0"><button id="novo">Novo orçamento</button><a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a></div></div>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Retornos pendentes</div><div class="v">${d.retornos.length}</div><small class="mut">orçamentos esperando contato</small></div>
+      <div class="card kpi"><div class="l">Hoje — orçamentos</div><div class="v">${h.qtd}</div><small class="mut">${brl(h.valor)} orçados</small></div>
+      <div class="card kpi"><div class="l">No mês — orçado</div><div class="v">${brl(m.valor)}</div><small class="mut">${m.qtd} orçamento(s)</small></div>
+      <div class="card kpi"><div class="l">No mês — vendido</div><div class="v">${brl(m.valor_ganho)}</div><small class="mut">${m.qtd_ganho} venda(s) · conversão ${conv}</small></div>
+      <div class="card kpi"><div class="l">Em aberto</div><div class="v">${brl(d.em_aberto.valor)}</div><small class="mut">${d.em_aberto.qtd} orçamento(s)</small></div>
+    </div>
+    <div class="card"><h2>Retornos pendentes</h2>${d.retornos.length ? `<div class="fu-lista" style="max-height:none">${d.retornos.map((o) => linhaOrc(o, true)).join('')}</div>` : '<p class="mut">Nenhum retorno pendente. Tudo em dia.</p>'}</div>
+    <div class="grid2">
+      <div class="card"><h2>Próximos retornos (7 dias)</h2>${d.proximos_retornos.length ? d.proximos_retornos.map((o) => `<p style="margin:7px 0;font-size:13.5px"><b>${dataBR(o.followup_em).slice(0, 5)}</b> · ${esc(o.cliente_nome)} <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span></p>`).join('') : '<p class="mut">Nada agendado para os próximos dias.</p>'}</div>
+      <div class="card"><h2>Aniversários de clientes (30 dias)</h2>${d.aniversarios.length ? d.aniversarios.map((c) => `<p style="margin:7px 0;font-size:13.5px"><b>${dataBR(c.data).slice(0, 5)}</b> · ${esc(c.nome)} <span class="mut">${esc(c.telefone || '')}</span></p>`).join('') : '<p class="mut">Nenhum aniversário nos próximos 30 dias.</p>'}</div>
+    </div>
+    <div class="card"><h2>Orçamentos de hoje</h2>${d.orcamentos_hoje.length ? `<div class="tbl"><table><tbody>${d.orcamentos_hoje.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
+  const recarrega = async () => { await comercial(); verificarFollowups(); };
+  document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
+  $app.querySelectorAll('.fu-item').forEach((el) => {
+    const o = d.retornos.find((x) => x.id === +el.dataset.id); if (!o) return;
+    el.querySelector('[data-a=contato]').onclick = () => janelaContato(o, recarrega);
+    el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
+  });
 }
 
 rota();

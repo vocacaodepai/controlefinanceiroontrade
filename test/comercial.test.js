@@ -104,3 +104,13 @@ test('dados para o PDF dos sócios saem do comercial do mês', async () => {
   assert.ok(d.qtd >= 3 && d.qtd_ganho === 1 && d.qtd_perdido >= 1);
   assert.equal(await CO.dadosParaRelatorio('2001-01'), null);
 });
+
+test('painel comercial resume retornos, próximos retornos, hoje e aniversários', async () => {
+  const mmdd = S.addDias(hoje, 5).slice(5);
+  await CO.criarOrcamento({ cliente: { nome: 'Aniversariante', aniversario: `1988-${mmdd}` }, produto_nome: 'Painel P5', valor: 100000 });
+  const d = await CO.painelComercial();
+  assert.ok(d.retornos.length >= 0 && Array.isArray(d.proximos_retornos));
+  assert.ok(d.proximos_retornos.some((o) => o.cliente_nome === 'Aniversariante'), 'orçamento de hoje aparece nos retornos dos próximos 7 dias');
+  assert.ok(d.aniversarios.some((c) => c.nome === 'Aniversariante' && c.data === S.addDias(hoje, 5)));
+  assert.ok(d.orcamentos_hoje.length >= 1 && d.em_aberto.qtd >= 1);
+});

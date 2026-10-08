@@ -249,3 +249,28 @@ export async function dadosParaRelatorio(mes) {
     produtos: prods.map((x) => ({ nome: x.nome, valor: x.valor_ganho || x.valor_orcado })),
   };
 }
+
+// Painel comercial: resumo de tudo o que o time precisa no dia a dia (retornos, orçamentos, clientes)
+export async function painelComercial() {
+  const h = hoje(), mes = h.slice(0, 7);
+  const [hojeP, mesP, abertos, retornos, proximos, deHoje, aniv] = await Promise.all([
+    periodo(h, h), periodo(`${mes}-01`, h),
+    one(`SELECT count(*)::int AS qtd, coalesce(sum(valor),0)::bigint AS valor FROM orcamentos WHERE status='aberto'`),
+    followupsPendentes(),
+    query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em > $1 AND o.followup_em <= $2 ORDER BY o.followup_em, o.id LIMIT 15`, [h, addDias(h, 7)]),
+    query(`${BASE_ORC} WHERE o.data = $1 ORDER BY o.id DESC LIMIT 15`, [h]),
+    query(`SELECT id, nome, telefone, aniversario, to_char(aniversario, 'MM-DD') AS mmdd FROM clientes WHERE aniversario IS NOT NULL ORDER BY mmdd`),
+  ]);
+  // aniversários dos clientes nos próximos 30 dias (vira o ano se preciso)
+  const anoAtual = h.slice(0, 4);
+  const aniversarios = aniv.map((c) => {
+    let d = `${anoAtual}-${c.mmdd}`;
+    if (!isData(d)) d = `${anoAtual}-02-28`;
+    if (d < h) d = `${Number(anoAtual) + 1}-${isData(`${Number(anoAtual) + 1}-${c.mmdd}`) ? c.mmdd : '02-28'}`;
+    return { id: c.id, nome: c.nome, telefone: c.telefone, data: d };
+  }).filter((c) => c.data <= addDias(h, 30)).sort((a, b) => a.data.localeCompare(b.data)).slice(0, 8);
+  return {
+    atualizado_em: new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }), hoje: h, mes,
+    dia: hojeP, mes_atual: mesP, em_aberto: abertos, retornos, proximos_retornos: proximos, orcamentos_hoje: deHoje, aniversarios,
+  };
+}
