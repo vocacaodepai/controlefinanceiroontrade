@@ -80,7 +80,8 @@ document.getElementById('senha').onclick = trocarSenha;
 const rotas = { painel, lancar, fechar, mensal, fluxo, cadastros, roadmap };
 async function rota() {
   if (!state.usuario) {
-    const e = await api('/api/auth/estado');
+    let e;
+    try { e = await api('/api/auth/estado'); } catch (err) { $app.innerHTML = `<div class="card login"><h1>Caixa OnTrade</h1><p class="neg">${esc(err.message)}</p></div>`; document.body.classList.add('deslogado'); return; }
     if (!e.usuario) return telaLogin(e);
     state.usuario = e.usuario;
   }

@@ -1,82 +1,81 @@
-import { db, tx } from './db.js';
+import { query, one, tx } from './db.js';
 
 // Estrutura inicial baseada no desenho do fluxo informado pelo Renato.
 // Valores (salários, iFood etc.) ficam vazios de propósito: serão preenchidos aos poucos.
-export function seed() {
-  const n = db.prepare('SELECT COUNT(*) AS n FROM empresas').get().n;
+export async function seed() {
+  const { n } = await one('SELECT COUNT(*) AS n FROM empresas');
   if (n > 0) return false;
 
-  tx(() => {
-    const emp = (nome, obs) => db.prepare('INSERT INTO empresas (nome, obs) VALUES (?,?)').run(nome, obs ?? null).lastInsertRowid;
-    const ontrade = emp('OnTrade', 'Empresa principal. Recebe com nota (bancos).');
-    const lt1 = emp('LT1', 'Empresa da Dona Elisa. Recebe dos clientes OnTrade que pagam sem nota e paga a folha/despesas.');
-    const dae = emp('DAE / Fornecedor', 'Pagamento direto ao fornecedor chinês.');
+  await tx(async () => {
+    const ins = async (sql, p) => (await one(sql + ' RETURNING id', p)).id;
+    const emp = (nome, obs) => ins('INSERT INTO empresas (nome, obs) VALUES ($1,$2)', [nome, obs ?? null]);
+    const ontrade = await emp('OnTrade', 'Empresa principal. Recebe com nota (bancos).');
+    const lt1 = await emp('LT1', 'Empresa da Dona Elisa. Recebe dos clientes OnTrade que pagam sem nota e paga a folha/despesas.');
+    const dae = await emp('DAE / Fornecedor', 'Pagamento direto ao fornecedor chinês.');
 
     const conta = (nome, empresa, tipo, modalidade, obs) =>
-      db.prepare('INSERT INTO contas (nome, empresa_id, tipo, modalidade, obs) VALUES (?,?,?,?,?)')
-        .run(nome, empresa, tipo, modalidade, obs ?? null).lastInsertRowid;
+      ins('INSERT INTO contas (nome, empresa_id, tipo, modalidade, obs) VALUES ($1,$2,$3,$4,$5)', [nome, empresa, tipo, modalidade, obs ?? null]);
 
     // COM NOTA
-    conta('Banco Safra', ontrade, 'banco', 'com_nota');
-    conta('Banco Infinity', ontrade, 'banco', 'com_nota');
-    conta('Banco Bradesco', ontrade, 'banco', 'com_nota');
-    conta('Banco do Brasil', ontrade, 'banco', 'com_nota');
+    await conta('Banco Safra', ontrade, 'banco', 'com_nota');
+    await conta('Banco Infinity', ontrade, 'banco', 'com_nota');
+    await conta('Banco Bradesco', ontrade, 'banco', 'com_nota');
+    await conta('Banco do Brasil', ontrade, 'banco', 'com_nota');
     // SEM NOTA
-    conta('DAE (direto ao fornecedor)', dae, 'intermediaria', 'sem_nota', 'Cliente paga direto ao chinês. Confirmar se o Caixa enxerga esse saldo.');
-    conta('PagVeloz', ontrade, 'intermediaria', 'sem_nota', 'Confirmar titularidade da conta.');
-    conta('LT1', lt1, 'banco', 'sem_nota', 'Recebe dos clientes sem nota e paga a folha/contas.');
-    conta('Dinheiro (caixa físico)', ontrade, 'dinheiro', 'sem_nota');
+    await conta('DAE (direto ao fornecedor)', dae, 'intermediaria', 'sem_nota', 'Cliente paga direto ao chinês. Confirmar se o Caixa enxerga esse saldo.');
+    await conta('PagVeloz', ontrade, 'intermediaria', 'sem_nota', 'Confirmar titularidade da conta.');
+    await conta('LT1', lt1, 'banco', 'sem_nota', 'Recebe dos clientes sem nota e paga a folha/contas.');
+    await conta('Dinheiro (caixa físico)', ontrade, 'dinheiro', 'sem_nota');
 
     const cat = (nome, tipo, grupo) =>
-      db.prepare('INSERT INTO categorias (nome, tipo, grupo) VALUES (?,?,?)').run(nome, tipo, grupo).lastInsertRowid;
+      ins('INSERT INTO categorias (nome, tipo, grupo) VALUES ($1,$2,$3)', [nome, tipo, grupo]);
 
-    cat('Recebimento de cliente', 'entrada', 'Receitas');
-    cat('Outras entradas', 'entrada', 'Receitas');
+    await cat('Recebimento de cliente', 'entrada', 'Receitas');
+    await cat('Outras entradas', 'entrada', 'Receitas');
 
-    cat('Pró-labore', 'saida', 'Pessoal');
-    cat('Salário', 'saida', 'Pessoal');
-    cat('Comissão', 'saida', 'Pessoal');
-    cat('Pagamento de prestador', 'saida', 'Pessoal');
-    cat('Cartão iFood', 'saida', 'Benefícios');
-    cat('Passagem', 'saida', 'Benefícios');
-    cat('Alimentação', 'saida', 'Benefícios');
-    cat('Recarga de celular', 'saida', 'Contas');
-    cat('Luz', 'saida', 'Contas');
-    cat('Gás', 'saida', 'Contas');
-    cat('Água', 'saida', 'Contas');
-    cat('Combustível', 'saida', 'Contas');
-    cat('Tributos de funcionários', 'saida', 'Tributos');
-    const emprestimo = cat('Empréstimo Dona Elisa', 'saida', 'Financeiro');
-    cat('Papelaria', 'saida', 'Operacional');
-    cat('Estacionamento', 'saida', 'Operacional');
-    cat('Outras despesas', 'saida', 'Operacional');
+    await cat('Pró-labore', 'saida', 'Pessoal');
+    await cat('Salário', 'saida', 'Pessoal');
+    await cat('Comissão', 'saida', 'Pessoal');
+    await cat('Pagamento de prestador', 'saida', 'Pessoal');
+    await cat('Cartão iFood', 'saida', 'Benefícios');
+    await cat('Passagem', 'saida', 'Benefícios');
+    await cat('Alimentação', 'saida', 'Benefícios');
+    await cat('Recarga de celular', 'saida', 'Contas');
+    await cat('Luz', 'saida', 'Contas');
+    await cat('Gás', 'saida', 'Contas');
+    await cat('Água', 'saida', 'Contas');
+    await cat('Combustível', 'saida', 'Contas');
+    await cat('Tributos de funcionários', 'saida', 'Tributos');
+    const emprestimo = await cat('Empréstimo Dona Elisa', 'saida', 'Financeiro');
+    await cat('Papelaria', 'saida', 'Operacional');
+    await cat('Estacionamento', 'saida', 'Operacional');
+    await cat('Outras despesas', 'saida', 'Operacional');
 
     const pessoa = (nome, funcao, vinculo, pagador, obs) =>
-      db.prepare('INSERT INTO pessoas (nome, funcao, vinculo, pagador_padrao, obs) VALUES (?,?,?,?,?)')
-        .run(nome, funcao, vinculo, pagador, obs ?? null).lastInsertRowid;
+      ins('INSERT INTO pessoas (nome, funcao, vinculo, pagador_padrao, obs) VALUES ($1,$2,$3,$4,$5)', [nome, funcao, vinculo, pagador, obs ?? null]);
 
-    pessoa('Renato', 'Sócio', 'socio', 'LT1', 'Pró-labore pago pela LT1.');
-    pessoa('Kátia', 'Funcionária', 'japeri', 'LT1', 'Registrada na empresa de Japeri (salário lá). Recebe da LT1 o complemento, passagem e alimentação em dinheiro. CONFIRMAR se "Kátia" e "Dona Kátia" são a mesma pessoa.');
-    pessoa('Fátima', 'Funcionária', 'a_verificar', 'LT1');
-    pessoa('João', 'Funcionário', 'lt1', 'LT1', 'Registrado na LT1. Cartão iFood pago pela LT1.');
-    pessoa('Tayane', 'Funcionária', 'a_verificar', 'LT1');
-    pessoa('Carla', 'Funcionária', 'lt1', 'LT1', 'Registrada na LT1. Cartão iFood pago pela LT1.');
-    pessoa('Fabiano', 'Comissionado', 'a_verificar', 'LT1', 'Recebe comissão.');
-    pessoa('Douglas', 'Prestador', 'a_verificar', 'LT1');
-    pessoa('Andresa', 'Prestadora', 'a_verificar', 'LT1');
-    pessoa('Seu Dantas', 'Funcionário', 'a_verificar', 'OnTrade', 'Recebe pela OnTrade ou em dinheiro. CHECAR se está registrado.');
-    pessoa('Dona Elisa', 'Sócia / credora', 'socio', 'LT1', 'Recebe o pagamento do empréstimo na conta pessoal.');
+    await pessoa('Renato', 'Sócio', 'socio', 'LT1', 'Pró-labore pago pela LT1.');
+    await pessoa('Kátia', 'Funcionária', 'japeri', 'LT1', 'Registrada na empresa de Japeri (salário lá). Recebe da LT1 o complemento, passagem e alimentação em dinheiro. CONFIRMAR se "Kátia" e "Dona Kátia" são a mesma pessoa.');
+    await pessoa('Fátima', 'Funcionária', 'a_verificar', 'LT1');
+    await pessoa('João', 'Funcionário', 'lt1', 'LT1', 'Registrado na LT1. Cartão iFood pago pela LT1.');
+    await pessoa('Tayane', 'Funcionária', 'a_verificar', 'LT1');
+    await pessoa('Carla', 'Funcionária', 'lt1', 'LT1', 'Registrada na LT1. Cartão iFood pago pela LT1.');
+    await pessoa('Fabiano', 'Comissionado', 'a_verificar', 'LT1', 'Recebe comissão.');
+    await pessoa('Douglas', 'Prestador', 'a_verificar', 'LT1');
+    await pessoa('Andresa', 'Prestadora', 'a_verificar', 'LT1');
+    await pessoa('Seu Dantas', 'Funcionário', 'a_verificar', 'OnTrade', 'Recebe pela OnTrade ou em dinheiro. CHECAR se está registrado.');
+    await pessoa('Dona Elisa', 'Sócia / credora', 'socio', 'LT1', 'Recebe o pagamento do empréstimo na conta pessoal.');
 
-    const idConta = (n) => db.prepare('SELECT id FROM contas WHERE nome = ?').get(n).id;
-    const idPessoa = (n) => db.prepare('SELECT id FROM pessoas WHERE nome = ?').get(n).id;
+    const idConta = async (n) => (await one('SELECT id FROM contas WHERE nome = $1', [n])).id;
+    const idPessoa = async (n) => (await one('SELECT id FROM pessoas WHERE nome = $1', [n])).id;
 
     // Empréstimo da Dona Elisa: ~R$ 16.800 todo dia 5, da LT1 para a conta pessoal.
-    db.prepare(`INSERT INTO recorrencias
+    await query(`INSERT INTO recorrencias
       (nome, dia_mes, valor, estimado, tipo, conta_id, categoria_id, pessoa_id, descricao)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [
       'Empréstimo Dona Elisa (LT1 → conta pessoal)', 5, 1680000, 1, 'saida',
-      idConta('LT1'), emprestimo, idPessoa('Dona Elisa'),
-      'Pagamento do empréstimo usado na OnTrade, enviado da LT1 para a conta pessoal da Dona Elisa. Valor aproximado.');
+      await idConta('LT1'), emprestimo, await idPessoa('Dona Elisa'),
+      'Pagamento do empréstimo usado na OnTrade, enviado da LT1 para a conta pessoal da Dona Elisa. Valor aproximado.']);
   });
   return true;
 }

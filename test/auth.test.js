@@ -2,8 +2,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DB_PATH = ':memory:';
-process.env.PORT = '0';
-const { servidor } = await import('../src/server.js');
+const { app } = await import('../src/app.js');
+const servidor = app.listen(0);
 await new Promise((r) => (servidor.listening ? r() : servidor.once('listening', r)));
 const base = `http://127.0.0.1:${servidor.address().port}`;
 after(() => servidor.close());

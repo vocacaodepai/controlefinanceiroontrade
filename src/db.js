@@ -1,130 +1,75 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+// Camada de banco. Em produção usa PostgreSQL (Supabase) via DATABASE_URL;
+// sem DATABASE_URL usa PGlite (Postgres embutido) em data/pg — zero configuração para desenvolver e testar.
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { readFileSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const path = process.env.DB_PATH || 'data/caixa.db';
-if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+const aqui = dirname(fileURLToPath(import.meta.url));
+const SCHEMA = readFileSync(join(aqui, 'schema.sql'), 'utf8');
+const als = new AsyncLocalStorage(); // transação corrente (se houver)
 
-export const db = new DatabaseSync(path);
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+const URL_PG = process.env.DATABASE_URL;
+export const modo = URL_PG ? 'postgres' : 'pglite';
 
-// Valores sempre em centavos (inteiros). Datas em 'YYYY-MM-DD'.
-db.exec(`
-CREATE TABLE IF NOT EXISTS empresas (
-  id INTEGER PRIMARY KEY, nome TEXT NOT NULL UNIQUE, obs TEXT
-);
+// Tipos: bigint/numeric -> Number; date -> 'YYYY-MM-DD'; timestamp -> 'YYYY-MM-DD HH:MM:SS'
+const num = (v) => (v === null ? null : Number(v));
+const txt = (v) => v;
+const ts = (v) => (v === null ? null : String(v).slice(0, 19).replace('T', ' '));
 
-CREATE TABLE IF NOT EXISTS contas (
-  id INTEGER PRIMARY KEY,
-  nome TEXT NOT NULL UNIQUE,
-  empresa_id INTEGER NOT NULL REFERENCES empresas(id),
-  tipo TEXT NOT NULL CHECK (tipo IN ('banco','dinheiro','intermediaria','pessoal')),
-  modalidade TEXT NOT NULL CHECK (modalidade IN ('com_nota','sem_nota')),
-  saldo_inicial INTEGER NOT NULL DEFAULT 0,
-  ativo INTEGER NOT NULL DEFAULT 1,
-  obs TEXT
-);
-
-CREATE TABLE IF NOT EXISTS categorias (
-  id INTEGER PRIMARY KEY,
-  nome TEXT NOT NULL UNIQUE,
-  tipo TEXT NOT NULL CHECK (tipo IN ('entrada','saida')),
-  grupo TEXT NOT NULL,
-  ativo INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS pessoas (
-  id INTEGER PRIMARY KEY,
-  nome TEXT NOT NULL UNIQUE,
-  funcao TEXT,
-  vinculo TEXT NOT NULL DEFAULT 'a_verificar'
-    CHECK (vinculo IN ('lt1','ontrade','japeri','informal','socio','a_verificar')),
-  pagador_padrao TEXT,
-  obs TEXT,
-  ativo INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS lancamentos (
-  id INTEGER PRIMARY KEY,
-  data TEXT NOT NULL,
-  tipo TEXT NOT NULL CHECK (tipo IN ('entrada','saida','transferencia')),
-  valor INTEGER NOT NULL CHECK (valor > 0),
-  conta_id INTEGER NOT NULL REFERENCES contas(id),
-  conta_destino_id INTEGER REFERENCES contas(id),
-  categoria_id INTEGER REFERENCES categorias(id),
-  pessoa_id INTEGER REFERENCES pessoas(id),
-  cliente TEXT,
-  descricao TEXT,
-  criado_por TEXT,
-  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_lanc_data ON lancamentos(data);
-
-CREATE TABLE IF NOT EXISTS recorrencias (
-  id INTEGER PRIMARY KEY,
-  nome TEXT NOT NULL,
-  dia_mes INTEGER NOT NULL CHECK (dia_mes BETWEEN 1 AND 31),
-  valor INTEGER,
-  estimado INTEGER NOT NULL DEFAULT 1,
-  tipo TEXT NOT NULL CHECK (tipo IN ('entrada','saida','transferencia')),
-  conta_id INTEGER NOT NULL REFERENCES contas(id),
-  conta_destino_id INTEGER REFERENCES contas(id),
-  categoria_id INTEGER REFERENCES categorias(id),
-  pessoa_id INTEGER REFERENCES pessoas(id),
-  descricao TEXT,
-  ativo INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS fechamentos (
-  data TEXT PRIMARY KEY,
-  obs TEXT,
-  fechado_por TEXT,
-  fechado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
-CREATE TABLE IF NOT EXISTS fechamento_contas (
-  data TEXT NOT NULL REFERENCES fechamentos(data) ON DELETE CASCADE,
-  conta_id INTEGER NOT NULL REFERENCES contas(id),
-  saldo_sistema INTEGER NOT NULL,
-  saldo_contado INTEGER,
-  PRIMARY KEY (data, conta_id)
-);
-
-CREATE TABLE IF NOT EXISTS recorrencia_lancada (
-  recorrencia_id INTEGER NOT NULL REFERENCES recorrencias(id) ON DELETE CASCADE,
-  mes TEXT NOT NULL,
-  lancamento_id INTEGER NOT NULL REFERENCES lancamentos(id) ON DELETE CASCADE,
-  PRIMARY KEY (recorrencia_id, mes)
-);
-`);
-
-export function tx(fn) {
-  db.exec('BEGIN');
-  try {
-    const r = fn();
-    db.exec('COMMIT');
-    return r;
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
+let driver;
+if (modo === 'postgres') {
+  const pg = (await import('pg')).default;
+  pg.types.setTypeParser(20, num); pg.types.setTypeParser(1700, num);
+  pg.types.setTypeParser(1082, txt); pg.types.setTypeParser(1114, ts);
+  const local = /localhost|127\.0\.0\.1/.test(URL_PG);
+  const pool = new pg.Pool({
+    connectionString: URL_PG,
+    max: Number(process.env.PG_POOL_MAX || 3),
+    ssl: local ? false : { rejectUnauthorized: false },
+    idleTimeoutMillis: 10000,
+  });
+  driver = {
+    query: async (c, sql, p) => (await (c || pool).query(sql, p)).rows,
+    exec: async (c, sql) => { await (c || pool).query(sql); },
+    tx: async (fn) => {
+      const c = await pool.connect();
+      try {
+        await c.query('BEGIN');
+        const r = await als.run(c, () => fn());
+        await c.query('COMMIT');
+        return r;
+      } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+    },
+  };
+} else if (process.env.VERCEL) {
+  // Na Vercel não existe disco gravável: sem DATABASE_URL o sistema não pode funcionar.
+  const falta = async () => { const e = new Error('Banco de dados não configurado: defina a variável DATABASE_URL na Vercel (Settings → Environment Variables).'); e.status = 503; throw e; };
+  driver = { query: falta, exec: falta, tx: falta };
+} else {
+  const { PGlite } = await import('@electric-sql/pglite');
+  const caminho = process.env.DB_PATH || 'data/pg';
+  if (caminho !== ':memory:') mkdirSync(dirname(caminho), { recursive: true });
+  const lite = new PGlite(caminho === ':memory:' ? undefined : caminho);
+  const parsers = { 20: num, 1700: num, 1082: txt, 1114: ts }; // no PGlite os conversores valem por consulta
+  driver = {
+    query: async (c, sql, p) => (await (c || lite).query(sql, p, { parsers })).rows,
+    exec: async (c, sql) => { await (c || lite).exec(sql); },
+    tx: (fn) => lite.transaction((t) => als.run(t, () => fn())),
+  };
 }
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS usuarios (
-  id INTEGER PRIMARY KEY,
-  nome TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  senha_hash TEXT NOT NULL,
-  papel TEXT NOT NULL CHECK (papel IN ('admin','operador','leitor')),
-  ativo INTEGER NOT NULL DEFAULT 1,
-  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  ultimo_acesso TEXT
-);
-CREATE TABLE IF NOT EXISTS sessoes (
-  token_hash TEXT PRIMARY KEY,
-  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-  expira_em INTEGER NOT NULL,
-  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-`);
+export const query = (sql, params = []) => driver.query(als.getStore(), sql, params);
+export const one = async (sql, params = []) => (await query(sql, params))[0];
+export const tx = (fn) => (als.getStore() ? fn() : driver.tx(fn)); // transação aninhada reaproveita a atual
+
+// Cria tabelas (idempotente) e dados iniciais. Protegido por trava para cold starts simultâneos.
+let pronto;
+export function iniciar(seed) {
+  pronto ??= tx(async () => {
+    if (modo === 'postgres') await query('SELECT pg_advisory_xact_lock(724519)');
+    await driver.exec(als.getStore(), SCHEMA);
+    await seed();
+  }).catch((e) => { pronto = undefined; throw e; });
+  return pronto;
+}

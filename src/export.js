@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { MESES, painelMes, resumoDia, listarLancamentos, intervaloMes, saldos, addDias } from './services.js';
-import { db } from './db.js';
+import { query } from './db.js';
 
 const BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
 const AZUL = 'FF1F3A5F';
@@ -86,7 +86,7 @@ function novoLivro() {
 
 // ------------------------------------------------------------------ diário
 export async function excelDia(data) {
-  const r = resumoDia(data);
+  const r = await resumoDia(data);
   const wb = novoLivro();
   const ws = wb.addWorksheet('Caixa do dia', { views: [{ state: 'frozen', ySplit: 3 }] });
   titulo(ws, `Fechamento de caixa — ${fmtData(data)}`, r.fechado ? `Dia FECHADO em ${r.fechado.fechado_em}${r.fechado.fechado_por ? ' por ' + r.fechado.fechado_por : ''}` : 'Dia ainda ABERTO (prévia)', 10);
@@ -116,7 +116,7 @@ export async function excelDia(data) {
 
 // ------------------------------------------------------------------ mensal
 export async function excelMes(mes) {
-  const p = painelMes(mes);
+  const p = await painelMes(mes);
   const [ano, m] = mes.split('-').map(Number);
   const nome = `${MESES[m - 1]} de ${ano}`;
   const wb = novoLivro();
@@ -166,12 +166,12 @@ export async function excelMes(mes) {
   // 3. Pessoas / folha
   const wp = wb.addWorksheet('Pessoas e folha');
   titulo(wp, `Pagamentos por pessoa — ${nome}`, 'Tudo o que foi pago a cada pessoa no mês, por categoria e por quem pagou', 6);
-  const pag = db.prepare(`
+  const pag = await query(`
     SELECT p.nome AS pessoa, p.vinculo, cat.nome AS categoria, e.nome AS pagador, SUM(l.valor) AS total
     FROM lancamentos l JOIN pessoas p ON p.id = l.pessoa_id JOIN categorias cat ON cat.id = l.categoria_id
     JOIN contas c ON c.id = l.conta_id JOIN empresas e ON e.id = c.empresa_id
-    WHERE l.tipo = 'saida' AND l.data BETWEEN ? AND ?
-    GROUP BY p.id, cat.id, e.id ORDER BY p.nome, cat.nome`).all(p.de, p.ate);
+    WHERE l.tipo = 'saida' AND l.data BETWEEN $1 AND $2
+    GROUP BY p.id, p.nome, p.vinculo, cat.id, cat.nome, e.id, e.nome ORDER BY p.nome, cat.nome`, [p.de, p.ate]);
   tabela(wp, 4, [
     { titulo: 'Pessoa', chave: 'pessoa' }, { titulo: 'Vínculo', chave: 'vinculo' }, { titulo: 'Categoria', chave: 'categoria' },
     { titulo: 'Pago por', chave: 'pagador' }, { titulo: 'Total', chave: 'total', moeda: true },
@@ -182,9 +182,9 @@ export async function excelMes(mes) {
   const wf = wb.addWorksheet('Fechamento diário');
   titulo(wf, `Caixa dia a dia — ${nome}`, 'Entradas, saídas e saldo total ao fim de cada dia (SIM = caixa fechado)', 6);
   const linhasDia = [];
-  const fechSet = new Set(db.prepare('SELECT data FROM fechamentos WHERE data BETWEEN ? AND ?').all(p.de, p.ate).map((x) => x.data));
+  const fechSet = new Set((await query('SELECT data FROM fechamentos WHERE data BETWEEN $1 AND $2', [p.de, p.ate])).map((x) => x.data));
   const { ultimo } = intervaloMes(mes);
-  let saldoAnt = saldos(addDias(p.de, -1)).reduce((a, s) => a + s.saldo, 0);
+  let saldoAnt = (await saldos(addDias(p.de, -1))).reduce((a, s) => a + s.saldo, 0);
   const serie = Object.fromEntries(p.serie.map((s) => [s.data, s]));
   for (let d = 1; d <= ultimo; d++) {
     const data = `${mes}-${String(d).padStart(2, '0')}`;
@@ -206,7 +206,7 @@ export async function excelMes(mes) {
   // 5. Lançamentos
   const wl = wb.addWorksheet('Lançamentos', { views: [{ state: 'frozen', ySplit: 4 }] });
   titulo(wl, `Todos os lançamentos — ${nome}`, 'Saídas aparecem negativas. Use o filtro da planilha para analisar.', COLS_LANC.length);
-  const lancs = listarLancamentos({ de: p.de, ate: p.ate }).reverse();
+  const lancs = (await listarLancamentos({ de: p.de, ate: p.ate })).reverse();
   tabela(wl, 4, COLS_LANC, lancs.map(linhaLanc));
   wl.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: COLS_LANC.length } };
   larguras(wl, LARG_LANC);

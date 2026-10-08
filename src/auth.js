@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
-import { db } from './db.js';
+import { query, one, tx } from './db.js';
 import { ErroNegocio } from './services.js';
 
 // Papéis: leitor (só consulta e baixa Excel) < operador (lança e fecha o dia) < admin (tudo).
@@ -25,93 +25,92 @@ export function validarSenha(s) {
 }
 const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
 
-export const totalUsuarios = () => db.prepare('SELECT COUNT(*) n FROM usuarios').get().n;
+export const totalUsuarios = async () => (await one('SELECT COUNT(*) AS n FROM usuarios')).n;
 
-export function criarUsuario({ nome, email, senha, papel }) {
+export async function criarUsuario({ nome, email, senha, papel }) {
   if (!nome?.trim()) throw new ErroNegocio('Informe o nome.');
   if (!emailOk(email)) throw new ErroNegocio('E-mail inválido.');
   if (!PAPEIS[papel]) throw new ErroNegocio('Perfil inválido.');
   validarSenha(senha);
   try {
-    const r = db.prepare('INSERT INTO usuarios (nome,email,senha_hash,papel) VALUES (?,?,?,?)')
-      .run(nome.trim(), email.trim().toLowerCase(), hashSenha(senha), papel);
-    return publico(db.prepare('SELECT * FROM usuarios WHERE id=?').get(r.lastInsertRowid));
+    return publico(await one('INSERT INTO usuarios (nome,email,senha_hash,papel) VALUES ($1,$2,$3,$4) RETURNING *',
+      [nome.trim(), email.trim().toLowerCase(), hashSenha(senha), papel]));
   } catch (e) {
-    if (String(e.message).includes('UNIQUE')) throw new ErroNegocio('Já existe um usuário com este e-mail.', 409);
+    if (e.code === '23505') throw new ErroNegocio('Já existe um usuário com este e-mail.', 409);
     throw e;
   }
 }
 const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso };
-export const listarUsuarios = () => db.prepare('SELECT * FROM usuarios ORDER BY nome').all().map(publico);
+export const listarUsuarios = async () => (await query('SELECT * FROM usuarios ORDER BY nome')).map(publico);
 
 // Impede deixar o sistema sem nenhum administrador ativo.
-function garantirAdmin(idAfetado, novo) {
-  const u = db.prepare('SELECT * FROM usuarios WHERE id=?').get(idAfetado);
+async function garantirAdmin(idAfetado, novo) {
+  const u = await one('SELECT * FROM usuarios WHERE id=$1', [idAfetado]);
   if (!u) throw new ErroNegocio('Usuário não encontrado.', 404);
   const perde = u.papel === 'admin' && u.ativo && ((novo.papel && novo.papel !== 'admin') || novo.ativo === 0 || novo.ativo === false);
   if (perde) {
-    const outros = db.prepare("SELECT COUNT(*) n FROM usuarios WHERE papel='admin' AND ativo=1 AND id<>?").get(idAfetado).n;
-    if (!outros) throw new ErroNegocio('Precisa existir pelo menos um administrador ativo.', 409);
+    const { n } = await one("SELECT COUNT(*) AS n FROM usuarios WHERE papel='admin' AND ativo=1 AND id<>$1", [idAfetado]);
+    if (!n) throw new ErroNegocio('Precisa existir pelo menos um administrador ativo.', 409);
   }
 }
 export function atualizarUsuario(id, b) {
-  garantirAdmin(id, b);
-  if (b.papel !== undefined && !PAPEIS[b.papel]) throw new ErroNegocio('Perfil inválido.');
-  if (b.nome !== undefined) db.prepare('UPDATE usuarios SET nome=? WHERE id=?').run(String(b.nome).trim(), id);
-  if (b.papel !== undefined) db.prepare('UPDATE usuarios SET papel=? WHERE id=?').run(b.papel, id);
-  if (b.ativo !== undefined) {
-    db.prepare('UPDATE usuarios SET ativo=? WHERE id=?').run(b.ativo ? 1 : 0, id);
-    if (!b.ativo) db.prepare('DELETE FROM sessoes WHERE usuario_id=?').run(id);
-  }
-  if (b.senha) {
-    validarSenha(b.senha);
-    db.prepare('UPDATE usuarios SET senha_hash=? WHERE id=?').run(hashSenha(b.senha), id);
-    db.prepare('DELETE FROM sessoes WHERE usuario_id=?').run(id);
-  }
-  return publico(db.prepare('SELECT * FROM usuarios WHERE id=?').get(id));
+  return tx(async () => {
+    await query('SELECT pg_advisory_xact_lock(724522)');
+    await garantirAdmin(id, b);
+    if (b.papel !== undefined && !PAPEIS[b.papel]) throw new ErroNegocio('Perfil inválido.');
+    if (b.nome !== undefined) await query('UPDATE usuarios SET nome=$1 WHERE id=$2', [String(b.nome).trim(), id]);
+    if (b.papel !== undefined) await query('UPDATE usuarios SET papel=$1 WHERE id=$2', [b.papel, id]);
+    if (b.ativo !== undefined) {
+      await query('UPDATE usuarios SET ativo=$1 WHERE id=$2', [b.ativo ? 1 : 0, id]);
+      if (!b.ativo) await query('DELETE FROM sessoes WHERE usuario_id=$1', [id]);
+    }
+    if (b.senha) {
+      validarSenha(b.senha);
+      await query('UPDATE usuarios SET senha_hash=$1 WHERE id=$2', [hashSenha(b.senha), id]);
+      await query('DELETE FROM sessoes WHERE usuario_id=$1', [id]);
+    }
+    return publico(await one('SELECT * FROM usuarios WHERE id=$1', [id]));
+  });
 }
 
-// ---- tentativas de login (limite simples em memória) ----
-const falhas = new Map();
+// ---- tentativas de login (guardadas no banco: valem entre instâncias do servidor) ----
 const JANELA = 15 * 60 * 1000, MAX = 8;
-function bloqueado(chave) {
-  const f = (falhas.get(chave) || []).filter((t) => Date.now() - t < JANELA);
-  falhas.set(chave, f);
-  return f.length >= MAX;
-}
 
-export function login(email, senha, ip) {
+export async function login(email, senha, ip) {
   const chave = `${ip}|${String(email).toLowerCase()}`;
-  if (bloqueado(chave)) throw new ErroNegocio('Muitas tentativas. Aguarde alguns minutos.', 429);
-  const u = db.prepare('SELECT * FROM usuarios WHERE email=?').get(String(email || '').trim().toLowerCase());
+  const agora = Date.now();
+  await query('DELETE FROM tentativas_login WHERE em < $1', [agora - JANELA]);
+  const { n } = await one('SELECT COUNT(*) AS n FROM tentativas_login WHERE chave=$1 AND em>=$2', [chave, agora - JANELA]);
+  if (n >= MAX) throw new ErroNegocio('Muitas tentativas. Aguarde alguns minutos.', 429);
+  const u = await one('SELECT * FROM usuarios WHERE email=$1', [String(email || '').trim().toLowerCase()]);
   // Faz o hash mesmo se o usuário não existir, para não revelar quais e-mails existem.
   const ok = u ? confere(String(senha || ''), u.senha_hash) : (confere('x', hashSenha('y')), false);
   if (!ok || !u.ativo) {
-    falhas.get(chave).push(Date.now());
+    await query('INSERT INTO tentativas_login (chave, em) VALUES ($1,$2)', [chave, agora]);
     throw new ErroNegocio('E-mail ou senha incorretos.', 401);
   }
-  falhas.delete(chave);
+  await query('DELETE FROM tentativas_login WHERE chave=$1', [chave]);
   const token = randomBytes(32).toString('hex');
-  db.prepare('DELETE FROM sessoes WHERE expira_em < ?').run(Date.now());
-  db.prepare('INSERT INTO sessoes (token_hash,usuario_id,expira_em) VALUES (?,?,?)').run(sha(token), u.id, Date.now() + DURACAO_MS);
-  db.prepare("UPDATE usuarios SET ultimo_acesso=datetime('now','localtime') WHERE id=?").run(u.id);
+  await query('DELETE FROM sessoes WHERE expira_em < $1', [agora]);
+  await query('INSERT INTO sessoes (token_hash,usuario_id,expira_em) VALUES ($1,$2,$3)', [sha(token), u.id, agora + DURACAO_MS]);
+  await query("UPDATE usuarios SET ultimo_acesso=(now() AT TIME ZONE 'America/Sao_Paulo') WHERE id=$1", [u.id]);
   return { token, usuario: publico(u) };
 }
 
-export const logout = (token) => token && db.prepare('DELETE FROM sessoes WHERE token_hash=?').run(sha(token));
+export const logout = async (token) => { if (token) await query('DELETE FROM sessoes WHERE token_hash=$1', [sha(token)]); };
 
-export function usuarioDoToken(token) {
+export async function usuarioDoToken(token) {
   if (!token) return null;
-  const u = db.prepare(`SELECT u.* FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
-    WHERE s.token_hash=? AND s.expira_em>? AND u.ativo=1`).get(sha(token), Date.now());
+  const u = await one(`SELECT u.* FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
+    WHERE s.token_hash=$1 AND s.expira_em>$2 AND u.ativo=1`, [sha(token), Date.now()]);
   return publico(u) || null;
 }
 
-export function trocarSenha(usuario, atual, nova) {
-  const u = db.prepare('SELECT * FROM usuarios WHERE id=?').get(usuario.id);
+export async function trocarSenha(usuario, atual, nova) {
+  const u = await one('SELECT * FROM usuarios WHERE id=$1', [usuario.id]);
   if (!confere(String(atual || ''), u.senha_hash)) throw new ErroNegocio('Senha atual incorreta.', 401);
   validarSenha(nova);
-  db.prepare('UPDATE usuarios SET senha_hash=? WHERE id=?').run(hashSenha(nova), u.id);
+  await query('UPDATE usuarios SET senha_hash=$1 WHERE id=$2', [hashSenha(nova), u.id]);
 }
 
 // ---- cookie / middleware ----
@@ -124,10 +123,22 @@ export function gravarCookie(req, res, token) {
   res.setHeader('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${token ? DURACAO_MS / 1000 : 0}${seguro ? '; Secure' : ''}`);
 }
 
-export const autenticar = (req, _res, next) => { req.usuario = usuarioDoToken(lerCookie(req)); next(); };
+export const autenticar = async (req, _res, next) => {
+  try { req.usuario = await usuarioDoToken(lerCookie(req)); next(); } catch (e) { next(e); }
+};
 
 export const exigir = (papel = 'leitor') => (req, res, next) => {
   if (!req.usuario) return res.status(401).json({ erro: 'Faça login para continuar.' });
   if (PAPEIS[req.usuario.papel] < PAPEIS[papel]) return res.status(403).json({ erro: 'Seu perfil não tem permissão para esta ação.' });
   next();
 };
+
+// Primeiro acesso: cria o administrador uma única vez (com trava contra duas criações simultâneas).
+export function criarPrimeiroAdmin(b) {
+  return tx(async () => {
+    await query('SELECT pg_advisory_xact_lock(724523)');
+    if ((await totalUsuarios()) > 0) throw new ErroNegocio('O sistema já foi configurado.', 409);
+    if (process.env.SETUP_TOKEN && b.codigo !== process.env.SETUP_TOKEN) throw new ErroNegocio('Código de instalação incorreto.', 403);
+    return criarUsuario({ ...b, papel: 'admin' });
+  });
+}

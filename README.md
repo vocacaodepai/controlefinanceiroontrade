@@ -20,7 +20,15 @@ npm run reset        # apaga o banco e volta ao esqueleto limpo
 npm test
 ```
 
-Requer Node ≥ 22.13 (usa o SQLite embutido). O banco fica em `data/caixa.db` (`DB_PATH` para mudar).
+Requer Node ≥ 22. Sem configuração o sistema usa um Postgres embutido (PGlite) em `data/pg`; com `DATABASE_URL` usa o Postgres do Supabase.
+
+## Publicar (Vercel + Supabase)
+
+1. **Supabase:** as tabelas estão em `src/schema.sql` (já aplicadas no projeto; o sistema também as cria sozinho se faltarem). RLS fica ligado sem políticas: só o servidor acessa os dados.
+2. **Vercel → Settings → Environment Variables** (Production e Preview):
+   - `DATABASE_URL` — string de conexão **Transaction pooler** do Supabase (Project Settings → Database). Contém a senha do banco: cole só no painel da Vercel, nunca no chat nem no código.
+   - `SETUP_TOKEN` — código secreto exigido para criar o primeiro administrador.
+3. Faça um novo deploy (Deployments → Redeploy) e abra o site para criar o administrador.
 
 ## Login e perfis
 
@@ -44,16 +52,19 @@ Segurança: senhas com scrypt, sessão em cookie HttpOnly/SameSite (Secure atrá
 | Folha | Pessoas + categorias (Salário, Pró-labore, Comissão, Cartão iFood, Passagem…) |
 | Empréstimo | Recorrência dia 5, saída da LT1, categoria “Empréstimo Dona Elisa” |
 
-Valores são guardados em centavos. Salários, iFood etc. **não** vêm preenchidos — entram aos poucos como lançamentos/recorrências.
+Valores são guardados em centavos (bigint). Salários, iFood etc. **não** vêm preenchidos — entram aos poucos como lançamentos/recorrências.
 
 ## Estrutura
 
 ```
-src/db.js        schema SQLite
+src/schema.sql   tabelas (PostgreSQL)
+src/db.js        conexão (Supabase/pg ou PGlite local)
 src/seed.js      contas, categorias, pessoas e recorrência iniciais
 src/services.js  regras de negócio (saldos, fechamento, painel)
 src/export.js    geração dos Excel (exceljs)
-src/server.js    API REST + arquivos estáticos
+src/app.js       API REST (Express)
+src/server.js    inicia o servidor local
+api/index.js     entrada da Vercel
 public/          interface (HTML/CSS/JS puro)
 test/            testes das regras
 ```
