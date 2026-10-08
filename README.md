@@ -22,6 +22,18 @@ npm test
 
 Requer Node ≥ 22.13 (usa o SQLite embutido). O banco fica em `data/caixa.db` (`DB_PATH` para mudar).
 
+## Login e perfis
+
+No primeiro acesso o sistema pede para criar o **administrador**; depois disso essa tela some. Em servidor público, defina `SETUP_TOKEN=um-codigo` para que só quem souber o código consiga criar o primeiro admin.
+
+| Perfil | Pode |
+|---|---|
+| Administrador (Dona Elisa) | Tudo: cadastros, usuários, editar lançamento, reabrir dia |
+| Operador | Lançar, excluir lançamento, fechar o dia, lançar recorrências |
+| Somente leitura (contador) | Consultar painel/relatórios e baixar Excel |
+
+Segurança: senhas com scrypt, sessão em cookie HttpOnly/SameSite (Secure atrás de HTTPS), bloqueio após 8 tentativas erradas, o autor de cada lançamento vem do usuário logado (não dá para lançar "em nome de" outra pessoa), desativar usuário derruba as sessões e o sistema nunca fica sem administrador.
+
 ## Como o dinheiro foi modelado
 
 | Conceito | No sistema |

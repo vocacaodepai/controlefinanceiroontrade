@@ -109,3 +109,22 @@ export function tx(fn) {
     throw e;
   }
 }
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS usuarios (
+  id INTEGER PRIMARY KEY,
+  nome TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  senha_hash TEXT NOT NULL,
+  papel TEXT NOT NULL CHECK (papel IN ('admin','operador','leitor')),
+  ativo INTEGER NOT NULL DEFAULT 1,
+  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  ultimo_acesso TEXT
+);
+CREATE TABLE IF NOT EXISTS sessoes (
+  token_hash TEXT PRIMARY KEY,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  expira_em INTEGER NOT NULL,
+  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+`);

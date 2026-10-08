@@ -1,5 +1,8 @@
 const $app = document.getElementById('app');
-const state = { meta: null, mes: null, dia: null, tipo: 'saida' };
+const state = { meta: null, mes: null, dia: null, tipo: 'saida', usuario: null };
+const NIVEL = { leitor: 1, operador: 2, admin: 3 };
+const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura' };
+const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
 
 // ---------- util ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -28,6 +31,7 @@ async function api(url, opts = {}) {
   const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
   if (r.status === 204) return null;
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && state.usuario && !url.startsWith('/api/auth/')) { state.usuario = null; state.meta = null; telaLogin(); throw new Error('Sua sessão expirou. Entre novamente.'); }
   if (!r.ok) throw new Error(j.erro || 'Erro inesperado');
   return j;
 }
@@ -43,9 +47,45 @@ const barras = (dados, total) => {
     : '<p class="mut">Sem dados no período.</p>';
 };
 
+// ---------- LOGIN ----------
+function telaLogin(e) {
+  document.body.classList.add('deslogado');
+  const primeiro = e?.precisaCriarAdmin;
+  $app.innerHTML = `<form class="card login" id="lg">
+    <h1>Caixa OnTrade</h1>
+    <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Dona Elisa ou responsável).' : 'Entre com seu e-mail e senha.'}</p>
+    ${primeiro ? '<div><label>Nome</label><input name="nome" required autocomplete="name"></div>' : ''}
+    <div><label>E-mail</label><input name="email" type="email" required autocomplete="username"></div>
+    <div><label>Senha${primeiro ? ' (mínimo 8 caracteres)' : ''}</label><input name="senha" type="password" required minlength="${primeiro ? 8 : 1}" autocomplete="${primeiro ? 'new-password' : 'current-password'}"></div>
+    ${primeiro && e.exigeCodigo ? '<div><label>Código de instalação</label><input name="codigo" required></div>' : ''}
+    <button style="width:100%;margin-top:6px">${primeiro ? 'Criar administrador e entrar' : 'Entrar'}</button></form>`;
+  document.getElementById('lg').onsubmit = (ev) => {
+    ev.preventDefault();
+    acao(async () => {
+      const r = await api(primeiro ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body: Object.fromEntries(new FormData(ev.target)) });
+      state.usuario = r.usuario; state.meta = null; location.hash = '#painel'; await rota();
+    });
+  };
+}
+async function sair() { await api('/api/auth/logout', { method: 'POST' }); state.usuario = null; state.meta = null; telaLogin(); }
+function trocarSenha() {
+  const atual = prompt('Senha atual:'); if (atual === null) return;
+  const nova = prompt('Nova senha (mínimo 8 caracteres):'); if (nova === null) return;
+  acao(() => api('/api/auth/senha', { method: 'POST', body: { atual, nova } }), 'Senha alterada');
+}
+document.getElementById('sair').onclick = sair;
+document.getElementById('senha').onclick = trocarSenha;
+
 // ---------- roteamento ----------
 const rotas = { painel, lancar, fechar, mensal, fluxo, cadastros, roadmap };
 async function rota() {
+  if (!state.usuario) {
+    const e = await api('/api/auth/estado');
+    if (!e.usuario) return telaLogin(e);
+    state.usuario = e.usuario;
+  }
+  document.body.classList.remove('deslogado');
+  document.getElementById('quem').innerHTML = `<b>${esc(state.usuario.nome)}</b><br><small>${PAPEL_NOME[state.usuario.papel]}</small>`;
   const nome = location.hash.slice(1) || 'painel';
   document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome));
   if (!state.meta) {
@@ -94,7 +134,7 @@ async function painel() {
     </div>
     <div class="card"><h2>Saídas por categoria</h2>${barras(p.saidas_por_categoria)}</div>
     <div class="card"><h2>Pagamentos recorrentes de ${nomeMes(state.mes)}</h2>
-      ${p.recorrencias.length ? `<table>${p.recorrencias.map((r) => `<tr><td>${esc(r.nome)}</td><td>dia ${dataBR(r.data_prevista).slice(0, 2)}</td><td class="n">${r.valor ? brl(r.valor) + (r.estimado ? ' ~' : '') : '—'}</td><td class="n">${r.lancada ? '<span class="tag ok">lançado</span>' : `<button class="mini" data-lancar="${r.id}">Lançar</button>`}</td></tr>`).join('')}</table>` : '<p class="mut">Nenhuma recorrência cadastrada.</p>'}
+      ${p.recorrencias.length ? `<table>${p.recorrencias.map((r) => `<tr><td>${esc(r.nome)}</td><td>dia ${dataBR(r.data_prevista).slice(0, 2)}</td><td class="n">${r.valor ? brl(r.valor) + (r.estimado ? ' ~' : '') : '—'}</td><td class="n">${r.lancada ? '<span class="tag ok">lançado</span>' : (pode('operador') ? `<button class="mini" data-lancar="${r.id}">Lançar</button>` : '<span class="mut">pendente</span>')}</td></tr>`).join('')}</table>` : '<p class="mut">Nenhuma recorrência cadastrada.</p>'}
       ${pendentes.length ? '<p class="legenda">O valor é estimado — ajuste-o ao lançar se necessário.</p>' : ''}
     </div>`;
   ligaMes(painel);
@@ -120,8 +160,8 @@ async function lancar() {
   $app.innerHTML = `
     <h1>Lançar</h1><p class="sub">Registre cada entrada, saída ou transferência do dia. Ex.: "Papelaria R$ 15 pago pela OnTrade no Bradesco".</p>
     <div class="row"><div><label>Dia</label><input type="date" id="dia" value="${state.dia}"></div>
-      <div>${fechado ? '<span class="tag aviso">🔒 dia fechado — reabra em "Fechar o dia" para lançar</span>' : '<span class="tag ok">dia aberto</span>'}</div></div>
-    <form class="card" id="f" ${fechado ? 'inert style="opacity:.5"' : ''}>
+      <div>${fechado ? '<span class="tag aviso">🔒 dia fechado — um administrador pode reabrir em "Fechar o dia"</span>' : !pode('operador') ? '<span class="tag aviso">somente leitura</span>' : '<span class="tag ok">dia aberto</span>'}</div></div>
+    <form class="card" id="f" ${fechado || !pode('operador') ? 'inert style="opacity:.5"' : ''}>
       <div class="seg" style="margin-bottom:14px">${['saida', 'entrada', 'transferencia'].map((x) => `<button type="button" data-tipo="${x}" class="${x} ${t === x ? 'on' : ''}">${{ saida: '− Saída', entrada: '+ Entrada', transferencia: '⇄ Transferência' }[x]}</button>`).join('')}</div>
       <div class="form">
         <div class="larg"><label>${t === 'entrada' ? 'Entrou em qual conta?' : t === 'saida' ? 'Saiu de qual conta? (quem pagou)' : 'Origem'}</label>
@@ -131,13 +171,12 @@ async function lancar() {
         ${t === 'entrada' ? '<div><label>Cliente</label><input name="cliente" placeholder="Nome do cliente"></div>' : ''}
         ${t === 'saida' ? `<div><label>Pessoa (se for pagamento a alguém)</label><select name="pessoa_id">${opts(pessoas.filter((p) => p.ativo), '', '— nenhuma —')}</select></div>` : ''}
         <div class="cheio"><label>Descrição</label><input name="descricao" placeholder="Ex.: papelaria, estacionamento, adiantamento…"></div>
-        <div><label>Lançado por</label><input name="criado_por" value="${esc(localStorage.getItem('operador') || '')}" placeholder="Seu nome"></div>
         <div style="align-self:end"><button>Salvar lançamento</button></div>
       </div>
     </form>
     <div class="card"><h2>Lançamentos de ${dataBR(state.dia)}</h2>
       ${dia.lancamentos.length ? `<div class="tbl"><table><thead><tr><th>Tipo</th><th>Conta</th><th>Categoria / pessoa</th><th>Descrição</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">+ Entrada</span>', saida: '<span class="neg">− Saída</span>', transferencia: '⇄ Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
+      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">+ Entrada</span>', saida: '<span class="neg">− Saída</span>', transferencia: '⇄ Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado || !pode('operador') ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
       </tbody><tfoot><tr><td colspan="4">Entradas ${brl(dia.totais.entradas)} · Saídas ${brl(dia.totais.saidas)}</td><td class="n">${brl(dia.totais.entradas - dia.totais.saidas)}</td><td></td></tr></tfoot></table></div>` : '<p class="mut">Nada lançado neste dia.</p>'}
     </div>`;
   document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; lancar(); } };
@@ -148,7 +187,6 @@ async function lancar() {
     const f = Object.fromEntries(new FormData(e.target));
     const valor = paraCentavos(f.valor);
     if (!(valor > 0)) return toast('Informe um valor válido', true);
-    if (f.criado_por) localStorage.setItem('operador', f.criado_por);
     acao(async () => { await api('/api/lancamentos', { method: 'POST', body: { ...f, valor, tipo: t, data: state.dia } }); await lancar(); }, 'Lançamento salvo!');
   };
 }
@@ -170,12 +208,12 @@ async function fechar() {
         return `<tr><td>${esc(c.nome)} <span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
         <td class="n">${brl(c.saldo_anterior)}</td><td class="n pos">${brl(c.entradas)}</td><td class="n neg">${brl(c.saidas)}</td><td class="n">${brl(c.transf_entrada - c.transf_saida)}</td>
         <td class="n"><b>${brl(c.saldo)}</b></td>
-        <td class="n">${fechado ? (contado != null ? brl(contado) : '—') : `<input data-conta="${c.id}" inputmode="decimal" placeholder="opcional" style="width:120px;text-align:right">`}</td>
+        <td class="n">${fechado ? (contado != null ? brl(contado) : '—') : (pode('operador') ? `<input data-conta="${c.id}" inputmode="decimal" placeholder="opcional" style="width:120px;text-align:right">` : '—')}</td>
         <td class="n ${dif ? cls(dif) : ''}" data-dif="${c.id}">${dif != null ? brl(dif) : ''}</td></tr>`;
       }).join('')}</tbody>
       <tfoot><tr><td>Total</td><td class="n">${brl(d.totais.saldo_anterior)}</td><td class="n">${brl(d.totais.entradas)}</td><td class="n">${brl(d.totais.saidas)}</td><td></td><td class="n">${brl(d.totais.saldo)}</td><td></td><td></td></tr></tfoot></table></div>
-    ${fechado ? `<button class="perigo" id="reabrir">Reabrir dia</button>` : `
-      <div class="card"><div class="form"><div><label>Fechado por</label><input id="por" value="${esc(localStorage.getItem('operador') || '')}"></div><div class="cheio"><label>Observações do fechamento</label><input id="obs" placeholder="Ex.: sobrou R$ 20 no caixa, aguardando comprovante…"></div></div><br><button id="fechar">🔒 Fechar caixa de ${dataBR(state.dia)}</button></div>`}`;
+    ${fechado ? (pode('admin') ? `<button class="perigo" id="reabrir">Reabrir dia</button>` : '<p class="legenda">Só o administrador pode reabrir um dia fechado.</p>') : !pode('operador') ? '' : `
+      <div class="card"><div class="form"><div class="cheio"><label>Observações do fechamento</label><input id="obs" placeholder="Ex.: sobrou R$ 20 no caixa, aguardando comprovante…"></div></div><br><button id="fechar">🔒 Fechar caixa de ${dataBR(state.dia)}</button></div>`}`;
   document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; fechar(); } };
   $app.querySelectorAll('[data-conta]').forEach((i) => (i.oninput = () => {
     const c = d.contas.find((x) => x.id === +i.dataset.conta);
@@ -188,9 +226,7 @@ async function fechar() {
   document.getElementById('fechar')?.addEventListener('click', () => {
     const contagens = {};
     $app.querySelectorAll('[data-conta]').forEach((i) => { if (i.value.trim()) contagens[i.dataset.conta] = paraCentavos(i.value); });
-    const por = document.getElementById('por').value;
-    if (por) localStorage.setItem('operador', por);
-    acao(async () => { await api(`/api/dia/${state.dia}/fechar`, { method: 'POST', body: { contagens, obs: document.getElementById('obs').value, fechado_por: por } }); fechar(); }, 'Caixa fechado!');
+    acao(async () => { await api(`/api/dia/${state.dia}/fechar`, { method: 'POST', body: { contagens, obs: document.getElementById('obs').value } }); fechar(); }, 'Caixa fechado!');
   });
 }
 
@@ -240,6 +276,8 @@ function fluxo() {
 
 // ---------- CADASTROS ----------
 async function cadastros() {
+  const adm = pode('admin');
+  const usuarios = adm ? await api('/api/usuarios') : [];
   await recarregarMeta();
   const { contas, pessoas, categorias, empresas } = state.meta;
   const rec = await api(`/api/painel/${state.mes}`).then((p) => p.recorrencias);
@@ -247,25 +285,37 @@ async function cadastros() {
     <h1>Cadastros</h1><p class="sub">Contas, pessoas e categorias. Os valores (salários, iFood…) entram aos poucos — comece pelos saldos iniciais das contas.</p>
     <div class="card"><h2>Contas e saldo inicial</h2><div class="tbl"><table><thead><tr><th>Conta</th><th>Empresa</th><th>Nota</th><th class="n">Saldo inicial (R$)</th></tr></thead><tbody>
       ${contas.map((c) => `<tr><td>${esc(c.nome)}${c.obs ? `<br><small class="mut">${esc(c.obs)}</small>` : ''}</td><td>${esc(c.empresa)}</td><td><span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
-      <td class="n"><input data-saldo="${c.id}" value="${(c.saldo_inicial / 100).toFixed(2).replace('.', ',')}" style="width:130px;text-align:right"></td></tr>`).join('')}</tbody></table></div>
-      <details style="margin-top:12px"><summary>+ Nova conta</summary><form class="form" id="nova-conta" style="margin-top:10px">
+      <td class="n"><input ${adm ? '' : 'disabled'} data-saldo="${c.id}" value="${(c.saldo_inicial / 100).toFixed(2).replace('.', ',')}" style="width:130px;text-align:right"></td></tr>`).join('')}</tbody></table></div>
+      ${adm ? '' : '<!--'}<details style="margin-top:12px"><summary>+ Nova conta</summary><form class="form" id="nova-conta" style="margin-top:10px">
         <div><label>Nome</label><input name="nome" required></div><div><label>Empresa</label><select name="empresa_id">${opts(empresas)}</select></div>
         <div><label>Tipo</label><select name="tipo">${Object.entries(TIPOS_CONTA).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
         <div><label>Nota</label><select name="modalidade"><option value="com_nota">Com nota</option><option value="sem_nota">Sem nota</option></select></div>
-        <div style="align-self:end"><button>Adicionar</button></div></form></details></div>
+        <div style="align-self:end"><button>Adicionar</button></div></form></details>${adm ? '' : '-->'}</div>
     <div class="card"><h2>Pessoas</h2><div class="tbl"><table><thead><tr><th>Nome</th><th>Função</th><th>Vínculo</th><th>Pagador padrão</th></tr></thead><tbody>
       ${pessoas.map((p) => `<tr><td>${esc(p.nome)}${p.obs ? `<br><small class="mut">${esc(p.obs)}</small>` : ''}</td><td>${esc(p.funcao || '')}</td>
-      <td><select data-vinculo="${p.id}">${Object.entries(VINCULOS).map(([k, v]) => `<option value="${k}" ${p.vinculo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td><td>${esc(p.pagador_padrao || '')}</td></tr>`).join('')}</tbody></table></div>
-      <details style="margin-top:12px"><summary>+ Nova pessoa</summary><form class="form" id="nova-pessoa" style="margin-top:10px">
+      <td><select ${adm ? '' : 'disabled'} data-vinculo="${p.id}">${Object.entries(VINCULOS).map(([k, v]) => `<option value="${k}" ${p.vinculo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td><td>${esc(p.pagador_padrao || '')}</td></tr>`).join('')}</tbody></table></div>
+      ${adm ? '' : '<!--'}<details style="margin-top:12px"><summary>+ Nova pessoa</summary><form class="form" id="nova-pessoa" style="margin-top:10px">
         <div><label>Nome</label><input name="nome" required></div><div><label>Função</label><input name="funcao"></div>
         <div><label>Vínculo</label><select name="vinculo">${Object.entries(VINCULOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-        <div><label>Pagador padrão</label><input name="pagador_padrao" placeholder="LT1 / OnTrade"></div><div style="align-self:end"><button>Adicionar</button></div></form></details></div>
+        <div><label>Pagador padrão</label><input name="pagador_padrao" placeholder="LT1 / OnTrade"></div><div style="align-self:end"><button>Adicionar</button></div></form></details>${adm ? '' : '-->'}</div>
     <div class="grid dois"><div class="card"><h2>Categorias</h2>
       ${['entrada', 'saida'].map((t) => `<p><b>${t === 'entrada' ? 'Entradas' : 'Saídas'}</b></p>` + [...new Set(categorias.filter((c) => c.tipo === t).map((c) => c.grupo))].map((g) => `<p style="margin:2px 0"><span class="mut">${esc(g)}:</span> ${categorias.filter((c) => c.tipo === t && c.grupo === g).map((c) => esc(c.nome)).join(' · ')}</p>`).join('')).join('')}
-      <details style="margin-top:12px"><summary>+ Nova categoria</summary><form class="form" id="nova-cat" style="margin-top:10px"><div><label>Nome</label><input name="nome" required></div>
-        <div><label>Tipo</label><select name="tipo"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div><div><label>Grupo</label><input name="grupo" required placeholder="Ex.: Pessoal"></div><div style="align-self:end"><button>Adicionar</button></div></form></details></div>
+      ${adm ? '' : '<!--'}<details style="margin-top:12px"><summary>+ Nova categoria</summary><form class="form" id="nova-cat" style="margin-top:10px"><div><label>Nome</label><input name="nome" required></div>
+        <div><label>Tipo</label><select name="tipo"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div><div><label>Grupo</label><input name="grupo" required placeholder="Ex.: Pessoal"></div><div style="align-self:end"><button>Adicionar</button></div></form></details>${adm ? '' : '-->'}</div>
       <div class="card"><h2>Recorrências</h2>${rec.map((r) => `<p><b>${esc(r.nome)}</b><br>Todo dia ${r.dia_mes} · ${r.valor ? brl(r.valor) + (r.estimado ? ' (aprox.)' : '') : 'valor a definir'} · ${esc(r.conta)}</p>`).join('') || '<p class="mut">Nenhuma.</p>'}
-      <p class="legenda">Aparecem no Painel, onde um clique as transforma em lançamento no mês.</p></div></div>`;
+      <p class="legenda">Aparecem no Painel, onde um clique as transforma em lançamento no mês.</p></div></div>
+    ${adm ? `<div class="card"><h2>Usuários e permissões</h2>
+      <p class="legenda"><b>Administrador:</b> tudo, inclusive cadastros, usuários e reabrir dia. <b>Operador:</b> lança, exclui lançamentos e fecha o dia. <b>Somente leitura:</b> consulta e baixa Excel (ideal para o contador).</p>
+      <div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Último acesso</th><th></th></tr></thead><tbody>
+      ${usuarios.map((u) => `<tr style="${u.ativo ? '' : 'opacity:.5'}"><td>${esc(u.nome)}</td><td>${esc(u.email)}</td>
+        <td><select data-papel="${u.id}">${Object.entries(PAPEL_NOME).map(([k, v]) => `<option value="${k}" ${u.papel === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td>${esc(u.ultimo_acesso || 'nunca')}</td>
+        <td class="n"><button class="mini sec" data-resetsenha="${u.id}">nova senha</button> <button class="mini sec" data-ativo="${u.id}" data-val="${u.ativo ? 0 : 1}">${u.ativo ? 'desativar' : 'reativar'}</button></td></tr>`).join('')}</tbody></table></div>
+      <details style="margin-top:12px"><summary>+ Novo usuário</summary><form class="form" id="novo-usuario" style="margin-top:10px">
+        <div><label>Nome</label><input name="nome" required></div><div><label>E-mail</label><input name="email" type="email" required></div>
+        <div><label>Senha inicial (mín. 8)</label><input name="senha" type="password" minlength="8" required autocomplete="new-password"></div>
+        <div><label>Perfil</label><select name="papel">${Object.entries(PAPEL_NOME).map(([k, v]) => `<option value="${k}" ${k === 'operador' ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        <div style="align-self:end"><button>Criar usuário</button></div></form></details></div>` : ''}`;
   $app.querySelectorAll('[data-saldo]').forEach((i) => (i.onchange = () => {
     const v = paraCentavos(i.value);
     if (Number.isNaN(v)) return toast('Valor inválido', true);
@@ -276,7 +326,13 @@ async function cadastros() {
     e.preventDefault();
     acao(async () => { await api(`/api/${tabela}`, { method: 'POST', body: ajusta(Object.fromEntries(new FormData(e.target))) }); await cadastros(); }, 'Adicionado!');
   });
-  novo('nova-conta', 'contas'); novo('nova-pessoa', 'pessoas'); novo('nova-cat', 'categorias');
+  if (adm) {
+    novo('nova-conta', 'contas'); novo('nova-pessoa', 'pessoas'); novo('nova-cat', 'categorias'); novo('novo-usuario', 'usuarios');
+    const usr = (id, body, ok) => acao(async () => { await api(`/api/usuarios/${id}`, { method: 'PUT', body }); await cadastros(); }, ok);
+    $app.querySelectorAll('[data-papel]').forEach((x) => (x.onchange = () => usr(x.dataset.papel, { papel: x.value }, 'Perfil atualizado')));
+    $app.querySelectorAll('[data-ativo]').forEach((x) => (x.onclick = () => usr(x.dataset.ativo, { ativo: +x.dataset.val }, 'Usuário atualizado')));
+    $app.querySelectorAll('[data-resetsenha]').forEach((x) => (x.onclick = () => { const n = prompt('Nova senha para este usuário (mín. 8 caracteres):'); if (n) usr(x.dataset.resetsenha, { senha: n }, 'Senha redefinida'); }));
+  }
 }
 
 // ---------- ROADMAP ----------
