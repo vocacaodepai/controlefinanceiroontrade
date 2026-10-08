@@ -18,7 +18,7 @@ body{margin:0;font:14.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,
 /* menu lateral */
 #menu{width:236px;background:var(--card);border-right:1px solid var(--bd);padding:26px 14px 18px;position:sticky;top:0;height:100vh;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto}
 .marca{padding:0 10px 22px}.marca-txt{display:block;font-size:17px;color:var(--navy)}.marca-txt small{display:block;font-size:12px;color:var(--mut)}
-.logo-menu{display:block;width:152px;max-width:100%;height:auto}
+.logo-menu{display:block;width:76px;max-width:100%;height:auto}
 .marca:has(.logo-menu) .marca-txt{display:none}
 #menu nav{flex:0 0 auto}
 #menu nav a{display:flex;align-items:center;gap:11px;color:var(--tx);text-decoration:none;padding:9px 12px;border-radius:8px;margin-bottom:2px}
@@ -106,8 +106,8 @@ body.deslogado{align-items:center;justify-content:center}
 body.deslogado main{flex:0 1 auto;width:100%;max-width:none;display:flex;align-items:center;justify-content:center;padding:24px 16px}
 .login{margin:0;width:100%;max-width:400px;text-align:center;padding:34px 30px}.login>div{margin-bottom:14px;text-align:left}
 .login h1{margin:2px 0 6px}.login .sub{margin-bottom:22px}
-.logo-login{display:block;width:210px;max-width:70%;height:auto;margin:0 auto 14px}
-@media(prefers-color-scheme:dark){.logo-menu,.logo-login{background:#fff;border-radius:12px;padding:10px 14px;box-sizing:content-box}.logo-menu{width:124px}.logo-login{width:176px}}
+.logo-login{display:block;width:105px;max-width:70%;height:auto;margin:0 auto 14px}
+@media(prefers-color-scheme:dark){.logo-menu,.logo-login{background:#fff;border-radius:12px;padding:6px 8px;box-sizing:content-box}.logo-menu{width:62px}.logo-login{width:88px}}
 
 @media(max-width:820px){
   body{flex-direction:column}
