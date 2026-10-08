@@ -20,6 +20,7 @@ Object.assign(ICONES, {
   cadastros: '<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>',
   roadmap: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   patrimonio: '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+  zap: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   comercial: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
@@ -786,6 +787,10 @@ const tagOrc = (s) => `<span class="tag ${TAG_ORC[s]}">${STATUS_ORC[s]}</span>`;
 const brlInput = (c) => (c / 100).toFixed(2).replace('.', ',');
 const hojeISO = () => state.meta?.hoje || new Date().toLocaleDateString('sv-SE');
 const zap = (tel) => { const d = String(tel || '').replace(/\D/g, ''); return d.length >= 10 ? `https://wa.me/${d.startsWith('55') ? d : '55' + d}` : null; };
+const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0];
+const msgOrc = (o) => `Olá, ${primeiroNome(o.cliente_nome)}! Aqui é da OnTrade. Estou passando para saber se você conseguiu avaliar o orçamento de ${o.produto} (${brl(o.valor)}). Posso ajudar em algo?`;
+// Botão que abre a conversa do WhatsApp direto com o cliente (já com uma mensagem pronta, que dá para editar)
+const botaoZap = (tel, texto, rot = 'WhatsApp') => { const u = zap(tel); return u ? `<a class="mini sec zap" href="${u}?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener" title="Abrir conversa no WhatsApp">${ico('zap')} ${rot}</a>` : ''; };
 const contatoCli = (o) => [o.cliente_telefone && (zap(o.cliente_telefone) ? `<a href="${zap(o.cliente_telefone)}" target="_blank" rel="noopener">${esc(o.cliente_telefone)}</a>` : esc(o.cliente_telefone)), o.cliente_email && esc(o.cliente_email)].filter(Boolean).join(' · ') || '<span class="mut">sem contato</span>';
 const variacao = (atual, ant) => (ant > 0 ? `<small class="${cls(atual - ant)}">${atual >= ant ? '+' : '−'}${Math.abs(Math.round(((atual - ant) / ant) * 100))}%</small>` : '<small class="mut">—</small>');
 
@@ -793,6 +798,7 @@ const variacao = (atual, ant) => (ant > 0 ? `<small class="${cls(atual - ant)}">
 function janelaContato(o, depois) {
   const m = modal(`<h2>Registrar contato</h2>
     <p class="legenda">${esc(o.cliente_nome)} · ${esc(o.produto)} · ${brl(o.valor)}<br>${contatoCli(o)}</p>
+    ${zap(o.cliente_telefone) ? `<p style="margin:10px 0 0">${botaoZap(o.cliente_telefone, msgOrc(o), 'Chamar no WhatsApp')}</p>` : ''}
     <form class="form" id="fc" style="margin-top:14px">
       <div class="cheio"><label>O que foi conversado</label><textarea name="nota" rows="3" placeholder="Ex.: pediu mais prazo; vai falar com o sócio"></textarea></div>
       <div><label>Avisar de novo em (dias)</label><input name="adiar_dias" type="number" min="1" max="60" value="3"></div></form>
@@ -840,7 +846,7 @@ function abrirFollowups(lista) {
     <div class="fu-lista">${lista.map((o) => `<div class="fu-item" data-id="${o.id}">
       <div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
         <small class="mut">Orçamento de ${dataBR(o.data)} · aviso desde ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
-      <div class="fu-acoes"><button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button><button class="mini sec" data-a="adiar">Adiar 1 dia</button></div></div>`).join('')}</div>
+      <div class="fu-acoes">${botaoZap(o.cliente_telefone, msgOrc(o))}<button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button><button class="mini sec" data-a="adiar">Adiar 1 dia</button></div></div>`).join('')}</div>
     <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="depois">Lembrar mais tarde</button></div>`, 640);
   const refaz = async () => { m.fechar(); await verificarFollowups(true); if (location.hash === '#orcamentos') rota(); };
   m.el.querySelector('#depois').onclick = () => { sessionStorage.setItem('fu_ate', String(Date.now() + 30 * 60 * 1000)); m.fechar(); };
@@ -923,7 +929,7 @@ async function fichaCliente(id, depois) {
     <h3 style="margin:16px 0 6px;font-size:14px">Histórico de orçamentos</h3>
     ${c.orcamentos.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Produto</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>${c.orcamentos.map((o) => `<tr><td>${dataBR(o.data)}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Sem orçamentos.</p>'}
     ${c.contatos.length ? `<h3 style="margin:16px 0 6px;font-size:14px">Contatos registrados</h3>${c.contatos.map((t) => `<p style="margin:4px 0;font-size:13px"><span class="mut">${dataBR(t.criado_em.slice(0, 10))} · ${esc(t.usuario_nome || '')}</span> ${esc(t.nota || 'Contato feito')}</p>`).join('')}` : ''}
-    <div class="modal-acoes"><button class="sec" id="ed">Editar ficha</button><span style="flex:1"></span><button class="sec" id="x">Fechar</button><button id="no">Novo orçamento</button></div>`, 620);
+    <div class="modal-acoes"><button class="sec" id="ed">Editar ficha</button>${botaoZap(c.telefone, `Olá, ${primeiroNome(c.nome)}! Aqui é da OnTrade. Tudo bem?`, 'Chamar no WhatsApp')}<span style="flex:1"></span><button class="sec" id="x">Fechar</button><button id="no">Novo orçamento</button></div>`, 620);
   m.el.querySelector('#x').onclick = m.fechar;
   m.el.querySelector('#no').onclick = () => { m.fechar(); novoOrcamento(depois, c); };
   m.el.querySelector('#ed').onclick = () => {
@@ -953,7 +959,7 @@ async function orcamentos() {
         <td>${esc(o.produto)}${o.numero ? `<br><small class="mut">nº ${esc(o.numero)}</small>` : ''}</td><td class="n">${brl(o.valor)}</td>
         <td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
         <td>${o.status === 'aberto' ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span>${o.qtd_contatos ? `<br><small class="mut">${o.qtd_contatos} contato(s)</small>` : ''}` : '<span class="mut">—</span>'}</td>
-        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
+        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `${botaoZap(o.cliente_telefone, msgOrc(o), '')}<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
           <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="3">${lista.length} orçamento(s)</td><td class="n">${brl(soma)}</td><td colspan="3"></td></tr></tfoot></table></div>` : '<p class="mut">Nenhum orçamento com este filtro.</p>'}</div>`;
   const recarrega = async () => { await orcamentos(); verificarFollowups(); };
@@ -1160,7 +1166,7 @@ async function comercial() {
   const conv = m.qtd ? Math.round((m.qtd_ganho / m.qtd) * 100) + '%' : '—';
   const linhaOrc = (o, acoes) => `<div class="fu-item" data-id="${o.id}"><div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
     <small class="mut">Orçamento de ${dataBR(o.data)} · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
-    ${acoes ? '<div class="fu-acoes"><button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>' : ''}</div>`;
+    ${acoes ? `<div class="fu-acoes">${botaoZap(o.cliente_telefone, msgOrc(o))}<button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>` : ''}</div>`;
   $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)}</p></div>
       <div class="row" style="margin:0"><button id="novo">Novo orçamento</button><a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a></div></div>
     <div class="grid">
