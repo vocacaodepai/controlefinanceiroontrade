@@ -10,6 +10,21 @@ const ICONES = {
   'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   'arrow-right': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
 };
+Object.assign(ICONES, {
+  fechar: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  painel: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  lancar: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  extratos: '<path d="M3 22h18"/><path d="M6 18v-7"/><path d="M10 18v-7"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M12 2 20 7H4Z"/>',
+  mensal: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
+  fluxo: '<circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h4a5 5 0 0 1 5 5v4"/>',
+  cadastros: '<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>',
+  roadmap: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  patrimonio: '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+  aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
+  clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  societario: '<path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10Z"/>',
+});
 const ico = (n) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[n]}</svg>`;
 // ---------- Avatar: rosto da pessoa sobre o uniforme da OnTrade ----------
 // admin: terno e gravata · operador: polo · somente leitura: camisa social. A foto é o rosto; o resto é desenho.
@@ -94,8 +109,9 @@ function abrirFoto() {
   m.el.querySelector('#fs').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'POST', body: { imagem: recorte(256) } }); await atualizar(); }, 'Foto salva');
   m.el.querySelector('#fr').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'DELETE' }); await atualizar(); }, 'Foto removida');
 }
-const NIVEL = { leitor: 1, operador: 2, admin: 3 };
-const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura' };
+const NIVEL = { comercial: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
+const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura', socio: 'Sócio', comercial: 'Comercial' };
+const temArea = (a) => !!state.usuario?.areas?.includes(a);
 const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
 
 // ---------- util ----------
@@ -173,7 +189,22 @@ document.getElementById('senha').onclick = trocarSenha;
 document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, fluxo, cadastros, roadmap };
+// Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
+const MENU = [
+  ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
+  ['Comercial', [['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
+  ['Sociedade', [['societario', 'Quadro societário']]],
+  ['Sistema', [['fluxo', 'Mapa do fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
+];
+const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n === r)?.[2] || r;
+const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , area]) => rotas[n] && temArea(area || n)).map(([n]) => n);
+function renderMenu() {
+  document.getElementById('nav').innerHTML = MENU.map(([grupo, itens]) => {
+    const vis = itens.filter(([n, , area]) => rotas[n] && temArea(area || n));
+    return vis.length ? `<div class="nav-grupo">${grupo}</div>` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span></a>`).join('') : '';
+  }).join('');
+}
 async function rota() {
   if (!state.usuario) {
     let e;
@@ -183,14 +214,18 @@ async function rota() {
   }
   document.body.classList.remove('deslogado');
   document.getElementById('quem').innerHTML = `<div class="quem">${avatar(state.usuario, 46)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></div>`;
-  const nome = location.hash.slice(1) || 'painel';
+  renderMenu();
+  const permitidas = rotasPermitidas();
+  let nome = location.hash.slice(1) || permitidas[0] || 'painel';
+  if (!permitidas.includes(nome)) { nome = permitidas[0]; if (!nome) { $app.innerHTML = '<div class="card">Seu perfil ainda não tem nenhuma área liberada. Fale com o administrador.</div>'; return; } history.replaceState(null, '', '#' + nome); }
   document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome));
   if (!state.meta) {
-    state.meta = await api('/api/meta');
+    if (pode('leitor')) state.meta = await api('/api/meta');
+    else { const e = await api('/api/equipe'); state.meta = { equipe: e.equipe, hoje: e.hoje, contas: [], categorias: [], pessoas: [], empresas: [] }; }
     state.dia = state.dia || state.meta.hoje;
     state.mes = state.mes || state.meta.hoje.slice(0, 7);
   }
-  try { await (rotas[nome] || painel)(); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
+  try { await rotas[nome](); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
 }
 addEventListener('hashchange', () => { if (location.hash !== '#extratos') state.extrato = null; rota(); });
 const recarregarMeta = async () => { state.meta = { ...(await api('/api/meta')), hoje: state.meta.hoje }; };
@@ -225,6 +260,24 @@ function cartaoSaldos(p) {
   </div>`;
 }
 
+// Caixa x ativos: mostra que um mês de caixa negativo pode ser dinheiro parado em containers e estoque
+function cartaoPatrimonio(p) {
+  const t = p.patrimonio;
+  if (!t || !temArea('patrimonio')) return '';
+  if (!t.informado) return `<div class="card"><h2>Patrimônio em ativos</h2><p class="legenda">Os valores de containers e estoque ainda não foram informados. <a href="#patrimonio">Informar agora</a></p></div>`;
+  const mk = (rotulo, valor, cor = '', sub = '') => `<div class="mk"><span>${rotulo}</span><b class="${cor}">${valor}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  return `<div class="card">
+    <div class="titulo-saldos"><h2>Caixa e patrimônio em ativos</h2>${temArea('patrimonio') ? '<a class="btn sec mini" href="#patrimonio">Ver e atualizar</a>' : ''}</div>
+    <p class="legenda aviso-vivo">Valores de containers e estoque de <b>${nomeMes(t.mes_ref)}</b>${t.defasado ? ' (último mês informado)' : ''}. Atualizados no fechamento do mês, não no dia a dia.</p>
+    <div class="mk-grade">
+      ${mk('Containers', brl(t.total_container))}${mk('Estoque', brl(t.total_estoque))}
+      ${mk('Posição total', brl(t.posicao_total), t.posicao_total < 0 ? 'neg' : '', 'saldo em contas + ativos')}
+      ${t.resultado_economico === null ? mk('Resultado econômico', '—', '', 'falta o mês anterior para comparar') : mk('Resultado econômico', brl(t.resultado_economico), t.resultado_economico < 0 ? 'neg' : '', 'caixa do mês + variação dos ativos')}
+    </div>
+    ${t.resultado_economico !== null && p.resultado < 0 && t.resultado_economico >= 0 ? '<div class="aviso-fechado">' + ico('info') + '<span>O caixa fechou o mês negativo, mas os ativos cresceram: o resultado econômico estimado é positivo.</span></div>' : ''}
+  </div>`;
+}
+
 // ---------- PAINEL ----------
 async function painel() {
   const p = await api(`/api/painel/${state.mes}`);
@@ -241,6 +294,7 @@ async function painel() {
       <div class="card kpi"><div class="l">Resultado do mês</div><div class="v ${cls(p.resultado)}">${brl(p.resultado)}</div></div>
     </div>
     ${cartaoSaldos(p)}
+    ${cartaoPatrimonio(p)}
     <div class="grid um">
       <div class="card"><h2>Entradas e saídas por dia</h2>
         ${p.serie.length ? `<div class="serie">${p.serie.map((s) => `<div class="col" title="${dataBR(s.data)}: +${brl(s.entradas)} / -${brl(s.saidas)}"><div class="e" style="height:${(s.entradas / maxSerie) * 100}%"></div><div class="s" style="height:${(s.saidas / maxSerie) * 100}%"></div></div>`).join('')}</div><p class="legenda"><span class="sw" style="background:var(--ver)"></span>entradas<span class="sw" style="background:var(--verm);margin-left:16px"></span>saídas</p>` : '<p class="mut">Nenhum lançamento neste mês ainda.</p>'}
@@ -389,6 +443,110 @@ function checklistFechamento(d, contagens, obs) {
   }, 'Caixa fechado');
 }
 
+
+// ---------- PATRIMÔNIO (containers e estoque) ----------
+async function patrimonio() {
+  const d = await api(`/api/patrimonio/${state.mes}`);
+  const adm = pode('admin');
+  const pos = d.posicao;
+  $app.innerHTML = `
+    <h1>Patrimônio em ativos</h1>
+    <p class="sub">Quanto vale hoje o que está em containers (a caminho ou parados) e em estoque. Atualize no fechamento do mês: esses valores entram no painel e no relatório dos sócios.</p>
+    <div class="row">${seletorMes()}</div>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Containers</div><div class="v">${brl(pos.total_container)}</div></div>
+      <div class="card kpi"><div class="l">Estoque</div><div class="v">${brl(pos.total_estoque)}</div></div>
+      <div class="card kpi"><div class="l">Total em ativos</div><div class="v">${brl(pos.total)}</div></div>
+    </div>
+    ${pos.defasado ? `<div class="aviso-box">${ico('info')}<span>${nomeMes(state.mes)} ainda não tem valores lançados. Os totais acima são de <b>${nomeMes(pos.mes_ref)}</b>, o último mês informado.</span></div>` : ''}
+    <div class="card"><h2>Itens de ${nomeMes(state.mes)}</h2>
+      ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor</th><th></th></tr></thead><tbody>
+        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td><span class="tag">${esc(d.tipos[i.tipo])}</span></td><td>${esc(d.situacoes[i.situacao])}</td><td>${i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
+        <td class="n">${adm ? `<button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="4">Total</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td></td></tr></tfoot></table></div>`
+        : `<p class="mut">Nenhum item lançado em ${nomeMes(state.mes)}.</p>${adm && pos.mes_ref ? `<button class="sec" id="copiar">Copiar os itens de ${nomeMes(d.mes_anterior)} e ajustar os valores</button>` : ''}`}
+    </div>
+    ${adm ? `<div class="card"><h2>Adicionar item</h2><form class="form" id="novo-item">
+      <div><label>Tipo</label><select name="tipo">${Object.entries(d.tipos).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="larg"><label>Descrição</label><input name="descricao" required placeholder="Ex.: Container MSKU 481920 — painéis P3.9"></div>
+      <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+      <div><label>Situação</label><select name="situacao">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div><label>Chegada prevista</label><input name="previsao_chegada" type="date"></div>
+      <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div>
+      <div style="align-self:end"><button>Adicionar</button></div></form>
+      <p class="legenda" style="margin-top:12px">Informe o valor pelo que custou ou pelo valor de venda esperado, sempre do mesmo jeito. Container vendido sai da lista no mês seguinte.</p></div>` : ''}`;
+  ligaMes(patrimonio);
+  const salvar = (id, corpo, ok) => acao(async () => { await api(id ? `/api/patrimonio/${id}` : '/api/patrimonio', { method: id ? 'PUT' : 'POST', body: corpo }); await patrimonio(); }, ok);
+  document.getElementById('novo-item')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor);
+    if (!(valor >= 0)) return toast('Informe um valor válido', true);
+    salvar(null, { ...f, valor, mes: state.mes }, 'Item adicionado');
+  });
+  document.getElementById('copiar')?.addEventListener('click', () => acao(async () => { const r = await api('/api/patrimonio/copiar', { method: 'POST', body: { de: d.mes_anterior, para: state.mes } }); await patrimonio(); toast(`${r.copiados} item(ns) copiado(s). Ajuste os valores.`); }));
+  $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir este item?') && acao(async () => { await api(`/api/patrimonio/${b.dataset.del}`, { method: 'DELETE' }); await patrimonio(); }, 'Item excluído')));
+  $app.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => {
+    const i = d.itens.find((x) => x.id === +b.dataset.edit);
+    const m = modal(`<h2>Editar item</h2><form class="form" id="ed" style="margin-top:14px">
+      <div class="cheio"><label>Descrição</label><input name="descricao" value="${esc(i.descricao)}" required></div>
+      <div><label>Valor (R$)</label><input name="valor" value="${(i.valor / 100).toFixed(2).replace('.', ',')}" inputmode="decimal" required></div>
+      <div><label>Situação</label><select name="situacao">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}" ${i.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div><label>Chegada prevista</label><input name="previsao_chegada" type="date" value="${i.previsao_chegada || ''}"></div>
+      <div class="cheio"><label>Observação</label><input name="obs" value="${esc(i.obs || '')}"></div>
+      <div class="modal-acoes cheio"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Salvar</button></div></form>`, 520);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#ed').onsubmit = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor); if (!(valor >= 0)) return toast('Valor inválido', true); m.fechar(); salvar(i.id, { ...f, valor, mes: i.mes, tipo: i.tipo }, 'Item atualizado'); };
+  }));
+}
+
+// ---------- QUADRO SOCIETÁRIO e relatório mensal dos sócios ----------
+async function societario() {
+  const q = await api('/api/societario/quadro');
+  const adm = pode('admin');
+  const nota = (await api(`/api/societario/nota/${state.mes}`)).texto;
+  const pct = (bp) => (bp == null ? 'a definir' : (bp / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + '%');
+  const ativos = q.socios.filter((s) => s.ativo);
+  $app.innerHTML = `
+    <h1>Quadro societário</h1>
+    <p class="sub">Quem são os sócios, quanto cada um tem da empresa e o relatório mensal para enviar a eles.</p>
+    ${q.soma_bp !== 10000 ? `<div class="aviso-box">${ico('info')}<span>As participações cadastradas somam <b>${pct(q.soma_bp)}</b>${q.sem_participacao.length ? ` e falta definir a participação de <b>${esc(q.sem_participacao.join(', '))}</b>` : ''}. O quadro precisa fechar 100%.</span></div>` : ''}
+    <div class="card"><div class="titulo-saldos"><h2>Sócios</h2>${adm ? '<button class="mini sec" id="novo-socio">Adicionar sócio</button>' : ''}</div>
+      <div class="tbl"><table><thead><tr><th>Sócio</th><th class="n">Participação</th><th class="n">Aporte</th><th>Entrada</th><th class="n">Valor de referência (100%)</th><th></th></tr></thead><tbody>
+      ${q.socios.map((s) => `<tr style="${s.ativo ? '' : 'opacity:.5'}"><td>${esc(s.nome)}${s.obs ? `<br><small class="mut">${esc(s.obs)}</small>` : ''}</td><td class="n"><b>${pct(s.participacao_bp)}</b></td><td class="n">${s.aporte ? brl(s.aporte) : '—'}</td><td>${s.data_entrada ? dataBR(s.data_entrada) : '—'}</td><td class="n">${s.valor_implicito ? brl(s.valor_implicito) : '—'}</td>
+        <td class="n">${adm ? `<button class="mini sec" data-socio="${s.id}">editar</button>` : ''}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td class="n">${pct(q.soma_bp)}</td><td class="n">${brl(ativos.reduce((a, s) => a + s.aporte, 0))}</td><td colspan="3"></td></tr></tfoot></table></div>
+      <p class="legenda" style="margin-top:10px">O valor de referência é o aporte dividido pela participação (ex.: R$ 2 milhões por 20% sugere R$ 10 milhões para 100%). É só uma referência da negociação, não uma avaliação atual da empresa.</p></div>
+
+    <div class="card"><h2>Relatório mensal dos sócios (PDF)</h2>
+      <p class="legenda">Gera o PDF com resumo do mês, caixa, saídas, evolução de 6 meses, patrimônio em containers e estoque, quadro societário, pontos de atenção e o comentário da administração. Para o relatório sair completo, feche o caixa de todos os dias do mês e atualize o <a href="#patrimonio">patrimônio</a>.</p>
+      <div class="row">${seletorMes()}</div>
+      ${adm ? `<div style="margin-bottom:14px"><label>Comentário da administração (aparece no PDF)</label><textarea id="nota" rows="3" placeholder="Ex.: Mês marcado pela compra de containers; o caixa fica apertado até a chegada e a venda.">${esc(nota)}</textarea><div style="margin-top:8px"><button class="mini sec" id="salvar-nota">Salvar comentário</button></div></div>` : nota ? `<p><b>Comentário da administração:</b> ${esc(nota)}</p>` : ''}
+      <div class="row" style="margin-bottom:0"><a class="btn" href="/api/societario/relatorio/${state.mes}">${ico('download')} Gerar PDF — todos os sócios</a>
+        ${ativos.map((s) => `<a class="btn sec" href="/api/societario/relatorio/${state.mes}?socio=${s.id}">${ico('download')} PDF para ${esc(s.nome)}</a>`).join('')}</div>
+    </div>`;
+  ligaMes(societario);
+  document.getElementById('salvar-nota')?.addEventListener('click', () => acao(() => api(`/api/societario/nota/${state.mes}`, { method: 'PUT', body: { texto: document.getElementById('nota').value } }), 'Comentário salvo'));
+  const formSocio = (s) => {
+    const m = modal(`<h2>${s ? 'Editar sócio' : 'Novo sócio'}</h2><form class="form" id="fs" style="margin-top:14px">
+      <div class="cheio"><label>Nome</label><input name="nome" value="${esc(s?.nome || '')}" required></div>
+      <div><label>Participação (%)</label><input name="participacao" inputmode="decimal" value="${s?.participacao_bp == null ? '' : s.participacao_bp / 100}" placeholder="Ex.: 20"></div>
+      <div><label>Aporte pago para entrar (R$)</label><input name="aporte" inputmode="decimal" value="${s?.aporte ? (s.aporte / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"></div>
+      <div><label>Data de entrada</label><input name="data_entrada" type="date" value="${s?.data_entrada || ''}"></div>
+      <div><label>CPF / CNPJ</label><input name="documento" value="${esc(s?.documento || '')}"></div>
+      <div class="cheio"><label>Observação</label><input name="obs" value="${esc(s?.obs || '')}"></div>
+      <label class="cheio" style="display:flex;gap:8px;align-items:center;color:var(--tx)"><input type="checkbox" name="ativo" ${s && !s.ativo ? '' : 'checked'}> Sócio ativo</label>
+      <div class="modal-acoes cheio"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Salvar</button></div></form>`, 520);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#fs').onsubmit = (e) => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target)); const aporte = f.aporte ? paraCentavos(f.aporte) : 0;
+      if (Number.isNaN(aporte)) return toast('Aporte inválido', true);
+      acao(async () => { await api(s ? `/api/societario/socios/${s.id}` : '/api/societario/socios', { method: s ? 'PUT' : 'POST', body: { ...f, aporte, ativo: f.ativo ? 1 : 0 } }); m.fechar(); await societario(); }, 'Sócio salvo');
+    };
+  };
+  document.getElementById('novo-socio')?.addEventListener('click', () => formSocio(null));
+  $app.querySelectorAll('[data-socio]').forEach((b) => (b.onclick = () => formSocio(q.socios.find((s) => s.id === +b.dataset.socio))));
+}
 
 // ---------- EXTRATOS (IA) ----------
 const CONF = { alta: ['ok', 'alta'], media: ['aviso', 'média'], baixa: ['ruim', 'baixa'] };
@@ -552,7 +710,7 @@ async function cadastros() {
       <div class="card"><h2>Recorrências</h2>${rec.map((r) => `<p><b>${esc(r.nome)}</b><br>Todo dia ${r.dia_mes} · ${r.valor ? brl(r.valor) + (r.estimado ? ' (aprox.)' : '') : 'valor a definir'} · ${esc(r.conta)}</p>`).join('') || '<p class="mut">Nenhuma.</p>'}
       <p class="legenda">Aparecem no Painel, onde um clique as transforma em lançamento no mês.</p></div></div>
     ${adm ? `<div class="card"><h2>Usuários e permissões</h2>
-      <p class="legenda"><b>Administrador:</b> tudo, inclusive cadastros, usuários e reabrir dia. <b>Operador:</b> lança, exclui lançamentos e fecha o dia. <b>Somente leitura:</b> consulta e baixa Excel (ideal para o contador).</p>
+      <p class="legenda"><b>Administrador:</b> tudo, inclusive cadastros, usuários, quadro societário e reabrir dia. <b>Operador:</b> lança, exclui lançamentos e fecha o dia. <b>Somente leitura:</b> consulta o financeiro e baixa Excel (ideal para o contador). <b>Sócio:</b> consulta painel, controle mensal, patrimônio, quadro societário e o painel ao vivo, sem lançar nada. <b>Comercial:</b> só clientes, orçamentos e o painel ao vivo, sem acesso ao financeiro.</p>
       <div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Último acesso</th><th></th></tr></thead><tbody>
       ${usuarios.map((u) => `<tr style="${u.ativo ? '' : 'opacity:.5'}"><td><div class="quem">${avatar(u, 30)}<span>${esc(u.nome)}</span></div></td><td>${esc(u.email)}</td>
         <td><select data-papel="${u.id}">${Object.entries(PAPEL_NOME).map(([k, v]) => `<option value="${k}" ${u.papel === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>

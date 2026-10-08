@@ -2,8 +2,19 @@ import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypt
 import { query, one, tx } from './db.js';
 import { ErroNegocio } from './services.js';
 
-// Papéis: leitor (só consulta e baixa Excel) < operador (lança e fecha o dia) < admin (tudo).
-export const PAPEIS = { leitor: 1, operador: 2, admin: 3 };
+// Perfis. O nível vale para o FINANCEIRO: comercial (0, sem acesso) < leitor/sócio (1, só consulta)
+// < operador (2, lança e fecha o dia) < admin (3, tudo).
+export const PAPEIS = { comercial: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
+const perfilValido = (p) => Object.hasOwn(PAPEIS, p);
+
+// Áreas do site que cada perfil pode abrir. O servidor confere em cada rota; o menu só mostra o que o perfil acessa.
+export const AREAS = {
+  admin: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'societario', 'fluxo', 'cadastros', 'roadmap'],
+  operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros', 'roadmap'],
+  leitor: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros'],
+  socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'societario', 'fluxo'],
+  comercial: ['aovivo', 'comercial'],
+};
 const COOKIE = 'sid';
 const DURACAO_MS = 7 * 24 * 3600 * 1000;
 
@@ -31,7 +42,7 @@ export const totalUsuarios = async () => (await one('SELECT COUNT(*) AS n FROM u
 export async function criarUsuario({ nome, email, senha, papel }) {
   if (!nome?.trim()) throw new ErroNegocio('Informe o nome.');
   if (!emailOk(email)) throw new ErroNegocio('E-mail inválido.');
-  if (!PAPEIS[papel]) throw new ErroNegocio('Perfil inválido.');
+  if (!perfilValido(papel)) throw new ErroNegocio('Perfil inválido.');
   validarSenha(senha);
   try {
     return publico(await one('INSERT INTO usuarios (nome,email,senha_hash,papel) VALUES ($1,$2,$3,$4) RETURNING ' + COLS + '',
@@ -41,7 +52,7 @@ export async function criarUsuario({ nome, email, senha, papel }) {
     throw e;
   }
 }
-const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso, tem_foto: !!u.tem_foto, foto_v: u.foto_em ? String(u.foto_em).replace(/\D/g, '') : '0' };
+const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso, areas: AREAS[u.papel] || [], tem_foto: !!u.tem_foto, foto_v: u.foto_em ? String(u.foto_em).replace(/\D/g, '') : '0' };
 export const listarUsuarios = async () => (await query(`SELECT ${COLS} FROM usuarios ORDER BY nome`)).map(publico);
 
 // Impede deixar o sistema sem nenhum administrador ativo.
@@ -58,7 +69,7 @@ export function atualizarUsuario(id, b) {
   return tx(async () => {
     await query('SELECT pg_advisory_xact_lock(724522)');
     await garantirAdmin(id, b);
-    if (b.papel !== undefined && !PAPEIS[b.papel]) throw new ErroNegocio('Perfil inválido.');
+    if (b.papel !== undefined && !perfilValido(b.papel)) throw new ErroNegocio('Perfil inválido.');
     if (b.nome !== undefined) await query('UPDATE usuarios SET nome=$1 WHERE id=$2', [String(b.nome).trim(), id]);
     if (b.papel !== undefined) await query('UPDATE usuarios SET papel=$1 WHERE id=$2', [b.papel, id]);
     if (b.ativo !== undefined) {
@@ -126,6 +137,15 @@ export function gravarCookie(req, res, token) {
 
 export const autenticar = async (req, _res, next) => {
   try { req.usuario = await usuarioDoToken(lerCookie(req)); next(); } catch (e) { next(e); }
+};
+
+// Qualquer pessoa logada (trocar a própria senha/foto, ver fotos da equipe).
+export const logado = (req, res, next) => (req.usuario ? next() : res.status(401).json({ erro: 'Faça login para continuar.' }));
+// Exige acesso a uma área específica do site (ex.: 'societario', 'comercial').
+export const exigirArea = (area) => (req, res, next) => {
+  if (!req.usuario) return res.status(401).json({ erro: 'Faça login para continuar.' });
+  if (!(AREAS[req.usuario.papel] || []).includes(area)) return res.status(403).json({ erro: 'Seu perfil não tem acesso a esta área.' });
+  next();
 };
 
 export const exigir = (papel = 'leitor') => (req, res, next) => {

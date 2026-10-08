@@ -147,3 +147,37 @@ test('foto de perfil: valida o arquivo, serve só para quem está logado e muda 
   assert.equal((await chamar('DELETE', '/api/auth/foto', null, admin)).status, 204);
   assert.equal((await fetch(`${base}/api/usuarios/${depois.id}/foto`, { headers: { cookie: admin } })).status, 404);
 });
+
+test('perfis sócio e comercial: cada um só acessa o que é da sua área', async () => {
+  admin = (await chamar('POST', '/api/auth/login', { email: 'e@x.com', senha: 'nova-senha-1' })).cookie;
+  for (const [nome, email, papel] of [['Sócio Teste', 'socio@x.com', 'socio'], ['Vendedor', 'vend@x.com', 'comercial']]) {
+    assert.equal((await chamar('POST', '/api/usuarios', { nome, email, senha: 'senha-forte-5', papel }, admin)).status, 201, papel);
+  }
+  const socio = (await chamar('POST', '/api/auth/login', { email: 'socio@x.com', senha: 'senha-forte-5' })).cookie;
+  const vend = (await chamar('POST', '/api/auth/login', { email: 'vend@x.com', senha: 'senha-forte-5' })).cookie;
+
+  const eu = (await chamar('GET', '/api/auth/estado', null, socio)).json.usuario;
+  assert.ok(eu.areas.includes('societario') && eu.areas.includes('painel') && !eu.areas.includes('lancar'));
+  const ev = (await chamar('GET', '/api/auth/estado', null, vend)).json.usuario;
+  assert.deepEqual(ev.areas, ['aovivo', 'comercial']);
+
+  // sócio: consulta o financeiro, mas não lança nem configura
+  assert.equal((await chamar('GET', '/api/painel/2026-05', null, socio)).status, 200);
+  assert.equal((await chamar('GET', '/api/export/mes/2026-05', null, socio)).status, 200);
+  assert.equal((await chamar('POST', '/api/lancamentos', { data: '2026-05-05', tipo: 'saida', valor: 100, conta_id: 3, categoria_id: 9 }, socio)).status, 403);
+  assert.equal((await chamar('PUT', '/api/contas/1', { saldo_inicial: 5 }, socio)).status, 403);
+  assert.equal((await chamar('GET', '/api/usuarios', null, socio)).status, 403);
+
+  // comercial: nada do financeiro, mas vê a equipe e cuida da própria conta
+  for (const url of ['/api/meta', '/api/painel/2026-05', '/api/lancamentos', '/api/extratos', '/api/export/mes/2026-05']) {
+    assert.equal((await chamar('GET', url, null, vend)).status, 403, url);
+  }
+  assert.equal((await chamar('POST', '/api/lancamentos', { data: '2026-05-05', tipo: 'saida', valor: 100, conta_id: 3, categoria_id: 9 }, vend)).status, 403);
+  const eq = await chamar('GET', '/api/equipe', null, vend);
+  assert.equal(eq.status, 200);
+  assert.ok(eq.json.equipe.length >= 3 && eq.json.hoje);
+  assert.equal((await chamar('POST', '/api/auth/senha', { atual: 'senha-forte-5', nova: 'senha-forte-6' }, vend)).status, 204);
+  assert.equal((await chamar('POST', '/api/auth/foto', { imagem: JPEG }, vend)).status, 204);
+
+  assert.equal((await chamar('POST', '/api/usuarios', { nome: 'X', email: 'x@x.com', senha: 'senha-forte-5', papel: 'inventado' }, admin)).status, 400);
+});
