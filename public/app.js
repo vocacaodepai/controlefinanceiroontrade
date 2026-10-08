@@ -107,6 +107,29 @@ function ligaMes(fn) {
   document.getElementById('sel-mes').onchange = (e) => { if (e.target.value) { state.mes = e.target.value; fn(); } };
 }
 
+
+// Cartão "Saldo por conta": saldo ao vivo (muda a cada lançamento) + aviso de caixa fechado do dia.
+function cartaoSaldos(p) {
+  const d = p.saldo_dia;
+  const hora = d.atualizado_em.slice(11, 19);
+  const fechado = d.fechado;
+  const total = (k) => d.contas.reduce((a, c) => a + (c[k] ?? 0), 0);
+  return `<div class="card" id="cartao-saldos">
+    <div class="titulo-saldos"><h2>${d.ao_vivo ? 'Saldo por conta — agora' : `Saldo por conta — fim de ${dataBR(d.data)}`}</h2>
+      <button class="mini sec" id="atualizar-saldos" title="Atualizar saldos">↻ Atualizar</button></div>
+    <p class="legenda aviso-vivo">${d.ao_vivo
+      ? `<b>Valores atualizados às ${hora}.</b> Cada lançamento do caixa já entra aqui; clique em <b>↻ Atualizar</b> para ver o saldo real neste instante.`
+      : `Saldo ao final de ${dataBR(d.data)}. Consultado às ${hora}.`}</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Conta</th><th></th>${d.ao_vivo ? '<th class="n">Movimento de hoje</th>' : ''}<th class="n">${d.ao_vivo ? 'Saldo atual' : 'Saldo'}</th>${fechado ? `<th class="n">Fechado ${dataBR(fechado.data).slice(0, 5)}</th>` : ''}</tr></thead>
+      <tbody>${d.contas.map((c) => `<tr><td>${esc(c.nome)}</td><td><span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
+        ${d.ao_vivo ? `<td class="n ${cls(c.movimento)}">${c.movimento ? (c.movimento > 0 ? '+ ' : '− ') + brl(Math.abs(c.movimento)) : '—'}</td>` : ''}
+        <td class="n ${cls(c.saldo)}"><b>${brl(c.saldo)}</b></td>${fechado ? `<td class="n">${brl(c.saldo_fechado)}</td>` : ''}</tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="2">Total</td>${d.ao_vivo ? `<td class="n ${cls(total('movimento'))}">${total('movimento') ? (total('movimento') > 0 ? '+ ' : '− ') + brl(Math.abs(total('movimento'))) : '—'}</td>` : ''}<td class="n">${brl(total('saldo'))}</td>${fechado ? `<td class="n">${brl(total('saldo_fechado'))}</td>` : ''}</tr></tfoot></table></div>
+    ${fechado ? `<p class="aviso-fechado">🔒 <b>Saldo fechado do dia ${dataBR(fechado.data)}</b> — caixa fechado às ${esc((fechado.fechado_em || '').slice(11, 16))}${fechado.fechado_por ? ' por ' + esc(fechado.fechado_por) : ''}. A coluna "Fechado" é o saldo oficial.</p>` : ''}
+  </div>`;
+}
+
 // ---------- PAINEL ----------
 async function painel() {
   const p = await api(`/api/painel/${state.mes}`);
@@ -122,10 +145,8 @@ async function painel() {
       <div class="card kpi"><div class="l">Saídas</div><div class="v neg">${brl(p.saidas)}</div></div>
       <div class="card kpi"><div class="l">Resultado do mês</div><div class="v ${cls(p.resultado)}">${brl(p.resultado)}</div></div>
     </div>
-    <div class="grid dois">
-      <div class="card"><h2>Saldo por conta (fim do período)</h2><div class="tbl"><table>
-        <tbody>${p.saldos.map((s) => `<tr><td>${esc(s.nome)}</td><td><span class="tag ${s.modalidade}">${s.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td><td class="n ${cls(s.saldo)}">${brl(s.saldo)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="2">Total</td><td class="n">${brl(p.saldos.reduce((a, s) => a + s.saldo, 0))}</td></tr></tfoot></table></div></div>
+    ${cartaoSaldos(p)}
+    <div class="grid um">
       <div class="card"><h2>Entradas e saídas por dia</h2>
         ${p.serie.length ? `<div class="serie">${p.serie.map((s) => `<div class="col" title="${dataBR(s.data)}: +${brl(s.entradas)} / -${brl(s.saidas)}"><div class="e" style="height:${(s.entradas / maxSerie) * 100}%"></div><div class="s" style="height:${(s.saidas / maxSerie) * 100}%"></div></div>`).join('')}</div><p class="legenda"><span class="pos">■</span> entradas &nbsp; <span class="neg">■</span> saídas</p>` : '<p class="mut">Nenhum lançamento neste mês ainda.</p>'}
       </div>
@@ -140,6 +161,7 @@ async function painel() {
       ${pendentes.length ? '<p class="legenda">O valor é estimado — ajuste-o ao lançar se necessário.</p>' : ''}
     </div>`;
   ligaMes(painel);
+  document.getElementById('atualizar-saldos')?.addEventListener('click', async (ev) => { ev.target.disabled = true; try { await painel(); toast('Saldos atualizados'); } catch (e) { toast(e.message, true); } });
   $app.querySelectorAll('[data-lancar]').forEach((b) => (b.onclick = () => lancarRecorrencia(+b.dataset.lancar, p.recorrencias, painel)));
 }
 
@@ -167,7 +189,7 @@ async function lancar() {
       <div class="seg" style="margin-bottom:14px">${['saida', 'entrada', 'transferencia'].map((x) => `<button type="button" data-tipo="${x}" class="${x} ${t === x ? 'on' : ''}">${{ saida: '− Saída', entrada: '+ Entrada', transferencia: '⇄ Transferência' }[x]}</button>`).join('')}</div>
       <div class="form">
         <div class="larg"><label>${t === 'entrada' ? 'Entrou em qual conta?' : t === 'saida' ? 'Saiu de qual conta? (quem pagou)' : 'Origem'}</label>
-          <select name="conta_id" required>${contas.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)} — ${esc(c.empresa)} (${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'})</option>`).join('')}</select></div>
+          <select name="conta_id" required>${contas.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)} — ${esc(c.empresa)} (${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'})</option>`).join('')}</select><small class="saldo-conta" id="saldo-conta"></small></div>
         ${t === 'transferencia' ? `<div><label>Destino</label><select name="conta_destino_id" required>${contas.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>` : `<div><label>Categoria</label><select name="categoria_id" required>${opts(cats, '', 'Selecione…')}</select></div>`}
         <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" placeholder="0,00" required autofocus></div>
         ${t === 'entrada' ? '<div><label>Cliente</label><input name="cliente" placeholder="Nome do cliente"></div>' : ''}
@@ -184,6 +206,18 @@ async function lancar() {
   document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; lancar(); } };
   $app.querySelectorAll('[data-tipo]').forEach((b) => (b.onclick = () => { state.tipo = b.dataset.tipo; lancar(); }));
   $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir este lançamento?') && acao(async () => { await api(`/api/lancamentos/${b.dataset.del}`, { method: 'DELETE' }); lancar(); }, 'Excluído')));
+  // Saldo da conta escolhida (já com os lançamentos de hoje) e aviso se a saída passar do saldo.
+  const f = document.getElementById('f');
+  const mostrarSaldo = () => {
+    const el = document.getElementById('saldo-conta');
+    const c = dia.contas.find((x) => x.id === +f.conta_id.value);
+    if (!el || !c) return;
+    const v = paraCentavos(f.valor.value);
+    const passa = t !== 'entrada' && v > 0 && v > c.saldo;
+    el.className = 'saldo-conta' + (passa ? ' alerta' : '');
+    el.innerHTML = `Saldo atual desta conta: <b>${brl(c.saldo)}</b>${passa ? ` — ⚠ esta ${t === 'saida' ? 'saída' : 'transferência'} de ${brl(v)} é maior que o saldo` : ''}`;
+  };
+  f.conta_id.addEventListener('change', mostrarSaldo); f.valor.addEventListener('input', mostrarSaldo); mostrarSaldo();
   document.getElementById('f').onsubmit = (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));

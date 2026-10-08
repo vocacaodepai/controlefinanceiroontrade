@@ -69,3 +69,9 @@ body.deslogado .login h1{margin-bottom:6px}
 #menu nav{flex:0 0 auto}
 .usuario{position:static;margin-top:auto;padding:14px 4px 4px}
 @media(max-width:820px){#menu{flex-direction:column;overflow:visible}.usuario{padding:6px}}
+
+.titulo-saldos{display:flex;justify-content:space-between;align-items:center;gap:10px}.titulo-saldos h2{margin:0}
+.aviso-vivo{margin:6px 0 10px}
+.aviso-fechado{margin:12px 0 0;padding:10px 12px;border-radius:8px;background:#1f8f5f1f;border-left:4px solid var(--ver);font-size:14px}
+.saldo-conta{display:block;margin-top:4px;font-size:12px;color:var(--mut)}.saldo-conta.alerta{color:var(--verm);font-weight:600}
+.grid.um{grid-template-columns:1fr}.tag{white-space:nowrap}

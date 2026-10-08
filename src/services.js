@@ -233,12 +233,17 @@ export async function lancarRecorrencia(id, { mes, data, valor, criado_por }) {
 // ---------- painel mensal ----------
 export async function painelMes(mes) {
   const { de, ate } = intervaloMes(mes);
-  const [lancs, fechados, sal, recs, abertos] = await Promise.all([
+  // Saldo "do momento": até hoje (mês corrente) ou até o último dia do mês (meses passados).
+  const hojeData = hoje();
+  const referencia = ate < hojeData ? ate : hojeData;
+  const agora = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // AAAA-MM-DD HH:MM:SS
+  const [lancs, fechados, sal, recs, abertos, rd] = await Promise.all([
     listarLancamentos({ de, ate }),
     one('SELECT COUNT(*) AS n FROM fechamentos WHERE data BETWEEN $1 AND $2', [de, ate]),
     saldos(ate),
     recorrenciasDoMes(mes),
     query(`SELECT DISTINCT data FROM lancamentos WHERE data BETWEEN $1 AND $2 AND data NOT IN (SELECT data FROM fechamentos) ORDER BY data`, [de, ate]),
+    resumoDia(referencia),
   ]);
   const porMod = { com_nota: 0, sem_nota: 0 };
   const saidasPorPagador = {}, saidasPorGrupo = {}, saidasPorCategoria = {}, porConta = {}, dias = {};
@@ -269,6 +274,20 @@ export async function painelMes(mes) {
     por_conta: Object.values(porConta),
     serie: Object.values(dias).sort((a, b) => a.data.localeCompare(b.data)),
     saldos: sal,
+    // Saldo por conta ao vivo: reflete cada lançamento assim que é feito, sem esperar o fechamento.
+    // `fechado` só vem preenchido se o caixa DESSE dia já foi fechado; no dia seguinte ele some sozinho.
+    saldo_dia: {
+      data: referencia,
+      ao_vivo: referencia === hojeData,
+      atualizado_em: agora,
+      fechado: rd.fechado ? { data: referencia, fechado_em: rd.fechado.fechado_em, fechado_por: rd.fechado.fechado_por } : null,
+      contas: rd.contas.map((c) => ({
+        id: c.id, nome: c.nome, modalidade: c.modalidade,
+        saldo: c.saldo,
+        movimento: c.entradas - c.saidas + c.transf_entrada - c.transf_saida, // o que já mexeu hoje
+        saldo_fechado: c.saldo_fechado,
+      })),
+    },
     dias_fechados: fechados.n,
     qtd_lancamentos: lancs.length,
     recorrencias: recs,
