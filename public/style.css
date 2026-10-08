@@ -51,9 +51,9 @@ button.mini{padding:3px 9px;font-size:12px}button:disabled{opacity:.5;cursor:not
 body.deslogado #menu{display:none}.login{max-width:380px;margin:12vh auto 0}.login>div{margin-bottom:12px}
 @media(max-width:820px){.usuario{position:static;display:flex;gap:8px;align-items:center;padding:6px}.usuario .mini{margin:0}}
 
-.logo-menu{display:block;width:100%;max-width:170px;margin:0 auto 6px;background:#fff;border-radius:12px;padding:6px}
+.logo-menu{display:block;width:100%;height:auto;margin:0 0 14px;background:#fff;border-radius:12px;padding:12px 14px 10px;box-sizing:border-box}
 .marca:has(.logo-menu) .marca-txt{display:none}
-.logo-login{display:block;width:230px;max-width:75%;margin:0 auto 12px}
+.logo-login{display:block;width:220px;max-width:70%;height:auto;margin:4px auto 14px}
 
 /* tela de login: centralizada na página inteira (horizontal e vertical) */
 body.deslogado{align-items:center;justify-content:center}
@@ -61,3 +61,5 @@ body.deslogado main{flex:0 1 auto;width:100%;max-width:none;display:flex;align-i
 body.deslogado .login{margin:0;width:100%;max-width:380px;text-align:center}
 body.deslogado .login label{text-align:left}
 body.deslogado .login h1{margin-bottom:6px}
+
+@media(max-width:820px){.logo-menu{display:none}}
