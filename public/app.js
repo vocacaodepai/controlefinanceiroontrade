@@ -11,7 +11,7 @@ const dataBR = (d) => d.split('-').reverse().join('/');
 const cls = (c) => (c < 0 ? 'neg' : c > 0 ? 'pos' : 'mut');
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const nomeMes = (m) => `${MESES[+m.slice(5) - 1]} de ${m.slice(0, 4)}`;
-const VINCULOS = { lt1: 'Registrado na LT1', ontrade: 'Registrado na OnTrade', japeri: 'Registrado em Japeri', informal: 'Sem registro', socio: 'Sócio(a)', a_verificar: '⚠ A verificar' };
+const VINCULOS = { lt1: 'Registrado na LTON', ontrade: 'Registrado na OnTrade', japeri: 'Registrado em Japeri', informal: 'Sem registro', socio: 'Sócio(a)', a_verificar: '⚠ A verificar' };
 const TIPOS_CONTA = { banco: 'Banco', dinheiro: 'Dinheiro', intermediaria: 'Intermediária' };
 
 // "1.234,56" -> 123456 centavos
@@ -327,7 +327,7 @@ async function mensal() {
     <h1>Controle mensal</h1><p class="sub">A Dona Elisa clica em <b>Emitir</b> e recebe a planilha completa do mês.</p>
     <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">⬇ Emitir controle mensal — ${nomeMes(state.mes)}</a></div>
     <div class="card"><h2>O que vai na planilha</h2>
-      <ul><li><b>Resumo</b> — entradas com/sem nota, saídas por pagador (OnTrade × LT1), por grupo e por categoria, saldo final por conta</li>
+      <ul><li><b>Resumo</b> — entradas com/sem nota, saídas por pagador (OnTrade × LTON), por grupo e por categoria, saldo final por conta</li>
       <li><b>Por conta</b> — movimento de cada banco / canal</li><li><b>Pessoas e folha</b> — quanto cada pessoa recebeu, de que tipo e quem pagou</li>
       <li><b>Fechamento diário</b> — saldo dia a dia e quais dias foram fechados</li><li><b>Lançamentos</b> — todos os registros, com filtro</li><li><b>Mapa do fluxo</b> — referência de como o dinheiro circula</li></ul>
       <p class="legenda"><b>Google Sheets:</b> salve o arquivo no Drive e abra com “Planilhas Google” — fórmulas e formatação são preservadas. (Envio automático ao Drive está no <a href="#roadmap">roadmap</a>.)</p></div>
@@ -344,24 +344,24 @@ async function mensal() {
 function fluxo() {
   const lista = (itens) => `<ul>${itens.map((i) => `<li>${i}</li>`).join('')}</ul>`;
   $app.innerHTML = `
-    <h1>Mapa do fluxo</h1><p class="sub">Como o dinheiro entra, passa pela LT1 e sai. Esta é a lógica que o sistema segue.</p>
+    <h1>Mapa do fluxo</h1><p class="sub">Como o dinheiro entra, passa pela LTON e sai. Esta é a lógica que o sistema segue.</p>
     <div class="card"><div class="fluxo">
       <div class="col-fluxo">
         <div class="no com"><h3>🧾 Cliente paga COM nota</h3>${lista(['Banco Safra', 'Banco Infinity', 'Banco Bradesco', 'Banco do Brasil'])}</div>
-        <div class="no sem"><h3>💵 Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LT1 (empresa da Dona Elisa)', 'Dinheiro'])}</div>
+        <div class="no sem"><h3>💵 Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LTON (empresa da Dona Elisa)', 'Dinheiro'])}</div>
       </div>
       <div class="seta">➜</div>
       <div class="col-fluxo">
         <div class="no ont"><h3>🏢 OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Seu Dantas (conta ou dinheiro) ⚠ checar registro'])}</div>
-        <div class="no lt1"><h3>🏦 LT1 paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
+        <div class="no lt1"><h3>🏦 LTON paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
       </div>
       <div class="seta">➜</div>
       <div class="col-fluxo">
-        <div class="no"><h3>👤 Dona Elisa</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LT1 para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
-        <div class="no"><h3>📌 Registros</h3>${lista(['Carla e João → registrados na LT1', 'Dona Kátia → registrada na empresa de Japeri', 'Seu Dantas → a confirmar'])}</div>
+        <div class="no"><h3>👤 Dona Elisa</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LTON para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
+        <div class="no"><h3>📌 Registros</h3>${lista(['Carla e João → registrados na LTON', 'Dona Kátia → registrada na empresa de Japeri', 'Seu Dantas → a confirmar'])}</div>
       </div>
     </div>
-    <p class="legenda" style="margin-top:12px"><span class="tag com_nota">com nota</span> entra pelos bancos da OnTrade &nbsp; <span class="tag sem_nota">sem nota</span> entra por DAE, PagVeloz, LT1 e dinheiro. No sistema cada conta pertence a uma empresa e tem a modalidade — assim o relatório separa automaticamente “quem pagou” e “com/sem nota”.</p></div>`;
+    <p class="legenda" style="margin-top:12px"><span class="tag com_nota">com nota</span> entra pelos bancos da OnTrade &nbsp; <span class="tag sem_nota">sem nota</span> entra por DAE, PagVeloz, LTON e dinheiro. No sistema cada conta pertence a uma empresa e tem a modalidade — assim o relatório separa automaticamente “quem pagou” e “com/sem nota”.</p></div>`;
 }
 
 // ---------- CADASTROS ----------
@@ -387,7 +387,7 @@ async function cadastros() {
       ${adm ? '' : '<!--'}<details style="margin-top:12px"><summary>+ Nova pessoa</summary><form class="form" id="nova-pessoa" style="margin-top:10px">
         <div><label>Nome</label><input name="nome" required></div><div><label>Função</label><input name="funcao"></div>
         <div><label>Vínculo</label><select name="vinculo">${Object.entries(VINCULOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-        <div><label>Pagador padrão</label><input name="pagador_padrao" placeholder="LT1 / OnTrade"></div><div style="align-self:end"><button>Adicionar</button></div></form></details>${adm ? '' : '-->'}</div>
+        <div><label>Pagador padrão</label><input name="pagador_padrao" placeholder="LTON / OnTrade"></div><div style="align-self:end"><button>Adicionar</button></div></form></details>${adm ? '' : '-->'}</div>
     <div class="grid dois"><div class="card"><h2>Categorias</h2>
       ${['entrada', 'saida'].map((t) => `<p><b>${t === 'entrada' ? 'Entradas' : 'Saídas'}</b></p>` + [...new Set(categorias.filter((c) => c.tipo === t).map((c) => c.grupo))].map((g) => `<p style="margin:2px 0"><span class="mut">${esc(g)}:</span> ${categorias.filter((c) => c.tipo === t && c.grupo === g).map((c) => esc(c.nome)).join(' · ')}</p>`).join('')).join('')}
       ${adm ? '' : '<!--'}<details style="margin-top:12px"><summary>+ Nova categoria</summary><form class="form" id="nova-cat" style="margin-top:10px"><div><label>Nome</label><input name="nome" required></div>
@@ -433,7 +433,7 @@ function roadmap() {
     <div class="card"><h2>✅ Já no esqueleto</h2><ul>
       ${item('Lançamentos', 'entrada, saída e transferência por conta, categoria e pessoa')}
       ${item('Com nota × sem nota', 'cada conta tem modalidade; relatórios separam automaticamente')}
-      ${item('Quem pagou', 'OnTrade × LT1 × outros em todos os relatórios')}
+      ${item('Quem pagou', 'OnTrade × LTON × outros em todos os relatórios')}
       ${item('Fechamento diário', 'saldo do sistema × contado, com trava do dia')}
       ${item('Excel diário e mensal', 'com fórmulas, abre direto no Google Sheets')}
       ${item('Recorrências', 'empréstimo da Dona Elisa (~R$ 16.800 dia 5) pronto para lançar')}</ul></div>
@@ -447,12 +447,12 @@ function roadmap() {
       ${item('Contas a pagar e a receber', 'vencimentos de tributos, luz, gás, água e alertas')}
       ${item('Previsão de caixa', 'projetar 30/60/90 dias com folha + empréstimo + recorrências')}
       ${item('Controle do empréstimo', 'saldo devedor, parcelas pagas e restantes')}
-      ${item('Metas e alertas', 'ex.: “LT1 com saldo menor que a folha + empréstimo do mês”')}
+      ${item('Metas e alertas', 'ex.: “LTON com saldo menor que a folha + empréstimo do mês”')}
       ${item('Regularização de vínculos', 'lista de quem está ou não registrado (Seu Dantas, Fátima, Tayane…)')}
       ${item('Backup automático', 'cópia diária do banco no Drive')}</ul></div>
     <div class="card"><h2>❓ Perguntas em aberto</h2><ul>
       <li>Kátia e Dona Kátia são a mesma pessoa?</li><li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>
-      <li>O PagVeloz é conta da OnTrade ou da LT1?</li><li>As despesas em dinheiro saem de um caixa físico único ou de vários?</li>
+      <li>O PagVeloz é conta da OnTrade ou da LTON?</li><li>As despesas em dinheiro saem de um caixa físico único ou de vários?</li>
       <li>O empréstimo tem prazo/saldo devedor para acompanhar?</li></ul></div>`;
 }
 

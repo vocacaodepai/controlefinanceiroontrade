@@ -143,7 +143,7 @@ export async function excelMes(mes) {
     linha = tabela(ws, linha + 1, [{ titulo: 'Item', chave: 'nome' }, { titulo: 'Valor', chave: 'valor', moeda: true }],
       dados.map((d) => ({ nome: d.nome, valor: brl(d.valor) })), { totalCols: [2] }) + 1;
   };
-  bloco('Saídas por quem pagou (OnTrade x LT1 x outros)', p.saidas_por_pagador);
+  bloco('Saídas por quem pagou (OnTrade x LTON x outros)', p.saidas_por_pagador);
   bloco('Saídas por grupo', p.saidas_por_grupo);
   bloco('Saídas por categoria', p.saidas_por_categoria);
   ws.getCell(linha, 1).value = 'Saldo final por conta'; ws.getCell(linha, 1).font = { bold: true, size: 12 };
@@ -216,13 +216,13 @@ export async function excelMes(mes) {
   titulo(wm, 'Como o dinheiro circula', 'Referência permanente — acompanha todo relatório mensal', 2);
   const mapa = [
     ['COM NOTA → entra por', 'Banco Safra, Banco Infinity, Banco Bradesco, Banco do Brasil (contas da OnTrade)'],
-    ['SEM NOTA → entra por', 'DAE (direto ao fornecedor), PagVeloz, LT1 e Dinheiro'],
-    ['Cliente paga sem nota na LT1', 'A LT1 usa esse dinheiro para pagar a folha e despesas da OnTrade'],
-    ['Pago pela LT1', 'Pró-labore, salários, comissão, prestadores, cartões iFood, recarga de celular, luz, gás, água, combustível, tributos de funcionários, passagem/alimentação em dinheiro'],
+    ['SEM NOTA → entra por', 'DAE (direto ao fornecedor), PagVeloz, LTON e Dinheiro'],
+    ['Cliente paga sem nota na LTON', 'A LTON usa esse dinheiro para pagar a folha e despesas da OnTrade'],
+    ['Pago pela LTON', 'Pró-labore, salários, comissão, prestadores, cartões iFood, recarga de celular, luz, gás, água, combustível, tributos de funcionários, passagem/alimentação em dinheiro'],
     ['Pago pela OnTrade', 'Seu Dantas (conta ou dinheiro) e despesas operacionais'],
-    ['Registrados na LT1', 'Carla e João'],
+    ['Registrados na LTON', 'Carla e João'],
     ['Registrada em Japeri', 'Dona Kátia (salário na empresa de Japeri)'],
-    ['Dia 5 de cada mês', 'LT1 → conta pessoal da Dona Elisa: ~R$ 16.800 (empréstimo usado na OnTrade)'],
+    ['Dia 5 de cada mês', 'LTON → conta pessoal da Dona Elisa: ~R$ 16.800 (empréstimo usado na OnTrade)'],
   ];
   mapa.forEach(([k, v], i) => { wm.getCell(4 + i, 1).value = k; wm.getCell(4 + i, 1).font = { bold: true }; wm.getCell(4 + i, 2).value = v; wm.getCell(4 + i, 2).alignment = { wrapText: true, vertical: 'top' }; });
   larguras(wm, [34, 90]);
