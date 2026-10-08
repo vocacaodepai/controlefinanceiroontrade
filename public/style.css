@@ -51,9 +51,9 @@ button.mini{padding:3px 9px;font-size:12px}button:disabled{opacity:.5;cursor:not
 body.deslogado #menu{display:none}.login{max-width:380px;margin:12vh auto 0}.login>div{margin-bottom:12px}
 @media(max-width:820px){.usuario{position:static;display:flex;gap:8px;align-items:center;padding:6px}.usuario .mini{margin:0}}
 
-.logo-menu{display:block;width:100%;height:auto;margin:0 0 14px;background:#fff;border-radius:12px;padding:12px 14px 10px;box-sizing:border-box}
+.logo-menu{display:block;width:100%;height:auto;margin:0 0 14px;background:#fff;border:1px solid #d9e1ec;border-radius:14px;padding:12px 14px 10px;box-sizing:border-box;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .marca:has(.logo-menu) .marca-txt{display:none}
-.logo-login{display:block;width:220px;max-width:70%;height:auto;margin:4px auto 14px}
+.logo-login{display:block;box-sizing:border-box;width:250px;max-width:100%;height:auto;margin:0 auto 18px;background:#fff;border:1px solid #d9e1ec;border-radius:16px;padding:14px 20px 12px;box-shadow:0 2px 10px rgba(15,35,70,.12)}
 
 /* tela de login: centralizada na página inteira (horizontal e vertical) */
 body.deslogado{align-items:center;justify-content:center}
@@ -63,3 +63,9 @@ body.deslogado .login label{text-align:left}
 body.deslogado .login h1{margin-bottom:6px}
 
 @media(max-width:820px){.logo-menu{display:none}}
+
+/* menu lateral: o bloco do usuário fica no rodapé sem sobrepor os itens em telas baixas */
+#menu{display:flex;flex-direction:column;overflow-y:auto}
+#menu nav{flex:0 0 auto}
+.usuario{position:static;margin-top:auto;padding:14px 4px 4px}
+@media(max-width:820px){#menu{flex-direction:column;overflow:visible}.usuario{padding:6px}}
