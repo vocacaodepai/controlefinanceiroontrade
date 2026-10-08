@@ -2,7 +2,11 @@ import { query, one, tx } from './db.js';
 
 export const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 
-export const isData = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(s));
+export const isData = (s) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return false;
+  const d = new Date(s + 'T12:00:00Z');
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; // recusa 31/02 e similares
+};
 export const isMes = (s) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s || '');
 
 export function intervaloMes(mes) {

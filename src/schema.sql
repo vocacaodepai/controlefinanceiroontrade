@@ -137,3 +137,56 @@ ALTER TABLE recorrencia_lancada ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tentativas_login ENABLE ROW LEVEL SECURITY;
+
+-- ---------- Extratos bancários (importação com IA) ----------
+CREATE TABLE IF NOT EXISTS extratos (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  conta_id bigint NOT NULL REFERENCES contas(id),
+  arquivo_nome text NOT NULL,
+  formato text NOT NULL,
+  enviado_por text,
+  enviado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo'),
+  usou_ia integer NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_extr_conta ON extratos(conta_id);
+
+CREATE TABLE IF NOT EXISTS movimentos_importados (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  extrato_id bigint NOT NULL REFERENCES extratos(id) ON DELETE CASCADE,
+  conta_id bigint NOT NULL REFERENCES contas(id),
+  data date NOT NULL,
+  descricao text NOT NULL,
+  valor bigint NOT NULL CHECK (valor > 0),
+  tipo text NOT NULL CHECK (tipo IN ('entrada','saida')),
+  categoria_id bigint REFERENCES categorias(id),
+  pessoa_id bigint REFERENCES pessoas(id),
+  cliente text,
+  confianca text NOT NULL DEFAULT 'baixa' CHECK (confianca IN ('alta','media','baixa')),
+  motivo text,
+  status text NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','lancado','ignorado')),
+  lancamento_id bigint REFERENCES lancamentos(id) ON DELETE SET NULL,
+  hash text NOT NULL,
+  UNIQUE (conta_id, hash)
+);
+CREATE INDEX IF NOT EXISTS idx_mov_extrato ON movimentos_importados(extrato_id);
+CREATE INDEX IF NOT EXISTS idx_mov_categoria ON movimentos_importados(categoria_id);
+CREATE INDEX IF NOT EXISTS idx_mov_pessoa ON movimentos_importados(pessoa_id);
+CREATE INDEX IF NOT EXISTS idx_mov_lanc ON movimentos_importados(lancamento_id);
+
+-- O sistema aprende: cada vez que alguém confirma uma classificação, ela vira regra.
+CREATE TABLE IF NOT EXISTS regras_classificacao (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  termo text NOT NULL,
+  tipo text NOT NULL CHECK (tipo IN ('entrada','saida')),
+  categoria_id bigint REFERENCES categorias(id),
+  pessoa_id bigint REFERENCES pessoas(id),
+  usos integer NOT NULL DEFAULT 1,
+  atualizado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo'),
+  UNIQUE (termo, tipo)
+);
+CREATE INDEX IF NOT EXISTS idx_regra_categoria ON regras_classificacao(categoria_id);
+CREATE INDEX IF NOT EXISTS idx_regra_pessoa ON regras_classificacao(pessoa_id);
+
+ALTER TABLE extratos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE movimentos_importados ENABLE ROW LEVEL SECURITY;
+ALTER TABLE regras_classificacao ENABLE ROW LEVEL SECURITY;

@@ -1,5 +1,5 @@
 const $app = document.getElementById('app');
-const state = { meta: null, mes: null, dia: null, tipo: 'saida', usuario: null };
+const state = { meta: null, mes: null, dia: null, tipo: 'saida', usuario: null, extrato: null };
 const NIVEL = { leitor: 1, operador: 2, admin: 3 };
 const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura' };
 const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
@@ -52,6 +52,7 @@ function telaLogin(e) {
   document.body.classList.add('deslogado');
   const primeiro = e?.precisaCriarAdmin;
   $app.innerHTML = `<form class="card login" id="lg">
+    <img src="logo.png" alt="OnTrade" class="logo-login" onerror="this.remove()">
     <h1>Caixa OnTrade</h1>
     <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Dona Elisa ou responsável).' : 'Entre com seu e-mail e senha.'}</p>
     ${primeiro ? '<div><label>Nome</label><input name="nome" required autocomplete="name"></div>' : ''}
@@ -77,7 +78,7 @@ document.getElementById('sair').onclick = sair;
 document.getElementById('senha').onclick = trocarSenha;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, mensal, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, fluxo, cadastros, roadmap };
 async function rota() {
   if (!state.usuario) {
     let e;
@@ -96,7 +97,7 @@ async function rota() {
   }
   try { await (rotas[nome] || painel)(); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
 }
-addEventListener('hashchange', rota);
+addEventListener('hashchange', () => { if (location.hash !== '#extratos') state.extrato = null; rota(); });
 const recarregarMeta = async () => { state.meta = { ...(await api('/api/meta')), hoje: state.meta.hoje }; };
 
 function seletorMes(onChange) {
@@ -229,6 +230,94 @@ async function fechar() {
     $app.querySelectorAll('[data-conta]').forEach((i) => { if (i.value.trim()) contagens[i.dataset.conta] = paraCentavos(i.value); });
     acao(async () => { await api(`/api/dia/${state.dia}/fechar`, { method: 'POST', body: { contagens, obs: document.getElementById('obs').value } }); fechar(); }, 'Caixa fechado!');
   });
+}
+
+
+// ---------- EXTRATOS (IA) ----------
+const CONF = { alta: ['ok', 'alta'], media: ['aviso', 'média'], baixa: ['ruim', 'baixa'] };
+const lerBase64 = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
+
+async function extratos() {
+  if (state.extrato) return extratoDetalhe(state.extrato);
+  const { extratos: lista, ia } = await api('/api/extratos');
+  const contas = state.meta.contas.filter((c) => c.ativo);
+  $app.innerHTML = `
+    <h1>Extratos bancários</h1>
+    <p class="sub">Envie o extrato do banco. O sistema lê, separa dia a dia e <b>sugere</b> categoria e pessoa de cada linha com IA. Nada vira lançamento até alguém conferir e confirmar.</p>
+    ${ia ? '' : '<div class="aviso-box">A IA ainda não está configurada neste servidor: arquivos <b>OFX</b> e <b>CSV</b> funcionam (a classificação fica manual); <b>PDF e foto</b> precisam da IA.</div>'}
+    ${pode('operador') ? `<form class="card" id="up"><div class="form">
+      <div><label>De qual conta é o extrato?</label><select name="conta_id" required>${contas.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+      <div class="larg"><label>Arquivo (PDF, OFX, CSV ou foto — até 3 MB)</label><input type="file" name="arq" accept=".pdf,.ofx,.csv,.txt,.png,.jpg,.jpeg,.webp" required></div>
+      <div style="align-self:end"><button id="enviar">Enviar e analisar</button></div></div>
+      <p class="legenda">Dica: prefira <b>OFX</b> (exportação do internet banking) — é exato e não usa IA. PDFs e fotos são lidos pela IA e precisam de conferência. Os dados do arquivo são enviados ao serviço de IA da Anthropic para leitura.</p></form>` : ''}
+    <div class="card"><h2>Extratos enviados</h2>${lista.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Conta</th><th>Arquivo</th><th class="n">Linhas</th><th class="n">Pendentes</th><th class="n">Lançadas</th><th></th></tr></thead><tbody>
+      ${lista.map((e) => `<tr><td>${esc(e.enviado_em)}<br><small class="mut">${esc(e.enviado_por || '')}</small></td><td>${esc(e.conta)}</td><td>${esc(e.arquivo_nome)} <span class="tag ${e.formato === 'ofx' || e.formato === 'csv' ? 'ok' : 'aviso'}">${esc(e.formato)}</span></td><td class="n">${e.total}</td><td class="n">${e.pendentes}</td><td class="n">${e.lancados}</td><td class="n"><button class="mini" data-abrir="${e.id}">${e.pendentes ? 'Conferir' : 'Ver'}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum extrato enviado ainda.</p>'}</div>`;
+  $app.querySelectorAll('[data-abrir]').forEach((b) => (b.onclick = () => { state.extrato = +b.dataset.abrir; extratos(); }));
+  document.getElementById('up')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target, file = f.arq.files[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) return toast('Arquivo maior que 3 MB. Divida o extrato por período.', true);
+    const btn = document.getElementById('enviar'); btn.disabled = true; btn.textContent = 'Analisando… (pode levar um minuto)';
+    try {
+      const r = await api('/api/extratos', { method: 'POST', body: { conta_id: f.conta_id.value, nome: file.name, base64: await lerBase64(file) } });
+      toast(`${r.novos} linha(s) lida(s)${r.duplicados ? `, ${r.duplicados} já importada(s) antes` : ''}.${r.observacao ? ' Aviso: ' + r.observacao : ''}`);
+      state.extrato = r.id; extratos();
+    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Enviar e analisar'; }
+  });
+}
+
+async function extratoDetalhe(id) {
+  const e = await api(`/api/extratos/${id}`);
+  const { categorias, pessoas } = state.meta;
+  const podeEditar = pode('operador');
+  const pend = e.movimentos.filter((m) => m.status === 'pendente');
+  const optsCat = (m) => `<option value="">— escolher —</option>` + categorias.filter((c) => c.tipo === m.tipo && c.ativo).map((c) => `<option value="${c.id}" ${c.id === m.categoria_id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('');
+  const soma = (t) => e.movimentos.filter((m) => m.tipo === t).reduce((a, m) => a + m.valor, 0);
+  $app.innerHTML = `
+    <p><a href="#extratos" id="voltar">← Todos os extratos</a></p>
+    <h1>${esc(e.arquivo_nome)}</h1>
+    <p class="sub">${esc(e.conta)} · enviado ${esc(e.enviado_em)} por ${esc(e.enviado_por || '—')} · entradas <b class="pos">${brl(soma('entrada'))}</b> · saídas <b class="neg">${brl(soma('saida'))}</b></p>
+    <div class="aviso-box">Confira antes de confirmar: a IA sugere, <b>você decide</b>. Transferências entre contas próprias não são receita nem despesa — marque como "ignorar". Cada confirmação ensina o sistema para os próximos extratos.</div>
+    ${podeEditar && pend.length ? `<div class="row"><button id="lancar-sel">Lançar selecionados</button><button class="sec" id="sel-alta">Selecionar confiança alta</button><button class="sec" id="sel-todos">Selecionar todos com categoria</button><span class="legenda" id="cont"></span></div>` : ''}
+    <div class="card tbl"><table><thead><tr><th></th><th>Data</th><th>Descrição</th><th class="n">Valor</th><th>Categoria</th><th>Pessoa</th><th>Conf.</th><th></th></tr></thead><tbody>
+    ${e.movimentos.map((m) => {
+      const aberto = m.status === 'pendente' && podeEditar;
+      return `<tr data-m="${m.id}" style="${m.status === 'ignorado' ? 'opacity:.45' : ''}">
+        <td>${m.status === 'pendente' && podeEditar ? `<input type="checkbox" data-sel="${m.id}" style="width:auto">` : m.status === 'lancado' ? '✅' : ''}</td>
+        <td>${dataBR(m.data)}</td><td>${esc(m.descricao)}${m.motivo ? `<br><small class="mut">${esc(m.motivo)}</small>` : ''}</td>
+        <td class="n ${m.tipo === 'entrada' ? 'pos' : 'neg'}">${m.tipo === 'entrada' ? '+' : '−'} ${brl(m.valor)}</td>
+        <td>${aberto ? `<select data-cat="${m.id}">${optsCat(m)}</select>` : esc(m.categoria || '—')}</td>
+        <td>${aberto ? `<select data-pes="${m.id}"><option value="">—</option>${pessoas.filter((p) => p.ativo).map((p) => `<option value="${p.id}" ${p.id === m.pessoa_id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select>` : esc(m.pessoa || '')}</td>
+        <td>${m.status === 'pendente' ? `<span class="tag ${CONF[m.confianca][0]}" data-conf="${m.id}">${CONF[m.confianca][1]}</span>` : `<span class="mut">${m.status}</span>`}</td>
+        <td class="n">${aberto ? `<button class="mini sec" data-ign="${m.id}">ignorar</button>` : m.status === 'ignorado' && podeEditar ? `<button class="mini sec" data-rest="${m.id}">restaurar</button>` : ''}</td></tr>`;
+    }).join('')}</tbody></table></div>
+    ${pode('admin') && !e.movimentos.some((m) => m.status === 'lancado') ? '<button class="perigo" id="excluir">Excluir este extrato</button>' : ''}`;
+  document.getElementById('voltar').onclick = (ev) => { ev.preventDefault(); state.extrato = null; extratos(); };
+  const recarrega = () => extratoDetalhe(id);
+  const salvar = (mid, body) => acao(() => api(`/api/movimentos/${mid}`, { method: 'PUT', body }), null);
+  $app.querySelectorAll('[data-cat]').forEach((s) => (s.onchange = async () => { await salvar(s.dataset.cat, { categoria_id: s.value || null }); const t = $app.querySelector(`[data-conf="${s.dataset.cat}"]`); if (t && s.value) { t.className = 'tag ok'; t.textContent = 'alta'; } }));
+  $app.querySelectorAll('[data-pes]').forEach((s) => (s.onchange = () => salvar(s.dataset.pes, { pessoa_id: s.value || null })));
+  $app.querySelectorAll('[data-ign]').forEach((b) => (b.onclick = async () => { await salvar(b.dataset.ign, { status: 'ignorado' }); recarrega(); }));
+  $app.querySelectorAll('[data-rest]').forEach((b) => (b.onclick = async () => { await salvar(b.dataset.rest, { status: 'pendente' }); recarrega(); }));
+  const marcados = () => [...$app.querySelectorAll('[data-sel]:checked')].map((c) => +c.dataset.sel);
+  const cont = () => { const c = document.getElementById('cont'); if (c) c.textContent = `${marcados().length} selecionado(s)`; };
+  $app.querySelectorAll('[data-sel]').forEach((c) => (c.onchange = cont));
+  const marcar = (fn) => { $app.querySelectorAll('[data-sel]').forEach((c) => { const m = e.movimentos.find((x) => x.id === +c.dataset.sel); const sel = $app.querySelector(`[data-cat="${m.id}"]`); c.checked = fn(m) && !!sel?.value; }); cont(); };
+  document.getElementById('sel-alta')?.addEventListener('click', () => marcar((m) => m.confianca === 'alta'));
+  document.getElementById('sel-todos')?.addEventListener('click', () => marcar(() => true));
+  document.getElementById('lancar-sel')?.addEventListener('click', () => {
+    const ids = marcados();
+    if (!ids.length) return toast('Selecione ao menos uma linha.', true);
+    if (!confirm(`Lançar ${ids.length} movimento(s) no caixa, nas datas do extrato?`)) return;
+    acao(async () => {
+      const r = await api(`/api/extratos/${id}/lancar`, { method: 'POST', body: { ids } });
+      toast(`${r.lancados} lançamento(s) criado(s).${r.falhas.length ? ' ' + r.falhas.length + ' não lançado(s): ' + r.falhas.map((f) => f.motivo).filter((v, i, a) => a.indexOf(v) === i).join(' ') : ''}`, r.falhas.length > 0);
+      await recarrega();
+    });
+  });
+  document.getElementById('excluir')?.addEventListener('click', () => confirm('Excluir este extrato e suas linhas pendentes?') && acao(async () => { await api(`/api/extratos/${id}`, { method: 'DELETE' }); state.extrato = null; await extratos(); }, 'Extrato excluído'));
+  cont();
 }
 
 // ---------- MENSAL ----------

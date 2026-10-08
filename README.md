@@ -28,7 +28,22 @@ Requer Node ≥ 22. Sem configuração o sistema usa um Postgres embutido (PGlit
 2. **Vercel → Settings → Environment Variables** (Production e Preview):
    - `DATABASE_URL` — string de conexão **Transaction pooler** do Supabase (Project Settings → Database). Contém a senha do banco: cole só no painel da Vercel, nunca no chat nem no código.
    - `SETUP_TOKEN` — código secreto exigido para criar o primeiro administrador.
+   - `ANTHROPIC_API_KEY` — chave da API da Anthropic (extratos em PDF/foto e sugestões da IA).
 3. Faça um novo deploy (Deployments → Redeploy) e abra o site para criar o administrador.
+
+## Extratos bancários com IA
+
+Tela **Extratos (IA)**: envie o extrato de uma conta e o sistema separa os lançamentos dia a dia e sugere categoria, pessoa e cliente. **Nada vira lançamento sem conferência**: a pessoa revisa, corrige e clica em "Lançar selecionados" (entram nas datas do extrato, na conta escolhida; dia já fechado é recusado).
+
+| Formato | Como é lido |
+|---|---|
+| OFX, CSV | Direto, sem IA (exato) |
+| PDF, foto (PNG/JPG/WebP) | IA (Claude) — precisa de `ANTHROPIC_API_KEY` |
+
+- A classificação usa primeiro **regras aprendidas** (cada confirmação vira uma regra para os próximos extratos) e depois a IA. Sem `ANTHROPIC_API_KEY` o sistema funciona, com classificação manual.
+- Reenviar o mesmo extrato não duplica linhas. Limite de 3 MB por arquivo (divida por período).
+- Variáveis: `ANTHROPIC_API_KEY` (obrigatória para PDF/foto e sugestões) e `ANTHROPIC_MODEL` (padrão `claude-opus-5-5`; um modelo menor reduz custo e tempo).
+- Privacidade: o conteúdo dos extratos enviados à IA vai para o serviço da Anthropic.
 
 ## Login e perfis
 
@@ -62,6 +77,7 @@ src/db.js        conexão (Supabase/pg ou PGlite local)
 src/seed.js      contas, categorias, pessoas e recorrência iniciais
 src/services.js  regras de negócio (saldos, fechamento, painel)
 src/export.js    geração dos Excel (exceljs)
+src/extratos.js  importação de extratos (OFX/CSV/PDF/foto), IA e regras aprendidas
 src/app.js       API REST (Express)
 src/server.js    inicia o servidor local
 api/index.js     entrada da Vercel
@@ -75,3 +91,7 @@ test/            testes das regras
 - O DAE gera saldo para a OnTrade ou é só canal de pagamento ao fornecedor?
 - PagVeloz é conta da OnTrade ou da LT1?
 - Seu Dantas, Fátima, Tayane, Fabiano, Douglas e Andresa: quais são registrados?
+
+## Logo
+
+Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e como ícone da aba. Sem o arquivo, o site mostra o nome em texto.
