@@ -54,7 +54,7 @@ function telaLogin(e) {
   $app.innerHTML = `<form class="card login" id="lg">
     <img src="logo.png" alt="OnTrade" class="logo-login" onerror="this.remove()">
     <h1>Caixa OnTrade</h1>
-    <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Dona Elisa ou responsável).' : 'Entre com seu e-mail e senha.'}</p>
+    <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Elisa Maria ou responsável).' : 'Entre com seu e-mail e senha.'}</p>
     ${primeiro ? '<div><label>Nome</label><input name="nome" required autocomplete="name"></div>' : ''}
     <div><label>E-mail</label><input name="email" type="email" required autocomplete="username"></div>
     <div><label>Senha${primeiro ? ' (mínimo 8 caracteres)' : ''}</label><input name="senha" type="password" required minlength="${primeiro ? 8 : 1}" autocomplete="${primeiro ? 'new-password' : 'current-password'}"></div>
@@ -324,7 +324,7 @@ async function extratoDetalhe(id) {
 async function mensal() {
   const p = await api(`/api/painel/${state.mes}`);
   $app.innerHTML = `
-    <h1>Controle mensal</h1><p class="sub">A Dona Elisa clica em <b>Emitir</b> e recebe a planilha completa do mês.</p>
+    <h1>Controle mensal</h1><p class="sub">A Elisa Maria clica em <b>Emitir</b> e recebe a planilha completa do mês.</p>
     <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">⬇ Emitir controle mensal — ${nomeMes(state.mes)}</a></div>
     <div class="card"><h2>O que vai na planilha</h2>
       <ul><li><b>Resumo</b> — entradas com/sem nota, saídas por pagador (OnTrade × LTON), por grupo e por categoria, saldo final por conta</li>
@@ -348,17 +348,17 @@ function fluxo() {
     <div class="card"><div class="fluxo">
       <div class="col-fluxo">
         <div class="no com"><h3>🧾 Cliente paga COM nota</h3>${lista(['Banco Safra', 'Banco Infinity', 'Banco Bradesco', 'Banco do Brasil'])}</div>
-        <div class="no sem"><h3>💵 Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LTON (empresa da Dona Elisa)', 'Dinheiro'])}</div>
+        <div class="no sem"><h3>💵 Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LTON (empresa da Elisa Maria)', 'Dinheiro'])}</div>
       </div>
       <div class="seta">➜</div>
       <div class="col-fluxo">
-        <div class="no ont"><h3>🏢 OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Seu Dantas (conta ou dinheiro) ⚠ checar registro'])}</div>
+        <div class="no ont"><h3>🏢 OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Dantas (conta ou dinheiro) ⚠ checar registro'])}</div>
         <div class="no lt1"><h3>🏦 LTON paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
       </div>
       <div class="seta">➜</div>
       <div class="col-fluxo">
-        <div class="no"><h3>👤 Dona Elisa</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LTON para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
-        <div class="no"><h3>📌 Registros</h3>${lista(['Carla e João → registrados na LTON', 'Dona Kátia → registrada na empresa de Japeri', 'Seu Dantas → a confirmar'])}</div>
+        <div class="no"><h3>👤 Elisa Maria</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LTON para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
+        <div class="no"><h3>📌 Registros</h3>${lista(['Carla e João → registrados na LTON', 'Dona Kátia → registrada na empresa de Japeri', 'Dantas → a confirmar'])}</div>
       </div>
     </div>
     <p class="legenda" style="margin-top:12px"><span class="tag com_nota">com nota</span> entra pelos bancos da OnTrade &nbsp; <span class="tag sem_nota">sem nota</span> entra por DAE, PagVeloz, LTON e dinheiro. No sistema cada conta pertence a uma empresa e tem a modalidade — assim o relatório separa automaticamente “quem pagou” e “com/sem nota”.</p></div>`;
@@ -436,9 +436,9 @@ function roadmap() {
       ${item('Quem pagou', 'OnTrade × LTON × outros em todos os relatórios')}
       ${item('Fechamento diário', 'saldo do sistema × contado, com trava do dia')}
       ${item('Excel diário e mensal', 'com fórmulas, abre direto no Google Sheets')}
-      ${item('Recorrências', 'empréstimo da Dona Elisa (~R$ 16.800 dia 5) pronto para lançar')}</ul></div>
+      ${item('Recorrências', 'empréstimo da Elisa Maria (~R$ 16.800 dia 5) pronto para lançar')}</ul></div>
     <div class="card"><h2>🚀 Próximos passos sugeridos</h2><ul>
-      ${item('Login e perfis', 'Dona Elisa (tudo), operador (só lançar), contador (só leitura)')}
+      ${item('Login e perfis', 'Elisa Maria (tudo), operador (só lançar), contador (só leitura)')}
       ${item('Google Drive automático', 'o botão “Emitir” já salvar o Google Sheets na pasta do Drive')}
       ${item('Folha por pessoa', 'valor mensal de cada salário, iFood, passagem e alimentação como recorrências')}
       ${item('Conciliação bancária', 'importar OFX/CSV de Safra, Bradesco, BB e Infinity e casar com os lançamentos')}
@@ -448,7 +448,7 @@ function roadmap() {
       ${item('Previsão de caixa', 'projetar 30/60/90 dias com folha + empréstimo + recorrências')}
       ${item('Controle do empréstimo', 'saldo devedor, parcelas pagas e restantes')}
       ${item('Metas e alertas', 'ex.: “LTON com saldo menor que a folha + empréstimo do mês”')}
-      ${item('Regularização de vínculos', 'lista de quem está ou não registrado (Seu Dantas, Fátima, Tayane…)')}
+      ${item('Regularização de vínculos', 'lista de quem está ou não registrado (Dantas, Fátima, Tayane…)')}
       ${item('Backup automático', 'cópia diária do banco no Drive')}</ul></div>
     <div class="card"><h2>❓ Perguntas em aberto</h2><ul>
       <li>Kátia e Dona Kátia são a mesma pessoa?</li><li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>

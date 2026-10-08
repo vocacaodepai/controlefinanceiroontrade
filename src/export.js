@@ -219,10 +219,10 @@ export async function excelMes(mes) {
     ['SEM NOTA → entra por', 'DAE (direto ao fornecedor), PagVeloz, LTON e Dinheiro'],
     ['Cliente paga sem nota na LTON', 'A LTON usa esse dinheiro para pagar a folha e despesas da OnTrade'],
     ['Pago pela LTON', 'Pró-labore, salários, comissão, prestadores, cartões iFood, recarga de celular, luz, gás, água, combustível, tributos de funcionários, passagem/alimentação em dinheiro'],
-    ['Pago pela OnTrade', 'Seu Dantas (conta ou dinheiro) e despesas operacionais'],
+    ['Pago pela OnTrade', 'Dantas (conta ou dinheiro) e despesas operacionais'],
     ['Registrados na LTON', 'Carla e João'],
     ['Registrada em Japeri', 'Dona Kátia (salário na empresa de Japeri)'],
-    ['Dia 5 de cada mês', 'LTON → conta pessoal da Dona Elisa: ~R$ 16.800 (empréstimo usado na OnTrade)'],
+    ['Dia 5 de cada mês', 'LTON → conta pessoal da Elisa Maria: ~R$ 16.800 (empréstimo usado na OnTrade)'],
   ];
   mapa.forEach(([k, v], i) => { wm.getCell(4 + i, 1).value = k; wm.getCell(4 + i, 1).font = { bold: true }; wm.getCell(4 + i, 2).value = v; wm.getCell(4 + i, 2).alignment = { wrapText: true, vertical: 'top' }; });
   larguras(wm, [34, 90]);

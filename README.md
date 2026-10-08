@@ -7,7 +7,7 @@ Esqueleto de um sistema (estilo SaaS) para o **caixa diário e mensal** da OnTra
 - **Fechamento de caixa diário** (saldo do sistema × contado) com trava do dia
 - **Excel diário e mensal** (abre direto no Google Sheets) — botão “Emitir controle mensal”
 - Painel com saldos, entradas/saídas por dia, por grupo e por categoria
-- Recorrências (já vem o empréstimo da Dona Elisa: ~R$ 16.800 todo dia 5)
+- Recorrências (já vem o empréstimo da Elisa Maria: ~R$ 16.800 todo dia 5)
 - Mapa visual do fluxo do dinheiro e roadmap de sugestões dentro do app
 
 ## Rodar
@@ -51,7 +51,7 @@ No primeiro acesso o sistema pede para criar o **administrador**; depois disso e
 
 | Perfil | Pode |
 |---|---|
-| Administrador (Dona Elisa) | Tudo: cadastros, usuários, editar lançamento, reabrir dia |
+| Administrador (Elisa Maria) | Tudo: cadastros, usuários, editar lançamento, reabrir dia |
 | Operador | Lançar, excluir lançamento, fechar o dia, lançar recorrências |
 | Somente leitura (contador) | Consultar painel/relatórios e baixar Excel |
 
@@ -65,7 +65,7 @@ Segurança: senhas com scrypt, sessão em cookie HttpOnly/SameSite (Secure atrá
 | Sem nota | `DAE`, `PagVeloz`, `LTON`, `Dinheiro (caixa físico)` |
 | Quem pagou | Empresa dona da conta usada na saída (ex.: saída da conta LTON = “paga pela LTON”) |
 | Folha | Pessoas + categorias (Salário, Pró-labore, Comissão, Cartão iFood, Passagem…) |
-| Empréstimo | Recorrência dia 5, saída da LTON, categoria “Empréstimo Dona Elisa” |
+| Empréstimo | Recorrência dia 5, saída da LTON, categoria “Empréstimo Elisa Maria” |
 
 Valores são guardados em centavos (bigint). Salários, iFood etc. **não** vêm preenchidos — entram aos poucos como lançamentos/recorrências.
 
@@ -90,7 +90,7 @@ test/            testes das regras
 - Kátia e Dona Kátia são a mesma pessoa? (hoje está como uma só, vínculo Japeri)
 - O DAE gera saldo para a OnTrade ou é só canal de pagamento ao fornecedor?
 - PagVeloz é conta da OnTrade ou da LTON?
-- Seu Dantas, Fátima, Tayane, Fabiano, Douglas e Andresa: quais são registrados?
+- Dantas, Fátima, Tayane, Fabiano, Douglas e Andresa: quais são registrados?
 
 ## Logo
 
