@@ -27,19 +27,19 @@ const L = async (d, tipo, valor, conta, categoria, extra = {}) => {
 
 await L(1, 'entrada', 8500, 'Banco Safra', 'Recebimento de cliente', { cliente: 'Cliente A (demo)' });
 await L(1, 'entrada', 4200, 'Banco Bradesco', 'Recebimento de cliente', { cliente: 'Cliente B (demo)' });
-await L(2, 'entrada', 6000, 'LT1', 'Recebimento de cliente', { cliente: 'Cliente C (demo)', descricao: 'Pagou sem nota' });
+await L(2, 'entrada', 6000, 'LTON', 'Recebimento de cliente', { cliente: 'Cliente C (demo)', descricao: 'Pagou sem nota' });
 await L(2, 'entrada', 3000, 'PagVeloz', 'Recebimento de cliente', { cliente: 'Cliente D (demo)' });
 await L(3, 'entrada', 1800, 'Dinheiro (caixa físico)', 'Recebimento de cliente', { cliente: 'Cliente E (demo)' });
 await L(3, 'saida', 15, 'Banco Bradesco', 'Papelaria', { descricao: 'Papelaria (exemplo do Renato)' });
 await L(4, 'saida', 15, 'Banco Infinity', 'Estacionamento');
-await L(5, 'saida', 16800, 'LT1', 'Empréstimo Dona Elisa', { pessoa: 'Dona Elisa', descricao: 'Parcela do empréstimo (demo)' });
-await L(5, 'saida', 250, 'LT1', 'Recarga de celular', { descricao: 'Recargas (demo)' });
-await L(6, 'saida', 400, 'LT1', 'Combustível');
+await L(5, 'saida', 16800, 'LTON', 'Empréstimo Dona Elisa', { pessoa: 'Dona Elisa', descricao: 'Parcela do empréstimo (demo)' });
+await L(5, 'saida', 250, 'LTON', 'Recarga de celular', { descricao: 'Recargas (demo)' });
+await L(6, 'saida', 400, 'LTON', 'Combustível');
 await L(6, 'saida', 120, 'Dinheiro (caixa físico)', 'Passagem', { pessoa: 'Kátia' });
 await L(7, 'saida', 80, 'Dinheiro (caixa físico)', 'Alimentação', { pessoa: 'Kátia' });
 await L(7, 'entrada', 5000, 'DAE (direto ao fornecedor)', 'Recebimento de cliente', { cliente: 'Cliente F (demo)' });
-await L(8, 'saida', 600, 'LT1', 'Cartão iFood', { pessoa: 'João' });
-await L(8, 'saida', 600, 'LT1', 'Cartão iFood', { pessoa: 'Carla' });
-await L(8, 'saida', 310, 'LT1', 'Luz');
+await L(8, 'saida', 600, 'LTON', 'Cartão iFood', { pessoa: 'João' });
+await L(8, 'saida', 600, 'LTON', 'Cartão iFood', { pessoa: 'Carla' });
+await L(8, 'saida', 310, 'LTON', 'Luz');
 console.log(`Dados fictícios criados em ${mes}.`);
 process.exit(0);

@@ -192,7 +192,7 @@ async function classificarComIA(linhas, ctx) {
         model: MODELO(),
         max_tokens: 16000,
         output_config: { effort: 'low', format: zodOutputFormat(SchemaClass) },
-        system: `Você classifica lançamentos de extrato para o controle financeiro da OnTrade (importação/exportação) e da LT1, empresa da Dona Elisa que recebe pagamentos de clientes SEM nota e paga folha e despesas da OnTrade.
+        system: `Você classifica lançamentos de extrato para o controle financeiro da OnTrade (importação/exportação) e da LTON, empresa da Dona Elisa que recebe pagamentos de clientes SEM nota e paga folha e despesas da OnTrade.
 Categorias de ENTRADA: ${cats('entrada')}.
 Categorias de SAÍDA: ${cats('saida')}.
 Pessoas cadastradas (nome — função, vínculo): ${ctx.pessoas.filter((p) => p.ativo).map((p) => `${p.nome} — ${p.funcao || ''}, ${p.vinculo}`).join('; ')}.

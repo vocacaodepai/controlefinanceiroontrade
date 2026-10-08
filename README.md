@@ -1,9 +1,9 @@
-# Controle Financeiro OnTrade / LT1
+# Controle Financeiro OnTrade / LTON
 
-Esqueleto de um sistema (estilo SaaS) para o **caixa diário e mensal** da OnTrade e da LT1.
+Esqueleto de um sistema (estilo SaaS) para o **caixa diário e mensal** da OnTrade e da LTON.
 
 - Lançamentos diários de **entrada, saída e transferência**, por conta, categoria e pessoa
-- Separação automática **com nota × sem nota** e **quem pagou** (OnTrade × LT1)
+- Separação automática **com nota × sem nota** e **quem pagou** (OnTrade × LTON)
 - **Fechamento de caixa diário** (saldo do sistema × contado) com trava do dia
 - **Excel diário e mensal** (abre direto no Google Sheets) — botão “Emitir controle mensal”
 - Painel com saldos, entradas/saídas por dia, por grupo e por categoria
@@ -62,10 +62,10 @@ Segurança: senhas com scrypt, sessão em cookie HttpOnly/SameSite (Secure atrá
 | Conceito | No sistema |
 |---|---|
 | Com nota | Contas `Banco Safra`, `Infinity`, `Bradesco`, `Banco do Brasil` (empresa OnTrade) |
-| Sem nota | `DAE`, `PagVeloz`, `LT1`, `Dinheiro (caixa físico)` |
-| Quem pagou | Empresa dona da conta usada na saída (ex.: saída da conta LT1 = “paga pela LT1”) |
+| Sem nota | `DAE`, `PagVeloz`, `LTON`, `Dinheiro (caixa físico)` |
+| Quem pagou | Empresa dona da conta usada na saída (ex.: saída da conta LTON = “paga pela LTON”) |
 | Folha | Pessoas + categorias (Salário, Pró-labore, Comissão, Cartão iFood, Passagem…) |
-| Empréstimo | Recorrência dia 5, saída da LT1, categoria “Empréstimo Dona Elisa” |
+| Empréstimo | Recorrência dia 5, saída da LTON, categoria “Empréstimo Dona Elisa” |
 
 Valores são guardados em centavos (bigint). Salários, iFood etc. **não** vêm preenchidos — entram aos poucos como lançamentos/recorrências.
 
@@ -89,7 +89,7 @@ test/            testes das regras
 
 - Kátia e Dona Kátia são a mesma pessoa? (hoje está como uma só, vínculo Japeri)
 - O DAE gera saldo para a OnTrade ou é só canal de pagamento ao fornecedor?
-- PagVeloz é conta da OnTrade ou da LT1?
+- PagVeloz é conta da OnTrade ou da LTON?
 - Seu Dantas, Fátima, Tayane, Fabiano, Douglas e Andresa: quais são registrados?
 
 ## Logo

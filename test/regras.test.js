@@ -27,27 +27,27 @@ test('saldo = inicial + entradas − saídas ± transferências', async () => {
   await S.salvarCadastro('contas', conta('Banco Safra'), { saldo_inicial: 100000 });
   await S.criarLancamento({ data: '2026-03-01', tipo: 'entrada', valor: 50000, conta_id: conta('Banco Safra'), categoria_id: cat('Recebimento de cliente') });
   await S.criarLancamento({ data: '2026-03-02', tipo: 'saida', valor: 1500, conta_id: conta('Banco Safra'), categoria_id: cat('Papelaria') });
-  await S.criarLancamento({ data: '2026-03-02', tipo: 'transferencia', valor: 20000, conta_id: conta('Banco Safra'), conta_destino_id: conta('LT1') });
+  await S.criarLancamento({ data: '2026-03-02', tipo: 'transferencia', valor: 20000, conta_id: conta('Banco Safra'), conta_destino_id: conta('LTON') });
   assert.equal(await saldo('Banco Safra', '2026-03-01'), 150000);
   assert.equal(await saldo('Banco Safra', '2026-03-02'), 128500);
-  assert.equal(await saldo('LT1', '2026-03-02'), 20000);
+  assert.equal(await saldo('LTON', '2026-03-02'), 20000);
 });
 
 test('painel separa com/sem nota e quem pagou; transferência não conta como receita/despesa', async () => {
-  await S.criarLancamento({ data: '2026-03-03', tipo: 'entrada', valor: 30000, conta_id: conta('LT1'), categoria_id: cat('Recebimento de cliente') });
-  await S.criarLancamento({ data: '2026-03-03', tipo: 'saida', valor: 10000, conta_id: conta('LT1'), categoria_id: cat('Salário') });
+  await S.criarLancamento({ data: '2026-03-03', tipo: 'entrada', valor: 30000, conta_id: conta('LTON'), categoria_id: cat('Recebimento de cliente') });
+  await S.criarLancamento({ data: '2026-03-03', tipo: 'saida', valor: 10000, conta_id: conta('LTON'), categoria_id: cat('Salário') });
   const p = await S.painelMes('2026-03');
   assert.equal(p.entradas_com_nota, 50000);
   assert.equal(p.entradas_sem_nota, 30000);
   assert.equal(p.saidas, 11500);
-  assert.deepEqual(p.saidas_por_pagador.map((x) => x.nome).sort(), ['LT1', 'OnTrade']);
+  assert.deepEqual(p.saidas_por_pagador.map((x) => x.nome).sort(), ['LTON', 'OnTrade']);
 });
 
 test('fechamento: exige ordem, trava edição e permite reabrir', async () => {
   await assert.rejects(S.fecharDia('2026-03-02'), /Feche primeiro o dia 2026-03-01/);
   await S.fecharDia('2026-03-01');
   await S.fecharDia('2026-03-02', { contagens: { [conta('Banco Safra')]: 128000 } });
-  await assert.rejects(S.criarLancamento({ data: '2026-03-02', tipo: 'saida', valor: 100, conta_id: conta('LT1'), categoria_id: cat('Luz') }), /fechado/);
+  await assert.rejects(S.criarLancamento({ data: '2026-03-02', tipo: 'saida', valor: 100, conta_id: conta('LTON'), categoria_id: cat('Luz') }), /fechado/);
   await assert.rejects(S.reabrirDia('2026-03-01'), /Reabra primeiro/);
   await assert.rejects(S.fecharDia('2026-03-02'), /já está fechado/);
   const d = await S.resumoDia('2026-03-02');

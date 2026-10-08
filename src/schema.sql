@@ -1,4 +1,4 @@
--- Esquema do Controle Financeiro OnTrade/LT1 (PostgreSQL).
+-- Esquema do Controle Financeiro OnTrade/LTON (PostgreSQL).
 -- Valores monetários em centavos (bigint). Horários em America/Sao_Paulo.
 -- RLS ligado e SEM políticas: a API pública do Supabase (anon/authenticated) não enxerga nada;
 -- apenas o servidor, conectando direto ao Postgres, acessa os dados.
