@@ -1,5 +1,16 @@
 const $app = document.getElementById('app');
 const state = { meta: null, mes: null, dia: null, tipo: 'saida', usuario: null, extrato: null };
+// Ícones de linha (herdam a cor do texto). Sem emojis: visual mais limpo.
+const ICONES = {
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  'arrow-right': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+};
+const ico = (n) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[n]}</svg>`;
 const NIVEL = { leitor: 1, operador: 2, admin: 3 };
 const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura' };
 const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
@@ -11,7 +22,7 @@ const dataBR = (d) => d.split('-').reverse().join('/');
 const cls = (c) => (c < 0 ? 'neg' : c > 0 ? 'pos' : 'mut');
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const nomeMes = (m) => `${MESES[+m.slice(5) - 1]} de ${m.slice(0, 4)}`;
-const VINCULOS = { lt1: 'Registrado na LTON', ontrade: 'Registrado na OnTrade', japeri: 'Registrado em Japeri', informal: 'Sem registro', socio: 'Sócio(a)', a_verificar: '⚠ A verificar' };
+const VINCULOS = { lt1: 'Registrado na LTON', ontrade: 'Registrado na OnTrade', japeri: 'Registrado em Japeri', informal: 'Sem registro', socio: 'Sócio(a)', a_verificar: 'A verificar' };
 const TIPOS_CONTA = { banco: 'Banco', dinheiro: 'Dinheiro', intermediaria: 'Intermediária' };
 
 // "1.234,56" -> 123456 centavos
@@ -116,17 +127,17 @@ function cartaoSaldos(p) {
   const total = (k) => d.contas.reduce((a, c) => a + (c[k] ?? 0), 0);
   return `<div class="card" id="cartao-saldos">
     <div class="titulo-saldos"><h2>${d.ao_vivo ? 'Saldo por conta — agora' : `Saldo por conta — fim de ${dataBR(d.data)}`}</h2>
-      <button class="mini sec" id="atualizar-saldos" title="Atualizar saldos">↻ Atualizar</button></div>
+      <button class="mini sec" id="atualizar-saldos" title="Atualizar saldos">${ico('refresh')} Atualizar</button></div>
     <p class="legenda aviso-vivo">${d.ao_vivo
-      ? `<b>Valores atualizados às ${hora}.</b> Cada lançamento do caixa já entra aqui; clique em <b>↻ Atualizar</b> para ver o saldo real neste instante.`
+      ? `<b>Valores atualizados às ${hora}.</b> Cada lançamento do caixa já entra aqui; clique em <b>Atualizar</b> para ver o saldo real neste instante.`
       : `Saldo ao final de ${dataBR(d.data)}. Consultado às ${hora}.`}</p>
     <div class="tbl"><table>
       <thead><tr><th>Conta</th><th></th>${d.ao_vivo ? '<th class="n">Movimento de hoje</th>' : ''}<th class="n">${d.ao_vivo ? 'Saldo atual' : 'Saldo'}</th>${fechado ? `<th class="n">Fechado ${dataBR(fechado.data).slice(0, 5)}</th>` : ''}</tr></thead>
       <tbody>${d.contas.map((c) => `<tr><td>${esc(c.nome)}</td><td><span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
         ${d.ao_vivo ? `<td class="n ${cls(c.movimento)}">${c.movimento ? (c.movimento > 0 ? '+ ' : '− ') + brl(Math.abs(c.movimento)) : '—'}</td>` : ''}
-        <td class="n ${cls(c.saldo)}"><b>${brl(c.saldo)}</b></td>${fechado ? `<td class="n">${brl(c.saldo_fechado)}</td>` : ''}</tr>`).join('')}</tbody>
+        <td class="n ${c.saldo < 0 ? 'neg' : ''}"><b>${brl(c.saldo)}</b></td>${fechado ? `<td class="n">${brl(c.saldo_fechado)}</td>` : ''}</tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="2">Total</td>${d.ao_vivo ? `<td class="n ${cls(total('movimento'))}">${total('movimento') ? (total('movimento') > 0 ? '+ ' : '− ') + brl(Math.abs(total('movimento'))) : '—'}</td>` : ''}<td class="n">${brl(total('saldo'))}</td>${fechado ? `<td class="n">${brl(total('saldo_fechado'))}</td>` : ''}</tr></tfoot></table></div>
-    ${fechado ? `<p class="aviso-fechado">🔒 <b>Saldo fechado do dia ${dataBR(fechado.data)}</b> — caixa fechado às ${esc((fechado.fechado_em || '').slice(11, 16))}${fechado.fechado_por ? ' por ' + esc(fechado.fechado_por) : ''}. A coluna "Fechado" é o saldo oficial.</p>` : ''}
+    ${fechado ? `<p class="aviso-fechado">${ico('lock')}<span><b>Saldo fechado do dia ${dataBR(fechado.data)}</b> — caixa fechado às ${esc((fechado.fechado_em || '').slice(11, 16))}${fechado.fechado_por ? ' por ' + esc(fechado.fechado_por) : ''}. A coluna "Fechado" é o saldo oficial.</span></p>` : ''}
   </div>`;
 }
 
@@ -137,8 +148,8 @@ async function painel() {
   const maxSerie = Math.max(...p.serie.flatMap((s) => [s.entradas, s.saidas]), 1);
   $app.innerHTML = `
     <h1>Painel</h1><p class="sub">Visão do mês: quanto entrou (com e sem nota), quanto saiu e quem pagou.</p>
-    <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">⬇ Emitir controle mensal (Excel)</a></div>
-    ${p.dias_abertos.length ? `<div class="aviso-box">⚠ ${p.dias_abertos.length} dia(s) com lançamentos ainda <b>sem fechamento</b>: ${p.dias_abertos.map(dataBR).join(', ')}. <a href="#fechar">Fechar caixa</a></div>` : ''}
+    <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">${ico('download')} Emitir controle mensal (Excel)</a></div>
+    ${p.dias_abertos.length ? `<div class="aviso-box">${ico('info')}<span>${p.dias_abertos.length} dia(s) com lançamentos ainda <b>sem fechamento</b>: ${p.dias_abertos.map(dataBR).join(', ')}. <a href="#fechar">Fechar caixa</a></span></div>` : ''}
     <div class="grid">
       <div class="card kpi"><div class="l">Entradas COM nota</div><div class="v">${brl(p.entradas_com_nota)}</div></div>
       <div class="card kpi"><div class="l">Entradas SEM nota</div><div class="v">${brl(p.entradas_sem_nota)}</div></div>
@@ -148,7 +159,7 @@ async function painel() {
     ${cartaoSaldos(p)}
     <div class="grid um">
       <div class="card"><h2>Entradas e saídas por dia</h2>
-        ${p.serie.length ? `<div class="serie">${p.serie.map((s) => `<div class="col" title="${dataBR(s.data)}: +${brl(s.entradas)} / -${brl(s.saidas)}"><div class="e" style="height:${(s.entradas / maxSerie) * 100}%"></div><div class="s" style="height:${(s.saidas / maxSerie) * 100}%"></div></div>`).join('')}</div><p class="legenda"><span class="pos">■</span> entradas &nbsp; <span class="neg">■</span> saídas</p>` : '<p class="mut">Nenhum lançamento neste mês ainda.</p>'}
+        ${p.serie.length ? `<div class="serie">${p.serie.map((s) => `<div class="col" title="${dataBR(s.data)}: +${brl(s.entradas)} / -${brl(s.saidas)}"><div class="e" style="height:${(s.entradas / maxSerie) * 100}%"></div><div class="s" style="height:${(s.saidas / maxSerie) * 100}%"></div></div>`).join('')}</div><p class="legenda"><span class="sw" style="background:var(--ver)"></span>entradas<span class="sw" style="background:var(--verm);margin-left:16px"></span>saídas</p>` : '<p class="mut">Nenhum lançamento neste mês ainda.</p>'}
       </div>
     </div>
     <div class="grid dois">
@@ -184,9 +195,9 @@ async function lancar() {
   $app.innerHTML = `
     <h1>Lançar</h1><p class="sub">Registre cada entrada, saída ou transferência do dia. Ex.: "Papelaria R$ 15 pago pela OnTrade no Bradesco".</p>
     <div class="row"><div><label>Dia</label><input type="date" id="dia" value="${state.dia}"></div>
-      <div>${fechado ? '<span class="tag aviso">🔒 dia fechado — um administrador pode reabrir em "Fechar o dia"</span>' : !pode('operador') ? '<span class="tag aviso">somente leitura</span>' : '<span class="tag ok">dia aberto</span>'}</div></div>
+      <div>${fechado ? '<span class="tag aviso">Dia fechado — um administrador pode reabrir em "Fechar o dia"</span>' : !pode('operador') ? '<span class="tag aviso">somente leitura</span>' : '<span class="tag ok">dia aberto</span>'}</div></div>
     <form class="card" id="f" ${fechado || !pode('operador') ? 'inert style="opacity:.5"' : ''}>
-      <div class="seg" style="margin-bottom:14px">${['saida', 'entrada', 'transferencia'].map((x) => `<button type="button" data-tipo="${x}" class="${x} ${t === x ? 'on' : ''}">${{ saida: '− Saída', entrada: '+ Entrada', transferencia: '⇄ Transferência' }[x]}</button>`).join('')}</div>
+      <div class="seg" style="margin-bottom:14px">${['saida', 'entrada', 'transferencia'].map((x) => `<button type="button" data-tipo="${x}" class="${x} ${t === x ? 'on' : ''}">${{ saida: 'Saída', entrada: 'Entrada', transferencia: 'Transferência' }[x]}</button>`).join('')}</div>
       <div class="form">
         <div class="larg"><label>${t === 'entrada' ? 'Entrou em qual conta?' : t === 'saida' ? 'Saiu de qual conta? (quem pagou)' : 'Origem'}</label>
           <select name="conta_id" required>${contas.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)} — ${esc(c.empresa)} (${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'})</option>`).join('')}</select><small class="saldo-conta" id="saldo-conta"></small></div>
@@ -200,7 +211,7 @@ async function lancar() {
     </form>
     <div class="card"><h2>Lançamentos de ${dataBR(state.dia)}</h2>
       ${dia.lancamentos.length ? `<div class="tbl"><table><thead><tr><th>Tipo</th><th>Conta</th><th>Categoria / pessoa</th><th>Descrição</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">+ Entrada</span>', saida: '<span class="neg">− Saída</span>', transferencia: '⇄ Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado || !pode('operador') ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
+      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">Entrada</span>', saida: '<span class="neg">Saída</span>', transferencia: 'Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado || !pode('operador') ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
       </tbody><tfoot><tr><td colspan="4">Entradas ${brl(dia.totais.entradas)} · Saídas ${brl(dia.totais.saidas)}</td><td class="n">${brl(dia.totais.entradas - dia.totais.saidas)}</td><td></td></tr></tfoot></table></div>` : '<p class="mut">Nada lançado neste dia.</p>'}
     </div>`;
   document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; lancar(); } };
@@ -215,7 +226,7 @@ async function lancar() {
     const v = paraCentavos(f.valor.value);
     const passa = t !== 'entrada' && v > 0 && v > c.saldo;
     el.className = 'saldo-conta' + (passa ? ' alerta' : '');
-    el.innerHTML = `Saldo atual desta conta: <b>${brl(c.saldo)}</b>${passa ? ` — ⚠ esta ${t === 'saida' ? 'saída' : 'transferência'} de ${brl(v)} é maior que o saldo` : ''}`;
+    el.innerHTML = `Saldo atual desta conta: <b>${brl(c.saldo)}</b>${passa ? ` — atenção: esta ${t === 'saida' ? 'saída' : 'transferência'} de ${brl(v)} é maior que o saldo` : ''}`;
   };
   f.conta_id.addEventListener('change', mostrarSaldo); f.valor.addEventListener('input', mostrarSaldo); mostrarSaldo();
   document.getElementById('f').onsubmit = (e) => {
@@ -234,8 +245,8 @@ async function fechar() {
   $app.innerHTML = `
     <h1>Fechar o dia</h1><p class="sub">Confira o saldo de cada conta. Para dinheiro e bancos, informe o valor <b>contado/conferido</b> e o sistema mostra a diferença.</p>
     <div class="row"><div><label>Dia</label><input type="date" id="dia" value="${state.dia}"></div>
-      <a class="btn sec" href="/api/export/dia/${state.dia}">⬇ Excel do dia</a></div>
-    ${fechado ? `<div class="aviso-box">🔒 Dia fechado em ${esc(d.fechado.fechado_em)}${d.fechado.fechado_por ? ' por <b>' + esc(d.fechado.fechado_por) + '</b>' : ''}. ${d.fechado.obs ? esc(d.fechado.obs) : ''}</div>` : ''}
+      <a class="btn sec" href="/api/export/dia/${state.dia}">${ico('download')} Excel do dia</a></div>
+    ${fechado ? `<div class="aviso-box">${ico('lock')}<span>Dia fechado em ${esc(d.fechado.fechado_em)}${d.fechado.fechado_por ? ' por <b>' + esc(d.fechado.fechado_por) + '</b>' : ''}. ${d.fechado.obs ? esc(d.fechado.obs) : ''}</span></div>` : ''}
     <div class="card tbl"><table>
       <thead><tr><th>Conta</th><th class="n">Saldo anterior</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Transf.</th><th class="n">Saldo do sistema</th><th class="n">Contado</th><th class="n">Diferença</th></tr></thead>
       <tbody>${d.contas.map((c) => {
@@ -249,7 +260,7 @@ async function fechar() {
       }).join('')}</tbody>
       <tfoot><tr><td>Total</td><td class="n">${brl(d.totais.saldo_anterior)}</td><td class="n">${brl(d.totais.entradas)}</td><td class="n">${brl(d.totais.saidas)}</td><td></td><td class="n">${brl(d.totais.saldo)}</td><td></td><td></td></tr></tfoot></table></div>
     ${fechado ? (pode('admin') ? `<button class="perigo" id="reabrir">Reabrir dia</button>` : '<p class="legenda">Só o administrador pode reabrir um dia fechado.</p>') : !pode('operador') ? '' : `
-      <div class="card"><div class="form"><div class="cheio"><label>Observações do fechamento</label><input id="obs" placeholder="Ex.: sobrou R$ 20 no caixa, aguardando comprovante…"></div></div><br><button id="fechar">🔒 Fechar caixa de ${dataBR(state.dia)}</button></div>`}`;
+      <div class="card"><div class="form"><div class="cheio"><label>Observações do fechamento</label><input id="obs" placeholder="Ex.: sobrou R$ 20 no caixa, aguardando comprovante…"></div></div><br><button id="fechar">${ico('lock')} Fechar caixa de ${dataBR(state.dia)}</button></div>`}`;
   document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; fechar(); } };
   $app.querySelectorAll('[data-conta]').forEach((i) => (i.oninput = () => {
     const c = d.contas.find((x) => x.id === +i.dataset.conta);
@@ -309,7 +320,7 @@ async function extratoDetalhe(id) {
   const optsCat = (m) => `<option value="">— escolher —</option>` + categorias.filter((c) => c.tipo === m.tipo && c.ativo).map((c) => `<option value="${c.id}" ${c.id === m.categoria_id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('');
   const soma = (t) => e.movimentos.filter((m) => m.tipo === t).reduce((a, m) => a + m.valor, 0);
   $app.innerHTML = `
-    <p><a href="#extratos" id="voltar">← Todos os extratos</a></p>
+    <p><a href="#extratos" id="voltar" class="voltar">${ico('arrow-left')} Todos os extratos</a></p>
     <h1>${esc(e.arquivo_nome)}</h1>
     <p class="sub">${esc(e.conta)} · enviado ${esc(e.enviado_em)} por ${esc(e.enviado_por || '—')} · entradas <b class="pos">${brl(soma('entrada'))}</b> · saídas <b class="neg">${brl(soma('saida'))}</b></p>
     <div class="aviso-box">Confira antes de confirmar: a IA sugere, <b>você decide</b>. Transferências entre contas próprias não são receita nem despesa — marque como "ignorar". Cada confirmação ensina o sistema para os próximos extratos.</div>
@@ -318,7 +329,7 @@ async function extratoDetalhe(id) {
     ${e.movimentos.map((m) => {
       const aberto = m.status === 'pendente' && podeEditar;
       return `<tr data-m="${m.id}" style="${m.status === 'ignorado' ? 'opacity:.45' : ''}">
-        <td>${m.status === 'pendente' && podeEditar ? `<input type="checkbox" data-sel="${m.id}" style="width:auto">` : m.status === 'lancado' ? '✅' : ''}</td>
+        <td>${m.status === 'pendente' && podeEditar ? `<input type="checkbox" data-sel="${m.id}" style="width:auto">` : m.status === 'lancado' ? `<span style="color:var(--azul)">${ico('check')}</span>` : ''}</td>
         <td>${dataBR(m.data)}</td><td>${esc(m.descricao)}${m.motivo ? `<br><small class="mut">${esc(m.motivo)}</small>` : ''}</td>
         <td class="n ${m.tipo === 'entrada' ? 'pos' : 'neg'}">${m.tipo === 'entrada' ? '+' : '−'} ${brl(m.valor)}</td>
         <td>${aberto ? `<select data-cat="${m.id}">${optsCat(m)}</select>` : esc(m.categoria || '—')}</td>
@@ -359,7 +370,7 @@ async function mensal() {
   const p = await api(`/api/painel/${state.mes}`);
   $app.innerHTML = `
     <h1>Controle mensal</h1><p class="sub">A Elisa Maria clica em <b>Emitir</b> e recebe a planilha completa do mês.</p>
-    <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">⬇ Emitir controle mensal — ${nomeMes(state.mes)}</a></div>
+    <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">${ico('download')} Emitir controle mensal — ${nomeMes(state.mes)}</a></div>
     <div class="card"><h2>O que vai na planilha</h2>
       <ul><li><b>Resumo</b> — entradas com/sem nota, saídas por pagador (OnTrade × LTON), por grupo e por categoria, saldo final por conta</li>
       <li><b>Por conta</b> — movimento de cada banco / canal</li><li><b>Pessoas e folha</b> — quanto cada pessoa recebeu, de que tipo e quem pagou</li>
@@ -370,7 +381,7 @@ async function mensal() {
       <div class="card kpi"><div class="l">Dias fechados</div><div class="v">${p.dias_fechados}</div></div>
       <div class="card kpi"><div class="l">Resultado</div><div class="v ${cls(p.resultado)}">${brl(p.resultado)}</div></div>
     </div>
-    ${p.dias_abertos.length ? `<div class="aviso-box">⚠ Dias com lançamentos ainda não fechados: ${p.dias_abertos.map(dataBR).join(', ')}. Recomenda-se fechar antes de emitir.</div>` : ''}`;
+    ${p.dias_abertos.length ? `<div class="aviso-box">${ico('info')}<span>Dias com lançamentos ainda não fechados: ${p.dias_abertos.map(dataBR).join(', ')}. Recomenda-se fechar antes de emitir.</span></div>` : ''}`;
   ligaMes(mensal);
 }
 
@@ -381,18 +392,18 @@ function fluxo() {
     <h1>Mapa do fluxo</h1><p class="sub">Como o dinheiro entra, passa pela LTON e sai. Esta é a lógica que o sistema segue.</p>
     <div class="card"><div class="fluxo">
       <div class="col-fluxo">
-        <div class="no com"><h3>🧾 Cliente paga COM nota</h3>${lista(['Banco Safra', 'Banco Infinity', 'Banco Bradesco', 'Banco do Brasil'])}</div>
-        <div class="no sem"><h3>💵 Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LTON (empresa da Elisa Maria)', 'Dinheiro'])}</div>
+        <div class="no"><h3>Cliente paga COM nota</h3>${lista(['Banco Safra', 'Banco Infinity', 'Banco Bradesco', 'Banco do Brasil'])}</div>
+        <div class="no"><h3>Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LTON (empresa da Elisa Maria)', 'Dinheiro'])}</div>
       </div>
-      <div class="seta">➜</div>
+      <div class="seta">${ico('arrow-right')}</div>
       <div class="col-fluxo">
-        <div class="no ont"><h3>🏢 OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Dantas (conta ou dinheiro) ⚠ checar registro'])}</div>
-        <div class="no lt1"><h3>🏦 LTON paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
+        <div class="no"><h3>OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Dantas (conta ou dinheiro) — checar registro'])}</div>
+        <div class="no"><h3>LTON paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
       </div>
-      <div class="seta">➜</div>
+      <div class="seta">${ico('arrow-right')}</div>
       <div class="col-fluxo">
-        <div class="no"><h3>👤 Elisa Maria</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LTON para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
-        <div class="no"><h3>📌 Registros</h3>${lista(['Carla e João → registrados na LTON', 'Dona Kátia → registrada na empresa de Japeri', 'Dantas → a confirmar'])}</div>
+        <div class="no"><h3>Elisa Maria</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LTON para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
+        <div class="no"><h3>Registros</h3>${lista(['Carla e João → registrados na LTON', 'Dona Kátia → registrada na empresa de Japeri', 'Dantas → a confirmar'])}</div>
       </div>
     </div>
     <p class="legenda" style="margin-top:12px"><span class="tag com_nota">com nota</span> entra pelos bancos da OnTrade &nbsp; <span class="tag sem_nota">sem nota</span> entra por DAE, PagVeloz, LTON e dinheiro. No sistema cada conta pertence a uma empresa e tem a modalidade — assim o relatório separa automaticamente “quem pagou” e “com/sem nota”.</p></div>`;
@@ -464,14 +475,14 @@ function roadmap() {
   const item = (t, d) => `<li><b>${t}</b> — ${d}</li>`;
   $app.innerHTML = `
     <h1>Roadmap e sugestões</h1><p class="sub">O que já está no esqueleto e o que podemos construir em seguida.</p>
-    <div class="card"><h2>✅ Já no esqueleto</h2><ul>
+    <div class="card"><h2>Já disponível</h2><ul>
       ${item('Lançamentos', 'entrada, saída e transferência por conta, categoria e pessoa')}
       ${item('Com nota × sem nota', 'cada conta tem modalidade; relatórios separam automaticamente')}
       ${item('Quem pagou', 'OnTrade × LTON × outros em todos os relatórios')}
       ${item('Fechamento diário', 'saldo do sistema × contado, com trava do dia')}
       ${item('Excel diário e mensal', 'com fórmulas, abre direto no Google Sheets')}
       ${item('Recorrências', 'empréstimo da Elisa Maria (~R$ 16.800 dia 5) pronto para lançar')}</ul></div>
-    <div class="card"><h2>🚀 Próximos passos sugeridos</h2><ul>
+    <div class="card"><h2>Próximos passos sugeridos</h2><ul>
       ${item('Login e perfis', 'Elisa Maria (tudo), operador (só lançar), contador (só leitura)')}
       ${item('Google Drive automático', 'o botão “Emitir” já salvar o Google Sheets na pasta do Drive')}
       ${item('Folha por pessoa', 'valor mensal de cada salário, iFood, passagem e alimentação como recorrências')}
@@ -484,7 +495,7 @@ function roadmap() {
       ${item('Metas e alertas', 'ex.: “LTON com saldo menor que a folha + empréstimo do mês”')}
       ${item('Regularização de vínculos', 'lista de quem está ou não registrado (Dantas, Fátima, Tayane…)')}
       ${item('Backup automático', 'cópia diária do banco no Drive')}</ul></div>
-    <div class="card"><h2>❓ Perguntas em aberto</h2><ul>
+    <div class="card"><h2>Perguntas em aberto</h2><ul>
       <li>Kátia e Dona Kátia são a mesma pessoa?</li><li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>
       <li>O PagVeloz é conta da OnTrade ou da LTON?</li><li>As despesas em dinheiro saem de um caixa físico único ou de vários?</li>
       <li>O empréstimo tem prazo/saldo devedor para acompanhar?</li></ul></div>`;
