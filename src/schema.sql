@@ -309,3 +309,92 @@ ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE produtos_catalogo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orcamentos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contatos ENABLE ROW LEVEL SECURITY;
+
+-- ---------- Departamento de Pessoas: fichas dos funcionários e controle de ausências ----------
+CREATE TABLE IF NOT EXISTS funcionarios (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  pessoa_id bigint UNIQUE REFERENCES pessoas(id),
+  nome text NOT NULL,
+  apelido text,
+  data_nascimento date,
+  sexo text,
+  estado_civil text,
+  nacionalidade text,
+  naturalidade text,
+  escolaridade text,
+  nome_mae text,
+  nome_pai text,
+  dependentes text,
+  cpf text,
+  rg text,
+  rg_orgao text,
+  titulo_eleitor text,
+  cnh text,
+  pis text,
+  ctps_numero text,
+  ctps_serie text,
+  ctps_uf text,
+  ctps_emissao date,
+  telefone text,
+  email text,
+  cep text,
+  endereco text,
+  numero text,
+  complemento text,
+  bairro text,
+  cidade text,
+  uf text,
+  emergencia_nome text,
+  emergencia_parentesco text,
+  emergencia_telefone text,
+  plano_saude text,
+  plano_saude_numero text,
+  tipo_sanguineo text,
+  alergias text,
+  aso_admissional date,
+  aso_validade date,
+  cargo text,
+  setor text,
+  vinculo text NOT NULL DEFAULT 'a_verificar' CHECK (vinculo IN ('lt1','ontrade','japeri','informal','socio','a_verificar')),
+  regime text NOT NULL DEFAULT 'a_verificar' CHECK (regime IN ('clt','pj','comissionado','prestador','informal','a_verificar')),
+  data_admissao date,
+  data_demissao date,
+  salario bigint CHECK (salario IS NULL OR salario >= 0),
+  vale_transporte text,
+  tamanho_uniforme text,
+  banco text,
+  agencia text,
+  conta text,
+  pix text,
+  jornada_entrada text,
+  jornada_saida text,
+  jornada_intervalo_min integer,
+  dias_trabalho text NOT NULL DEFAULT '1,2,3,4,5',
+  obs text,
+  ativo integer NOT NULL DEFAULT 1,
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_func_nome ON funcionarios (lower(nome));
+
+CREATE TABLE IF NOT EXISTS ausencias (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  funcionario_id bigint NOT NULL REFERENCES funcionarios(id),
+  tipo text NOT NULL CHECK (tipo IN ('falta','atestado','ferias','licenca','folga','atraso')),
+  data_inicio date NOT NULL,
+  data_fim date NOT NULL,
+  justificada integer NOT NULL DEFAULT 0,
+  obs text,
+  anexo_nome text,
+  anexo_tipo text,
+  anexo_tamanho integer,
+  anexo bytea,
+  criado_por_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo'),
+  CHECK (data_fim >= data_inicio)
+);
+CREATE INDEX IF NOT EXISTS idx_aus_func ON ausencias (funcionario_id, data_inicio);
+CREATE INDEX IF NOT EXISTS idx_aus_periodo ON ausencias (data_inicio, data_fim);
+CREATE INDEX IF NOT EXISTS idx_aus_criador ON ausencias (criado_por_id);
+
+ALTER TABLE funcionarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ausencias ENABLE ROW LEVEL SECURITY;
