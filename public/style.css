@@ -54,3 +54,10 @@ body.deslogado #menu{display:none}.login{max-width:380px;margin:12vh auto 0}.log
 .logo-menu{display:block;width:100%;max-width:170px;margin:0 auto 6px;background:#fff;border-radius:12px;padding:6px}
 .marca:has(.logo-menu) .marca-txt{display:none}
 .logo-login{display:block;width:170px;max-width:60%;margin:0 auto 10px}
+
+/* tela de login: centralizada na página inteira (horizontal e vertical) */
+body.deslogado{align-items:center;justify-content:center}
+body.deslogado main{flex:0 1 auto;width:100%;max-width:none;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+body.deslogado .login{margin:0;width:100%;max-width:380px;text-align:center}
+body.deslogado .login label{text-align:left}
+body.deslogado .login h1{margin-bottom:6px}
