@@ -3,7 +3,7 @@ import { MESES, painelMes, resumoDia, listarLancamentos, intervaloMes, saldos, a
 import { query } from './db.js';
 
 const BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
-const AZUL = 'FF1F3A5F';
+const AZUL = 'FF012D61';
 const CINZA = 'FFEEF1F5';
 const brl = (c) => (c ?? 0) / 100;
 const fmtData = (d) => d.split('-').reverse().join('/');
