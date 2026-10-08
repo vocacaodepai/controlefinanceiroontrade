@@ -199,3 +199,48 @@ CREATE INDEX IF NOT EXISTS idx_lanc_criador ON lancamentos(criado_por_id);
 ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS fechado_por_id bigint REFERENCES usuarios(id);
 ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS confirmacao text;  -- JSON: itens do checklist marcados
 CREATE INDEX IF NOT EXISTS idx_fech_usuario ON fechamentos(fechado_por_id);
+
+-- Novos perfis: sócio (consulta financeira e quadro societário) e comercial (CRM e orçamentos)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_papel_check' AND pg_get_constraintdef(oid) LIKE '%comercial%') THEN
+    ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_papel_check;
+    ALTER TABLE usuarios ADD CONSTRAINT usuarios_papel_check CHECK (papel IN ('admin','operador','leitor','socio','comercial'));
+  END IF;
+END $$;
+
+-- ---------- Quadro societário e patrimônio em ativos ----------
+CREATE TABLE IF NOT EXISTS socios (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nome text NOT NULL UNIQUE,
+  documento text,
+  participacao_bp integer CHECK (participacao_bp IS NULL OR participacao_bp BETWEEN 0 AND 10000), -- 10000 = 100,00%
+  aporte bigint NOT NULL DEFAULT 0,
+  data_entrada date,
+  obs text,
+  ativo integer NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS patrimonio_itens (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  mes text NOT NULL,
+  tipo text NOT NULL CHECK (tipo IN ('container','estoque')),
+  descricao text NOT NULL,
+  valor bigint NOT NULL CHECK (valor >= 0),
+  situacao text NOT NULL DEFAULT 'em_transito' CHECK (situacao IN ('em_transito','no_porto','em_estoque','outro')),
+  previsao_chegada date,
+  obs text,
+  criado_por text,
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_pat_mes ON patrimonio_itens(mes);
+
+CREATE TABLE IF NOT EXISTS relatorio_notas (
+  mes text PRIMARY KEY,
+  texto text,
+  atualizado_por text,
+  atualizado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+
+ALTER TABLE socios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE patrimonio_itens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE relatorio_notas ENABLE ROW LEVEL SECURITY;

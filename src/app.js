@@ -7,6 +7,9 @@ import * as S from './services.js';
 import * as A from './auth.js';
 import { excelDia, excelMes } from './export.js';
 import * as X from './extratos.js';
+import * as P from './patrimonio.js';
+import * as SO from './societario.js';
+import { gerarPdf } from './relatorio.js';
 
 export const app = express();
 app.set('trust proxy', 1);
@@ -45,14 +48,14 @@ app.post('/api/auth/login', h(async (req, res) => {
   res.json({ usuario });
 }));
 app.post('/api/auth/logout', h(async (req, res) => { await A.logout(A.lerCookie(req)); A.gravarCookie(req, res, ''); res.status(204).end(); }));
-app.post('/api/auth/senha', A.exigir('leitor'), h(async (req, res) => { await A.trocarSenha(req.usuario, req.body.atual, req.body.nova); res.status(204).end(); }));
+app.post('/api/auth/senha', A.logado, h(async (req, res) => { await A.trocarSenha(req.usuario, req.body.atual, req.body.nova); res.status(204).end(); }));
 
-app.post('/api/auth/foto', A.exigir('leitor'), h(async (req, res) => { await A.salvarFoto(req.usuario.id, req.body.imagem); res.status(204).end(); }));
-app.delete('/api/auth/foto', A.exigir('leitor'), h(async (req, res) => { await A.removerFoto(req.usuario.id); res.status(204).end(); }));
+app.post('/api/auth/foto', A.logado, h(async (req, res) => { await A.salvarFoto(req.usuario.id, req.body.imagem); res.status(204).end(); }));
+app.delete('/api/auth/foto', A.logado, h(async (req, res) => { await A.removerFoto(req.usuario.id); res.status(204).end(); }));
 
 const ler = A.exigir('leitor'), operar = A.exigir('operador'), admin = A.exigir('admin');
 
-app.get('/api/usuarios/:id/foto', ler, h(async (req, res) => {
+app.get('/api/usuarios/:id/foto', A.logado, h(async (req, res) => {
   const foto = await A.lerFoto(idNum(req.params.id));
   if (!foto) return res.status(404).end();
   res.setHeader('Content-Type', 'image/jpeg');
@@ -68,6 +71,8 @@ app.put('/api/usuarios/:id', admin, h(async (req, res) => res.json(await A.atual
 const comAutor = (req) => ({ ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id, fechado_por: req.usuario.nome, fechado_por_id: req.usuario.id });
 const idNum = (v) => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw new S.ErroNegocio('Identificador inválido.'); return n; };
 
+// equipe (nomes, perfis e fotos) para qualquer pessoa logada: usada em "quem fez" e nos avatares
+app.get('/api/equipe', A.logado, h(async (_, res) => res.json({ equipe: await A.equipe(), hoje: S.hoje() })));
 app.get('/api/meta', ler, h(async (_, res) => res.json({ ...(await S.meta()), equipe: await A.equipe(), hoje: S.hoje() })));
 
 app.get('/api/lancamentos', ler, h(async (req, res) => res.json(await S.listarLancamentos(req.query))));
@@ -85,7 +90,35 @@ app.post('/api/dia/:data/fechar', operar, h(async (req, res) => {
 }));
 app.delete('/api/dia/:data/fechar', admin, h(async (req, res) => { await S.reabrirDia(data(req)); res.status(204).end(); }));
 
-app.get('/api/painel/:mes', ler, h(async (req, res) => res.json(await S.painelMes(mes(req)))));
+app.get('/api/painel/:mes', ler, h(async (req, res) => {
+  const painel = await S.painelMes(mes(req));
+  res.json({ ...painel, patrimonio: await P.resumoPainel(req.params.mes, painel) }); // caixa x ativos (containers e estoque)
+}));
+
+// ---------- patrimônio em ativos (containers e estoque) ----------
+const verPat = A.exigirArea('patrimonio'), verSoc = A.exigirArea('societario');
+app.get('/api/patrimonio/:mes', verPat, h(async (req, res) => {
+  const m = mes(req);
+  res.json({ mes: m, itens: await P.itensDoMes(m), posicao: await P.posicao(m), mes_anterior: P.mesAnterior(m), tipos: P.TIPOS, situacoes: P.SITUACOES });
+}));
+app.post('/api/patrimonio', admin, h(async (req, res) => res.status(201).json(await P.salvarItem(null, req.body, req.usuario))));
+app.put('/api/patrimonio/:id', admin, h(async (req, res) => res.json(await P.salvarItem(idNum(req.params.id), req.body, req.usuario))));
+app.delete('/api/patrimonio/:id', admin, h(async (req, res) => { await P.excluirItem(idNum(req.params.id)); res.status(204).end(); }));
+app.post('/api/patrimonio/copiar', admin, h(async (req, res) => res.json({ copiados: await P.copiarMes(req.body.de, req.body.para) })));
+
+// ---------- quadro societário e relatório mensal dos sócios ----------
+app.get('/api/societario/quadro', verSoc, h(async (_, res) => res.json(await SO.quadro())));
+app.post('/api/societario/socios', admin, h(async (req, res) => res.status(201).json(await SO.salvarSocio(null, req.body))));
+app.put('/api/societario/socios/:id', admin, h(async (req, res) => res.json(await SO.salvarSocio(idNum(req.params.id), req.body))));
+app.get('/api/societario/nota/:mes', verSoc, h(async (req, res) => res.json({ texto: await SO.nota(mes(req)) })));
+app.put('/api/societario/nota/:mes', admin, h(async (req, res) => { await SO.salvarNota(mes(req), req.body.texto, req.usuario); res.status(204).end(); }));
+app.get('/api/societario/relatorio/:mes', verSoc, h(async (req, res) => {
+  const d = await SO.dadosRelatorio(mes(req), req.query.socio ? idNum(req.query.socio) : null, req.usuario);
+  const sufixo = d.socio ? '-' + d.socio.nome.normalize('NFD').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() : '';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="relatorio-socios-${req.params.mes}${sufixo}.pdf"`);
+  gerarPdf(d, res);
+}));
 
 app.post('/api/recorrencias/:id/lancar', operar, h(async (req, res) => res.status(201).json(await S.lancarRecorrencia(idNum(req.params.id), { ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id }))));
 

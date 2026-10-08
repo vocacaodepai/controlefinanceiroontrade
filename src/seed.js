@@ -46,6 +46,8 @@ export async function seed() {
     await cat('Água', 'saida', 'Contas');
     await cat('Combustível', 'saida', 'Contas');
     await cat('Tributos de funcionários', 'saida', 'Tributos');
+    await cat('Distribuição de lucros', 'saida', 'Sócios');
+    await cat('Aporte de sócio', 'entrada', 'Receitas');
     const emprestimo = await cat('Empréstimo Elisa Maria', 'saida', 'Financeiro');
     await cat('Papelaria', 'saida', 'Operacional');
     await cat('Estacionamento', 'saida', 'Operacional');
@@ -65,6 +67,8 @@ export async function seed() {
     await pessoa('Andresa', 'Prestadora', 'a_verificar', 'LTON');
     await pessoa('Dantas', 'Funcionário', 'a_verificar', 'OnTrade', 'Recebe pela OnTrade ou em dinheiro. CHECAR se está registrado.');
     await pessoa('Elisa Maria', 'Sócia / credora', 'socio', 'LTON', 'Recebe o pagamento do empréstimo na conta pessoal.');
+    await pessoa('Luiz Túlio', 'Sócio', 'socio', 'LTON', null);
+    await pessoa('Luiz Amaro', 'Sócio', 'socio', 'LTON', 'Entrou na sociedade com 20% (aporte de R$ 2.000.000).');
 
     const idConta = async (n) => (await one('SELECT id FROM contas WHERE nome = $1', [n])).id;
     const idPessoa = async (n) => (await one('SELECT id FROM pessoas WHERE nome = $1', [n])).id;
@@ -76,6 +80,10 @@ export async function seed() {
       'Empréstimo Elisa Maria (LTON → conta pessoal)', 5, 1680000, 1, 'saida',
       await idConta('LTON'), emprestimo, await idPessoa('Elisa Maria'),
       'Pagamento do empréstimo usado na OnTrade, enviado da LTON para a conta pessoal da Elisa Maria. Valor aproximado.']);
+    // Quadro societário. A participação do Luiz Túlio fica em branco até ser confirmada (não presumimos 80%).
+    await query(`INSERT INTO socios (nome, participacao_bp, aporte, obs) VALUES ($1,$2,$3,$4),($5,$6,$7,$8)`, [
+      'Luiz Túlio', null, 0, 'Participação a confirmar.',
+      'Luiz Amaro', 2000, 200000000, 'Entrou na sociedade com 20%, mediante aporte de R$ 2.000.000.']);
   });
   return true;
 }
