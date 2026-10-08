@@ -128,6 +128,7 @@ app.get('/api/societario/relatorio/:mes', verSoc, h(async (req, res) => {
 // 'aovivo' = ver os números (admin, sócio, comercial); 'comercial' = lançar e trabalhar orçamentos/clientes (admin, comercial)
 const verVivo = A.exigirArea('aovivo'), trabCom = A.exigirArea('comercial');
 app.get('/api/aovivo', verVivo, h(async (_, res) => res.json(await CO.aoVivo())));
+app.get('/api/comercial/painel', trabCom, h(async (_, res) => res.json(await CO.painelComercial())));
 app.get('/api/comercial/produtos', trabCom, h(async (_, res) => res.json(await CO.produtos())));
 app.get('/api/comercial/clientes', trabCom, h(async (req, res) => res.json(await CO.buscarClientes(req.query.q))));
 app.get('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.cliente(idNum(req.params.id)))));
