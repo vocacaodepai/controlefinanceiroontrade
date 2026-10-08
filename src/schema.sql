@@ -190,3 +190,12 @@ CREATE INDEX IF NOT EXISTS idx_regra_pessoa ON regras_classificacao(pessoa_id);
 ALTER TABLE extratos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE movimentos_importados ENABLE ROW LEVEL SECURITY;
 ALTER TABLE regras_classificacao ENABLE ROW LEVEL SECURITY;
+
+-- ---------- Quem fez cada coisa, fotos e confirmação de fechamento ----------
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto text;            -- JPEG 256x256 em base64 (sem prefixo)
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_em timestamp;
+ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS criado_por_id bigint REFERENCES usuarios(id);
+CREATE INDEX IF NOT EXISTS idx_lanc_criador ON lancamentos(criado_por_id);
+ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS fechado_por_id bigint REFERENCES usuarios(id);
+ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS confirmacao text;  -- JSON: itens do checklist marcados
+CREATE INDEX IF NOT EXISTS idx_fech_usuario ON fechamentos(fechado_por_id);

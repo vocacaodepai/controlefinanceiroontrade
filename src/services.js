@@ -94,15 +94,15 @@ const vals = (b, valor) => [
   b.tipo === 'transferencia' ? Number(b.conta_destino_id) : null,
   b.categoria_id ? Number(b.categoria_id) : null,
   b.pessoa_id ? Number(b.pessoa_id) : null,
-  b.cliente?.trim() || null, b.descricao?.trim() || null, b.criado_por?.trim() || null,
+  b.cliente?.trim() || null, b.descricao?.trim() || null, b.criado_por?.trim() || null, b.criado_por_id ? Number(b.criado_por_id) : null,
 ];
 
 export async function criarLancamento(b) {
   const valor = await validar(b);
   if (await diaFechado(b.data)) throw new ErroNegocio(`O dia ${b.data} já está fechado. Reabra o dia para lançar.`, 409);
   const r = await one(`INSERT INTO lancamentos
-    (data,tipo,valor,conta_id,conta_destino_id,categoria_id,pessoa_id,cliente,descricao,criado_por)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, vals(b, valor));
+    (data,tipo,valor,conta_id,conta_destino_id,categoria_id,pessoa_id,cliente,descricao,criado_por,criado_por_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`, vals(b, valor));
   return buscarLanc(r.id);
 }
 
@@ -111,8 +111,9 @@ export async function atualizarLancamento(id, b) {
   if (!atual) throw new ErroNegocio('Lançamento não encontrado.', 404);
   const valor = await validar(b);
   if ((await diaFechado(atual.data)) || (await diaFechado(b.data))) throw new ErroNegocio('Dia fechado. Reabra o dia para editar.', 409);
-  await query(`UPDATE lancamentos SET data=$1,tipo=$2,valor=$3,conta_id=$4,conta_destino_id=$5,categoria_id=$6,pessoa_id=$7,cliente=$8,descricao=$9,criado_por=$10 WHERE id=$11`,
-    [...vals(b, valor), id]);
+  // quem lançou originalmente continua sendo o autor; a edição só muda os dados do lançamento
+  await query(`UPDATE lancamentos SET data=$1,tipo=$2,valor=$3,conta_id=$4,conta_destino_id=$5,categoria_id=$6,pessoa_id=$7,cliente=$8,descricao=$9 WHERE id=$10`,
+    [...vals(b, valor).slice(0, 9), id]);
   return buscarLanc(id);
 }
 
@@ -163,7 +164,7 @@ export async function resumoDia(data) {
   };
 }
 
-export async function fecharDia(data, { contagens = {}, obs, fechado_por } = {}) {
+export async function fecharDia(data, { contagens = {}, obs, fechado_por, fechado_por_id, confirmacao } = {}) {
   if (!isData(data)) throw new ErroNegocio('Data inválida.');
   await tx(async () => {
     // trava a data para que dois cliques simultâneos não fechem duas vezes
@@ -173,7 +174,7 @@ export async function fecharDia(data, { contagens = {}, obs, fechado_por } = {})
     const pendente = await one(`SELECT l.data FROM lancamentos l WHERE l.data < $1
       AND l.data NOT IN (SELECT data FROM fechamentos) ORDER BY l.data LIMIT 1`, [data]);
     if (pendente) throw new ErroNegocio(`Feche primeiro o dia ${pendente.data}, que ainda está aberto.`, 409);
-    await query('INSERT INTO fechamentos (data, obs, fechado_por) VALUES ($1,$2,$3)', [data, obs?.trim() || null, fechado_por?.trim() || null]);
+    await query('INSERT INTO fechamentos (data, obs, fechado_por, fechado_por_id, confirmacao) VALUES ($1,$2,$3,$4,$5)', [data, obs?.trim() || null, fechado_por?.trim() || null, fechado_por_id ? Number(fechado_por_id) : null, confirmacao ? JSON.stringify(confirmacao) : null]);
     for (const s of await saldos(data)) {
       const c = contagens[s.id];
       const contado = c === undefined || c === null || c === '' ? null : Math.round(Number(c));
@@ -210,7 +211,7 @@ export async function recorrenciasDoMes(mes) {
   }));
 }
 
-export async function lancarRecorrencia(id, { mes, data, valor, criado_por }) {
+export async function lancarRecorrencia(id, { mes, data, valor, criado_por, criado_por_id }) {
   const r = await one('SELECT * FROM recorrencias WHERE id = $1', [id]);
   if (!r) throw new ErroNegocio('Recorrência não encontrada.', 404);
   if (!isMes(mes)) throw new ErroNegocio('Mês inválido.');
@@ -223,7 +224,7 @@ export async function lancarRecorrencia(id, { mes, data, valor, criado_por }) {
       data: data || prevista,
       tipo: r.tipo, valor: valor ?? r.valor, conta_id: r.conta_id, conta_destino_id: r.conta_destino_id,
       categoria_id: r.categoria_id, pessoa_id: r.pessoa_id, descricao: r.descricao || r.nome,
-      criado_por,
+      criado_por, criado_por_id,
     });
     await query('INSERT INTO recorrencia_lancada (recorrencia_id, mes, lancamento_id) VALUES ($1,$2,$3)', [id, mes, l.id]);
     return l;
@@ -316,4 +317,16 @@ export async function salvarCadastro(tabela, id, b) {
   }
   if (!dados.length) throw new ErroNegocio('Dados insuficientes.');
   return one(`INSERT INTO ${tabela} (${dados.join(',')}) VALUES (${dados.map((_, i) => '$' + (i + 1)).join(',')}) RETURNING *`, valores);
+}
+
+// ---------- checklist de segurança antes de fechar o dia ----------
+// Cada conta ativa precisa ser conferida (extrato do banco, contagem do dinheiro, saldo do DAE...)
+// e a pessoa precisa assumir a responsabilidade pelos lançamentos do dia.
+export async function validarChecklist(c) {
+  const contas = await query('SELECT id, nome FROM contas WHERE ativo = 1 ORDER BY id');
+  const marcadas = new Set((Array.isArray(c?.contas) ? c.contas : []).map(Number));
+  const faltam = contas.filter((x) => !marcadas.has(x.id));
+  if (faltam.length) throw new ErroNegocio(`Falta conferir: ${faltam.map((x) => x.nome).join(', ')}.`);
+  if (c?.responsabilidade !== true) throw new ErroNegocio('Confirme que você se responsabiliza pelos lançamentos do dia.');
+  return { contas: contas.map((x) => x.id), responsabilidade: true, confirmado_em: new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }) };
 }

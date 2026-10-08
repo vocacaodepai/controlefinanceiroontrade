@@ -25,6 +25,7 @@ export function validarSenha(s) {
 }
 const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
 
+const COLS = 'id,nome,email,senha_hash,papel,ativo,criado_em,ultimo_acesso,(foto IS NOT NULL) AS tem_foto,foto_em';
 export const totalUsuarios = async () => (await one('SELECT COUNT(*) AS n FROM usuarios')).n;
 
 export async function criarUsuario({ nome, email, senha, papel }) {
@@ -33,19 +34,19 @@ export async function criarUsuario({ nome, email, senha, papel }) {
   if (!PAPEIS[papel]) throw new ErroNegocio('Perfil inválido.');
   validarSenha(senha);
   try {
-    return publico(await one('INSERT INTO usuarios (nome,email,senha_hash,papel) VALUES ($1,$2,$3,$4) RETURNING *',
+    return publico(await one('INSERT INTO usuarios (nome,email,senha_hash,papel) VALUES ($1,$2,$3,$4) RETURNING ' + COLS + '',
       [nome.trim(), email.trim().toLowerCase(), hashSenha(senha), papel]));
   } catch (e) {
     if (e.code === '23505') throw new ErroNegocio('Já existe um usuário com este e-mail.', 409);
     throw e;
   }
 }
-const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso };
-export const listarUsuarios = async () => (await query('SELECT * FROM usuarios ORDER BY nome')).map(publico);
+const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso, tem_foto: !!u.tem_foto, foto_v: u.foto_em ? String(u.foto_em).replace(/\D/g, '') : '0' };
+export const listarUsuarios = async () => (await query(`SELECT ${COLS} FROM usuarios ORDER BY nome`)).map(publico);
 
 // Impede deixar o sistema sem nenhum administrador ativo.
 async function garantirAdmin(idAfetado, novo) {
-  const u = await one('SELECT * FROM usuarios WHERE id=$1', [idAfetado]);
+  const u = await one(`SELECT ${COLS} FROM usuarios WHERE id=$1`, [idAfetado]);
   if (!u) throw new ErroNegocio('Usuário não encontrado.', 404);
   const perde = u.papel === 'admin' && u.ativo && ((novo.papel && novo.papel !== 'admin') || novo.ativo === 0 || novo.ativo === false);
   if (perde) {
@@ -69,7 +70,7 @@ export function atualizarUsuario(id, b) {
       await query('UPDATE usuarios SET senha_hash=$1 WHERE id=$2', [hashSenha(b.senha), id]);
       await query('DELETE FROM sessoes WHERE usuario_id=$1', [id]);
     }
-    return publico(await one('SELECT * FROM usuarios WHERE id=$1', [id]));
+    return publico(await one(`SELECT ${COLS} FROM usuarios WHERE id=$1`, [id]));
   });
 }
 
@@ -82,7 +83,7 @@ export async function login(email, senha, ip) {
   await query('DELETE FROM tentativas_login WHERE em < $1', [agora - JANELA]);
   const { n } = await one('SELECT COUNT(*) AS n FROM tentativas_login WHERE chave=$1 AND em>=$2', [chave, agora - JANELA]);
   if (n >= MAX) throw new ErroNegocio('Muitas tentativas. Aguarde alguns minutos.', 429);
-  const u = await one('SELECT * FROM usuarios WHERE email=$1', [String(email || '').trim().toLowerCase()]);
+  const u = await one(`SELECT ${COLS} FROM usuarios WHERE email=$1`, [String(email || '').trim().toLowerCase()]);
   // Faz o hash mesmo se o usuário não existir, para não revelar quais e-mails existem.
   const ok = u ? confere(String(senha || ''), u.senha_hash) : (confere('x', hashSenha('y')), false);
   if (!ok || !u.ativo) {
@@ -101,13 +102,13 @@ export const logout = async (token) => { if (token) await query('DELETE FROM ses
 
 export async function usuarioDoToken(token) {
   if (!token) return null;
-  const u = await one(`SELECT u.* FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
+  const u = await one(`SELECT u.id,u.nome,u.email,u.papel,u.ativo,u.criado_em,u.ultimo_acesso,(u.foto IS NOT NULL) AS tem_foto,u.foto_em FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
     WHERE s.token_hash=$1 AND s.expira_em>$2 AND u.ativo=1`, [sha(token), Date.now()]);
   return publico(u) || null;
 }
 
 export async function trocarSenha(usuario, atual, nova) {
-  const u = await one('SELECT * FROM usuarios WHERE id=$1', [usuario.id]);
+  const u = await one(`SELECT ${COLS} FROM usuarios WHERE id=$1`, [usuario.id]);
   if (!confere(String(atual || ''), u.senha_hash)) throw new ErroNegocio('Senha atual incorreta.', 401);
   validarSenha(nova);
   await query('UPDATE usuarios SET senha_hash=$1 WHERE id=$2', [hashSenha(nova), u.id]);
@@ -142,3 +143,24 @@ export function criarPrimeiroAdmin(b) {
     return criarUsuario({ ...b, papel: 'admin' });
   });
 }
+
+// ---------- foto de perfil ----------
+// O navegador recorta e reduz a imagem (256x256 JPEG). Aqui só validamos e guardamos.
+const MAX_FOTO = 150 * 1024;
+export async function salvarFoto(usuarioId, imagem) {
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(imagem || ''));
+  if (!m) throw new ErroNegocio('Envie a foto em JPEG.');
+  const buf = Buffer.from(m[1], 'base64');
+  if (buf.length < 500 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) throw new ErroNegocio('Arquivo de imagem inválido.');
+  if (buf.length > MAX_FOTO) throw new ErroNegocio('Foto grande demais. Tente recortar de novo.', 413);
+  await query("UPDATE usuarios SET foto=$1, foto_em=(now() AT TIME ZONE 'America/Sao_Paulo') WHERE id=$2", [m[1], usuarioId]);
+}
+export const removerFoto = (usuarioId) => query('UPDATE usuarios SET foto=NULL, foto_em=NULL WHERE id=$1', [usuarioId]);
+export async function lerFoto(usuarioId) {
+  const r = await one('SELECT foto FROM usuarios WHERE id=$1', [usuarioId]);
+  return r?.foto ? Buffer.from(r.foto, 'base64') : null;
+}
+// Equipe (sem dados sensíveis): usada para mostrar quem fez cada lançamento.
+export const equipe = async () => (await query(`SELECT ${COLS} FROM usuarios ORDER BY nome`)).map((u) => {
+  const p = publico(u); return { id: p.id, nome: p.nome, papel: p.papel, ativo: p.ativo, tem_foto: p.tem_foto, foto_v: p.foto_v };
+});

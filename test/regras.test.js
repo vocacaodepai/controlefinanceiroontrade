@@ -75,6 +75,8 @@ test('recorrência só lança uma vez por mês', async () => {
 test('gera os Excel do mês e do dia', async () => {
   const wb = await excelMes('2026-03');
   assert.deepEqual(wb.worksheets.map((w) => w.name), ['Resumo', 'Por conta', 'Pessoas e folha', 'Fechamento diário', 'Lançamentos', 'Mapa do fluxo']);
+  const cab = wb.getWorksheet('Lançamentos').getRow(4).values.filter(Boolean);
+  assert.ok(cab.includes('Lançado por') && cab.includes('Lançado em'), 'o Excel mostra quem lançou e quando');
   const buf = await (await excelDia('2026-03-02')).xlsx.writeBuffer();
   assert.ok(buf.byteLength > 3000);
 });

@@ -11,6 +11,7 @@ import * as X from './extratos.js';
 export const app = express();
 app.set('trust proxy', 1);
 app.post('/api/extratos', express.json({ limit: '5mb' })); // upload em base64; as demais rotas ficam com limite pequeno
+app.post('/api/auth/foto', express.json({ limit: '300kb' })); // foto de perfil já reduzida no navegador
 app.use(express.json({ limit: '100kb' }));
 app.use((_, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -46,18 +47,28 @@ app.post('/api/auth/login', h(async (req, res) => {
 app.post('/api/auth/logout', h(async (req, res) => { await A.logout(A.lerCookie(req)); A.gravarCookie(req, res, ''); res.status(204).end(); }));
 app.post('/api/auth/senha', A.exigir('leitor'), h(async (req, res) => { await A.trocarSenha(req.usuario, req.body.atual, req.body.nova); res.status(204).end(); }));
 
+app.post('/api/auth/foto', A.exigir('leitor'), h(async (req, res) => { await A.salvarFoto(req.usuario.id, req.body.imagem); res.status(204).end(); }));
+app.delete('/api/auth/foto', A.exigir('leitor'), h(async (req, res) => { await A.removerFoto(req.usuario.id); res.status(204).end(); }));
+
 const ler = A.exigir('leitor'), operar = A.exigir('operador'), admin = A.exigir('admin');
 
+app.get('/api/usuarios/:id/foto', ler, h(async (req, res) => {
+  const foto = await A.lerFoto(idNum(req.params.id));
+  if (!foto) return res.status(404).end();
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'private, max-age=86400'); // a URL muda (?v=) quando a foto é trocada
+  res.end(foto);
+}));
 app.get('/api/usuarios', admin, h(async (_, res) => res.json(await A.listarUsuarios())));
 app.post('/api/usuarios', admin, h(async (req, res) => res.status(201).json(await A.criarUsuario(req.body))));
 app.put('/api/usuarios/:id', admin, h(async (req, res) => res.json(await A.atualizarUsuario(Number(req.params.id), req.body))));
 
 // ---------- dados (leitor consulta · operador lança e fecha · admin configura) ----------
 // o nome de quem lançou/fechou vem sempre do usuário logado
-const comAutor = (req) => ({ ...req.body, criado_por: req.usuario.nome, fechado_por: req.usuario.nome });
+const comAutor = (req) => ({ ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id, fechado_por: req.usuario.nome, fechado_por_id: req.usuario.id });
 const idNum = (v) => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw new S.ErroNegocio('Identificador inválido.'); return n; };
 
-app.get('/api/meta', ler, h(async (_, res) => res.json({ ...(await S.meta()), hoje: S.hoje() })));
+app.get('/api/meta', ler, h(async (_, res) => res.json({ ...(await S.meta()), equipe: await A.equipe(), hoje: S.hoje() })));
 
 app.get('/api/lancamentos', ler, h(async (req, res) => res.json(await S.listarLancamentos(req.query))));
 app.post('/api/lancamentos', operar, h(async (req, res) => res.status(201).json(await S.criarLancamento(comAutor(req)))));
@@ -68,12 +79,15 @@ const data = (req) => { if (!S.isData(req.params.data)) throw new S.ErroNegocio(
 const mes = (req) => { if (!S.isMes(req.params.mes)) throw new S.ErroNegocio('Mês inválido.'); return req.params.mes; };
 
 app.get('/api/dia/:data', ler, h(async (req, res) => res.json(await S.resumoDia(data(req)))));
-app.post('/api/dia/:data/fechar', operar, h(async (req, res) => res.json(await S.fecharDia(data(req), comAutor(req)))));
+app.post('/api/dia/:data/fechar', operar, h(async (req, res) => {
+  const confirmacao = await S.validarChecklist(req.body.confirmacao); // sem checklist completo não fecha, nem pela API
+  res.json(await S.fecharDia(data(req), { ...comAutor(req), confirmacao }));
+}));
 app.delete('/api/dia/:data/fechar', admin, h(async (req, res) => { await S.reabrirDia(data(req)); res.status(204).end(); }));
 
 app.get('/api/painel/:mes', ler, h(async (req, res) => res.json(await S.painelMes(mes(req)))));
 
-app.post('/api/recorrencias/:id/lancar', operar, h(async (req, res) => res.status(201).json(await S.lancarRecorrencia(idNum(req.params.id), { ...req.body, criado_por: req.usuario.nome }))));
+app.post('/api/recorrencias/:id/lancar', operar, h(async (req, res) => res.status(201).json(await S.lancarRecorrencia(idNum(req.params.id), { ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id }))));
 
 for (const t of ['contas', 'categorias', 'pessoas', 'recorrencias']) {
   app.post(`/api/${t}`, admin, h(async (req, res) => res.status(201).json(await S.salvarCadastro(t, null, req.body))));
@@ -86,7 +100,7 @@ app.post('/api/extratos', operar, h(async (req, res) => res.status(201).json(awa
 app.get('/api/extratos/:id', ler, h(async (req, res) => res.json(await X.detalheExtrato(idNum(req.params.id)))));
 app.delete('/api/extratos/:id', admin, h(async (req, res) => { await X.excluirExtrato(idNum(req.params.id)); res.status(204).end(); }));
 app.put('/api/movimentos/:id', operar, h(async (req, res) => res.json(await X.editarMovimento(idNum(req.params.id), req.body))));
-app.post('/api/extratos/:id/lancar', operar, h(async (req, res) => res.json(await X.lancarMovimentos(idNum(req.params.id), req.body.ids, req.usuario.nome))));
+app.post('/api/extratos/:id/lancar', operar, h(async (req, res) => res.json(await X.lancarMovimentos(idNum(req.params.id), req.body.ids, req.usuario))));
 
 async function enviarXlsx(res, wb, nome) {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
