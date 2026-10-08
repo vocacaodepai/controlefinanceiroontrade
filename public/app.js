@@ -178,7 +178,7 @@ function telaLogin(e) {
     });
   };
 }
-async function sair() { await api('/api/auth/logout', { method: 'POST' }); state.usuario = null; state.meta = null; telaLogin(); }
+async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state.followups = null; sessionStorage.removeItem('fu_ate'); await api('/api/auth/logout', { method: 'POST' }); state.usuario = null; state.meta = null; telaLogin(); }
 function trocarSenha() {
   const atual = prompt('Senha atual:'); if (atual === null) return;
   const nova = prompt('Nova senha (mínimo 8 caracteres):'); if (nova === null) return;
@@ -189,7 +189,7 @@ document.getElementById('senha').onclick = trocarSenha;
 document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
@@ -215,6 +215,7 @@ async function rota() {
   document.body.classList.remove('deslogado');
   document.getElementById('quem').innerHTML = `<div class="quem">${avatar(state.usuario, 46)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></div>`;
   renderMenu();
+  if (!state.fuIniciado) { state.fuIniciado = true; iniciarFollowups(); } else if (state.followups) atualizarBadge(state.followups.length);
   const permitidas = rotasPermitidas();
   let nome = location.hash.slice(1) || permitidas[0] || 'painel';
   if (!permitidas.includes(nome)) { nome = permitidas[0]; if (!nome) { $app.innerHTML = '<div class="card">Seu perfil ainda não tem nenhuma área liberada. Fale com o administrador.</div>'; return; } history.replaceState(null, '', '#' + nome); }
@@ -225,6 +226,7 @@ async function rota() {
     state.dia = state.dia || state.meta.hoje;
     state.mes = state.mes || state.meta.hoje.slice(0, 7);
   }
+  if (nome !== 'aovivo') { clearInterval(state.timerVivo); document.body.classList.remove('modo-tv'); }
   try { await rotas[nome](); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
 }
 addEventListener('hashchange', () => { if (location.hash !== '#extratos') state.extrato = null; rota(); });
@@ -769,6 +771,270 @@ function roadmap() {
       <li>Kátia e Dona Kátia são a mesma pessoa?</li><li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>
       <li>O PagVeloz é conta da OnTrade ou da LTON?</li><li>As despesas em dinheiro saem de um caixa físico único ou de vários?</li>
       <li>O empréstimo tem prazo/saldo devedor para acompanhar?</li></ul></div>`;
+}
+
+
+// =====================================================================
+// COMERCIAL: ao vivo, orçamentos, clientes e aviso de follow-up
+// =====================================================================
+const STATUS_ORC = { aberto: 'Em aberto', ganho: 'Ganho', perdido: 'Perdido', cancelado: 'Cancelado' };
+const TAG_ORC = { aberto: '', ganho: 'ok', perdido: 'ruim', cancelado: 'aviso' };
+const tagOrc = (s) => `<span class="tag ${TAG_ORC[s]}">${STATUS_ORC[s]}</span>`;
+const brlInput = (c) => (c / 100).toFixed(2).replace('.', ',');
+const hojeISO = () => state.meta?.hoje || new Date().toLocaleDateString('sv-SE');
+const zap = (tel) => { const d = String(tel || '').replace(/\D/g, ''); return d.length >= 10 ? `https://wa.me/${d.startsWith('55') ? d : '55' + d}` : null; };
+const contatoCli = (o) => [o.cliente_telefone && (zap(o.cliente_telefone) ? `<a href="${zap(o.cliente_telefone)}" target="_blank" rel="noopener">${esc(o.cliente_telefone)}</a>` : esc(o.cliente_telefone)), o.cliente_email && esc(o.cliente_email)].filter(Boolean).join(' · ') || '<span class="mut">sem contato</span>';
+const variacao = (atual, ant) => (ant > 0 ? `<small class="${cls(atual - ant)}">${atual >= ant ? '+' : '−'}${Math.abs(Math.round(((atual - ant) / ant) * 100))}%</small>` : '<small class="mut">—</small>');
+
+// ---- contato / encerramento (usados na lista e no pop-up) ----
+function janelaContato(o, depois) {
+  const m = modal(`<h2>Registrar contato</h2>
+    <p class="legenda">${esc(o.cliente_nome)} · ${esc(o.produto)} · ${brl(o.valor)}<br>${contatoCli(o)}</p>
+    <form class="form" id="fc" style="margin-top:14px">
+      <div class="cheio"><label>O que foi conversado</label><textarea name="nota" rows="3" placeholder="Ex.: pediu mais prazo; vai falar com o sócio"></textarea></div>
+      <div><label>Avisar de novo em (dias)</label><input name="adiar_dias" type="number" min="1" max="60" value="3"></div></form>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar contato</button></div>`);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => acao(async () => {
+    await api(`/api/comercial/orcamentos/${o.id}/contato`, { method: 'POST', body: Object.fromEntries(new FormData(m.el.querySelector('#fc'))) });
+    m.fechar(); await depois();
+  }, 'Contato registrado');
+}
+function janelaEncerrar(o, depois) {
+  const m = modal(`<h2>Encerrar orçamento</h2>
+    <p class="legenda">${esc(o.cliente_nome)} · ${esc(o.produto)} · ${brl(o.valor)}</p>
+    <form class="form" id="fe" style="margin-top:14px">
+      <div><label>Resultado</label><select name="status"><option value="ganho">Ganho (vendeu)</option><option value="perdido">Perdido (comprou de outro / não fechou)</option><option value="cancelado">Cancelado</option></select></div>
+      <div class="cheio" id="mot" hidden><label>Motivo</label><input name="motivo" placeholder="Ex.: preço, prazo de entrega, desistiu do projeto"></div></form>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Confirmar</button></div>`);
+  const sel = m.el.querySelector('[name=status]'), mot = m.el.querySelector('#mot');
+  sel.onchange = () => { mot.hidden = sel.value === 'ganho'; };
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => acao(async () => {
+    await api(`/api/comercial/orcamentos/${o.id}/status`, { method: 'POST', body: Object.fromEntries(new FormData(m.el.querySelector('#fe'))) });
+    m.fechar(); await depois();
+  }, 'Orçamento atualizado');
+}
+
+// ---- pop-up de follow-up (3 dias depois do orçamento) ----
+let _fuTimer = null;
+function atualizarBadge(n) {
+  const a = document.querySelector('#nav a[href="#orcamentos"]'); if (!a) return;
+  a.querySelector('.badge')?.remove();
+  if (n > 0) a.insertAdjacentHTML('beforeend', `<span class="badge">${n}</span>`);
+}
+async function verificarFollowups(forcar = false) {
+  if (!temArea('comercial') || document.querySelector('.modal-fundo')) return;
+  const lista = await api('/api/comercial/followups').catch(() => null);
+  if (!lista) return;
+  state.followups = lista; atualizarBadge(lista.length);
+  const silencio = Number(sessionStorage.getItem('fu_ate') || 0);
+  if (lista.length && (forcar || Date.now() > silencio)) abrirFollowups(lista);
+}
+function abrirFollowups(lista) {
+  const m = modal(`<h2>Hora de retomar contato</h2>
+    <p class="legenda">${lista.length} orçamento(s) sem retorno há ${lista.length > 1 ? 'pelo menos ' : ''}3 dias. Ligue ou mande uma mensagem e registre aqui.</p>
+    <div class="fu-lista">${lista.map((o) => `<div class="fu-item" data-id="${o.id}">
+      <div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
+        <small class="mut">Orçamento de ${dataBR(o.data)} · aviso desde ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
+      <div class="fu-acoes"><button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button><button class="mini sec" data-a="adiar">Adiar 1 dia</button></div></div>`).join('')}</div>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="depois">Lembrar mais tarde</button></div>`, 640);
+  const refaz = async () => { m.fechar(); await verificarFollowups(true); if (location.hash === '#orcamentos') rota(); };
+  m.el.querySelector('#depois').onclick = () => { sessionStorage.setItem('fu_ate', String(Date.now() + 30 * 60 * 1000)); m.fechar(); };
+  m.el.querySelectorAll('.fu-item').forEach((el) => {
+    const o = lista.find((x) => x.id === +el.dataset.id);
+    el.querySelector('[data-a=contato]').onclick = () => { m.fechar(); janelaContato(o, refaz); };
+    el.querySelector('[data-a=encerrar]').onclick = () => { m.fechar(); janelaEncerrar(o, refaz); };
+    el.querySelector('[data-a=adiar]').onclick = () => acao(async () => { await api(`/api/comercial/orcamentos/${o.id}/adiar`, { method: 'POST', body: { dias: 1 } }); await refaz(); }, 'Aviso adiado para amanhã');
+  });
+}
+function iniciarFollowups() {
+  clearInterval(_fuTimer);
+  if (!temArea('comercial')) return;
+  verificarFollowups(); _fuTimer = setInterval(() => verificarFollowups(), 5 * 60 * 1000);
+}
+
+// ---- novo orçamento: "cliente já cadastrado?" -> ficha -> orçamento ----
+async function novoOrcamento(depois, clientePre) {
+  const produtos = await api('/api/comercial/produtos');
+  const m = modal(`<h2>Novo orçamento</h2>
+    <form id="fo" autocomplete="off">
+      <div class="passo"><span class="num">1</span> Cliente</div>
+      <div id="cli-escolhido" ${clientePre ? '' : 'hidden'} class="cli-sel"></div>
+      <div id="cli-busca" ${clientePre ? 'hidden' : ''}>
+        <label>O cliente já está cadastrado? Busque por nome, telefone ou e-mail</label>
+        <input id="q" placeholder="Digite para buscar" autofocus><div id="res" class="busca-res"></div>
+        <button type="button" class="sec mini" id="novo-cli" style="margin-top:8px">Não encontrei — cadastrar novo cliente</button></div>
+      <div id="ficha" hidden class="form" style="margin-top:8px">
+        <div class="larg"><label>Nome</label><input name="c_nome"></div><div><label>Telefone</label><input name="c_telefone" inputmode="tel"></div>
+        <div><label>E-mail</label><input name="c_email" type="email"></div><div><label>Aniversário</label><input name="c_aniversario" type="date"></div>
+        <div><label>Empresa</label><input name="c_empresa"></div></div>
+      <div class="passo"><span class="num">2</span> Orçamento</div>
+      <div class="form">
+        <div><label>Tipo de produto</label><select name="produto_id">${produtos.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}<option value="">Outro (digitar)</option></select></div>
+        <div id="outro" hidden><label>Qual produto?</label><input name="produto_nome" placeholder="Ex.: Painel P2.5"></div>
+        <div><label>Valor do orçamento (R$)</label><input name="valor" inputmode="decimal" placeholder="0,00" required></div>
+        <div><label>Nº do orçamento</label><input name="numero" placeholder="Opcional"></div>
+        <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></div>
+      <p class="legenda" style="margin-top:10px">O sistema vai avisar para retomar o contato <b>3 dias</b> depois de hoje.</p>
+      <div class="modal-acoes"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Registrar orçamento</button></div></form>`, 620);
+  let escolhido = clientePre || null;
+  const f = m.el.querySelector('#fo');
+  const mostraEscolhido = () => {
+    const box = m.el.querySelector('#cli-escolhido');
+    box.hidden = !escolhido; m.el.querySelector('#cli-busca').hidden = !!escolhido;
+    if (escolhido) box.innerHTML = `<div><b>${esc(escolhido.nome)}</b> <span class="tag">cliente recorrente</span><br><small class="mut">${esc([escolhido.telefone, escolhido.email].filter(Boolean).join(' · ') || 'sem contato')} · ${escolhido.qtd_orcamentos || 0} orçamento(s) anterior(es)</small></div><button type="button" class="mini sec" id="trocar">Trocar</button>`;
+    box.querySelector('#trocar')?.addEventListener('click', () => { escolhido = null; mostraEscolhido(); });
+  };
+  mostraEscolhido();
+  const q = m.el.querySelector('#q'), res = m.el.querySelector('#res'); let t;
+  q.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
+    if (q.value.trim().length < 2) { res.innerHTML = ''; return; }
+    const l = await api('/api/comercial/clientes?q=' + encodeURIComponent(q.value.trim())).catch(() => []);
+    res.innerHTML = l.length ? l.map((c) => `<button type="button" class="busca-item" data-id="${c.id}"><b>${esc(c.nome)}</b><small class="mut">${esc([c.telefone, c.email].filter(Boolean).join(' · ') || 'sem contato')} · ${c.qtd_orcamentos} orçamento(s)</small></button>`).join('')
+      : '<p class="mut" style="margin:8px 0">Nenhum cliente encontrado. Cadastre um novo abaixo.</p>';
+    res.querySelectorAll('.busca-item').forEach((b) => (b.onclick = () => { escolhido = l.find((c) => c.id === +b.dataset.id); mostraEscolhido(); }));
+  }, 250); };
+  m.el.querySelector('#novo-cli').onclick = () => { m.el.querySelector('#ficha').hidden = false; m.el.querySelector('#cli-busca').hidden = true; m.el.querySelector('[name=c_nome]').value = q.value.trim(); m.el.querySelector('[name=c_nome]').focus(); };
+  const sel = f.produto_id; sel.onchange = () => { m.el.querySelector('#outro').hidden = sel.value !== ''; };
+  m.el.querySelector('#x').onclick = m.fechar;
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(f)); const valor = paraCentavos(v.valor);
+    if (!(valor >= 0)) return toast('Informe o valor do orçamento', true);
+    const novo = !m.el.querySelector('#ficha').hidden;
+    if (!escolhido && !novo) return toast('Busque o cliente ou cadastre um novo', true);
+    if (novo && !v.c_nome.trim()) return toast('Informe o nome do cliente', true);
+    const corpo = { valor, numero: v.numero, obs: v.obs, produto_id: v.produto_id || null, produto_nome: v.produto_nome };
+    if (escolhido) corpo.cliente_id = escolhido.id;
+    else corpo.cliente = { nome: v.c_nome, telefone: v.c_telefone, email: v.c_email, aniversario: v.c_aniversario, empresa: v.c_empresa };
+    acao(async () => { await api('/api/comercial/orcamentos', { method: 'POST', body: corpo }); m.fechar(); await depois(); }, 'Orçamento registrado — aviso em 3 dias');
+  };
+}
+
+// ---- ficha do cliente ----
+async function fichaCliente(id, depois) {
+  const c = await api(`/api/comercial/clientes/${id}`);
+  const m = modal(`<h2>${esc(c.nome)}</h2>
+    <p class="legenda">${esc([c.empresa, c.telefone, c.email].filter(Boolean).join(' · ') || 'sem dados de contato')}${c.aniversario ? ` · aniversário ${dataBR(c.aniversario).slice(0, 5)}` : ''}<br>Cliente desde ${dataBR(c.criado_em.slice(0, 10))} · ${c.qtd_orcamentos} orçamento(s) · comprou ${brl(c.valor_comprado)}</p>
+    <h3 style="margin:16px 0 6px;font-size:14px">Histórico de orçamentos</h3>
+    ${c.orcamentos.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Produto</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>${c.orcamentos.map((o) => `<tr><td>${dataBR(o.data)}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Sem orçamentos.</p>'}
+    ${c.contatos.length ? `<h3 style="margin:16px 0 6px;font-size:14px">Contatos registrados</h3>${c.contatos.map((t) => `<p style="margin:4px 0;font-size:13px"><span class="mut">${dataBR(t.criado_em.slice(0, 10))} · ${esc(t.usuario_nome || '')}</span> ${esc(t.nota || 'Contato feito')}</p>`).join('')}` : ''}
+    <div class="modal-acoes"><button class="sec" id="ed">Editar ficha</button><span style="flex:1"></span><button class="sec" id="x">Fechar</button><button id="no">Novo orçamento</button></div>`, 620);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#no').onclick = () => { m.fechar(); novoOrcamento(depois, c); };
+  m.el.querySelector('#ed').onclick = () => {
+    m.fechar();
+    const e = modal(`<h2>Editar ficha</h2><form class="form" id="fe" style="margin-top:14px">
+      <div class="larg"><label>Nome</label><input name="nome" value="${esc(c.nome)}" required></div><div><label>Telefone</label><input name="telefone" value="${esc(c.telefone || '')}"></div>
+      <div><label>E-mail</label><input name="email" type="email" value="${esc(c.email || '')}"></div><div><label>Aniversário</label><input name="aniversario" type="date" value="${esc(c.aniversario || '')}"></div>
+      <div><label>Empresa</label><input name="empresa" value="${esc(c.empresa || '')}"></div><div class="cheio"><label>Observação</label><input name="obs" value="${esc(c.obs || '')}"></div></form>
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 560);
+    e.el.querySelector('#x').onclick = e.fechar;
+    e.el.querySelector('#ok').onclick = () => acao(async () => { await api(`/api/comercial/clientes/${c.id}`, { method: 'PUT', body: Object.fromEntries(new FormData(e.el.querySelector('#fe'))) }); e.fechar(); await depois(); }, 'Ficha salva');
+  };
+}
+
+// ---- páginas ----
+async function orcamentos() {
+  const f = state.filtroOrc || (state.filtroOrc = { status: 'aberto', q: '' });
+  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+  const lista = await api('/api/comercial/orcamentos?' + qs);
+  const soma = lista.reduce((a, o) => a + o.valor, 0);
+  $app.innerHTML = `<h1>Orçamentos</h1><p class="sub">Registre cada orçamento enviado. O sistema avisa para retomar o contato 3 dias depois.</p>
+    <div class="row"><button id="novo">Novo orçamento</button>
+      <div><label>Situação</label><select id="fs"><option value="">Todas</option>${Object.entries(STATUS_ORC).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div><label>Buscar</label><input id="fq" value="${esc(f.q)}" placeholder="Cliente ou nº"></div></div>
+    <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th class="n">Valor</th><th>Situação</th><th>Próximo aviso</th><th></th></tr></thead><tbody>
+      ${lista.map((o) => `<tr><td>${dataBR(o.data)}</td><td><b>${esc(o.cliente_nome)}</b> ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : ''}<br><small>${contatoCli(o)}</small></td>
+        <td>${esc(o.produto)}${o.numero ? `<br><small class="mut">nº ${esc(o.numero)}</small>` : ''}</td><td class="n">${brl(o.valor)}</td>
+        <td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
+        <td>${o.status === 'aberto' ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span>${o.qtd_contatos ? `<br><small class="mut">${o.qtd_contatos} contato(s)</small>` : ''}` : '<span class="mut">—</span>'}</td>
+        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
+          <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3">${lista.length} orçamento(s)</td><td class="n">${brl(soma)}</td><td colspan="3"></td></tr></tfoot></table></div>` : '<p class="mut">Nenhum orçamento com este filtro.</p>'}</div>`;
+  const recarrega = async () => { await orcamentos(); verificarFollowups(); };
+  document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
+  document.getElementById('fs').onchange = (e) => { f.status = e.target.value; orcamentos(); };
+  let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; orcamentos().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
+  const achar = (id) => lista.find((o) => o.id === +id);
+  $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaContato(achar(b.dataset.c), recarrega)));
+  $app.querySelectorAll('[data-e]').forEach((b) => (b.onclick = () => janelaEncerrar(achar(b.dataset.e), recarrega)));
+  $app.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => confirm('Reabrir este orçamento? O aviso volta em 3 dias.') && acao(async () => { await api(`/api/comercial/orcamentos/${b.dataset.r}/status`, { method: 'POST', body: { status: 'aberto' } }); await recarrega(); }, 'Orçamento reaberto')));
+  $app.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => {
+    const o = achar(b.dataset.ed);
+    const m = modal(`<h2>Editar orçamento</h2><p class="legenda">${esc(o.cliente_nome)}</p><form class="form" id="fe" style="margin-top:14px">
+      <div><label>Valor (R$)</label><input name="valor" value="${brlInput(o.valor)}" inputmode="decimal" required></div><div><label>Nº do orçamento</label><input name="numero" value="${esc(o.numero || '')}"></div>
+      <div class="cheio"><label>Observação</label><input name="obs" value="${esc(o.obs || '')}"></div></form>
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 520);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#ok').onclick = () => { const v = Object.fromEntries(new FormData(m.el.querySelector('#fe'))); const valor = paraCentavos(v.valor); if (!(valor >= 0)) return toast('Valor inválido', true); acao(async () => { await api(`/api/comercial/orcamentos/${o.id}`, { method: 'PUT', body: { ...v, valor } }); m.fechar(); await recarrega(); }, 'Orçamento salvo'); };
+  }));
+}
+
+async function clientes() {
+  const q = state.buscaCli || '';
+  const lista = await api('/api/comercial/clientes' + (q ? '?q=' + encodeURIComponent(q) : ''));
+  $app.innerHTML = `<h1>Clientes</h1><p class="sub">Ficha de cada cliente com o histórico de orçamentos. Quem já comprou aparece como recorrente nos próximos orçamentos.</p>
+    <div class="row"><button id="novo">Novo orçamento</button><div><label>Buscar cliente</label><input id="fq" value="${esc(q)}" placeholder="Nome, telefone ou e-mail"></div></div>
+    <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Contato</th><th class="n">Orçamentos</th><th class="n">Comprou</th><th>Último</th></tr></thead><tbody>
+      ${lista.map((c) => `<tr class="clicavel" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${c.empresa ? `<br><small class="mut">${esc(c.empresa)}</small>` : ''}</td><td><small>${esc([c.telefone, c.email].filter(Boolean).join(' · ') || '—')}</small></td>
+        <td class="n">${c.qtd_orcamentos}</td><td class="n">${brl(c.valor_comprado)}</td><td>${c.ultimo_orcamento ? dataBR(c.ultimo_orcamento) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum cliente encontrado.</p>'}</div>`;
+  const recarrega = () => clientes();
+  document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
+  let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { state.buscaCli = e.target.value; clientes().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
+  $app.querySelectorAll('tr.clicavel').forEach((tr) => (tr.onclick = () => fichaCliente(+tr.dataset.id, recarrega)));
+}
+
+// ---- painel ao vivo ----
+function graficoSerie(serie) {
+  const W = 720, H = 190, pl = 8, pb = 24, max = Math.max(...serie.flatMap((s) => [s.orcado, s.vendido]), 1), bw = (W - pl) / serie.length;
+  const al = (v) => Math.max(1, ((H - pb - 8) * v) / max);
+  return `<svg viewBox="0 0 ${W} ${H}" class="graf" role="img" aria-label="Orçado e vendido nos últimos 12 meses">
+    ${serie.map((s, i) => { const x = pl + i * bw; return `<rect x="${x + bw * 0.14}" y="${H - pb - al(s.orcado)}" width="${bw * 0.34}" height="${al(s.orcado)}" rx="2" class="gb-orc"><title>${nomeMes(s.mes)} — orçado ${brl(s.orcado)}</title></rect>
+      <rect x="${x + bw * 0.52}" y="${H - pb - al(s.vendido)}" width="${bw * 0.34}" height="${al(s.vendido)}" rx="2" class="gb-ven"><title>${nomeMes(s.mes)} — vendido ${brl(s.vendido)}</title></rect>
+      <text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" class="gt">${MESES[+s.mes.slice(5) - 1].slice(0, 3)}</text>`; }).join('')}</svg>
+    <p class="legenda"><span class="leg orc"></span> Orçado <span class="leg ven" style="margin-left:14px"></span> Vendido (orçamentos ganhos)</p>`;
+}
+async function aovivo() {
+  const d = await api('/api/aovivo');
+  const m = d.mes_atual, h = d.dia, c = d.comparativos;
+  const conv = m.qtd ? Math.round((m.qtd_ganho / m.qtd) * 100) + '%' : '—';
+  const cmp = (rot, a, b) => `<tr><td>${rot}</td><td class="n"><b>${a.fmt}</b></td><td class="n">${b.fmt} ${b.v}</td></tr>`;
+  const linha = (rot, campo, f = String) => `<tr><td>${rot}</td>${['mes_atual', 'mes_anterior_parcial', 'mes_anterior_total', 'mesmo_mes_ano_anterior'].map((k, i) => { const o = i === 0 ? m : c[k]; return `<td class="n ${i === 0 ? 'dest' : ''}">${f(o[campo])}${i === 1 ? ' ' + variacao(m[campo], o[campo]) : i === 3 ? ' ' + variacao(m[campo], o[campo]) : ''}</td>`; }).join('')}</tr>`;
+  const linhaP = (rot, campo, f = String) => `<tr><td>${rot}</td>${[['semestre', 'semestre_anterior'], ['ano', 'ano_anterior']].map(([a, b]) => `<td class="n dest">${f(c[a][campo])}</td><td class="n">${f(c[b][campo])} ${variacao(c[a][campo], c[b][campo])}</td>`).join('')}</tr>`;
+  const maxP = Math.max(...d.produtos.map((p) => p.valor_orcado), 1);
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao vivo — comercial</h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 19)} (renova sozinho a cada 30 segundos)</p></div>
+      <div class="row" style="margin:0"><button class="mini sec" id="att">${ico('refresh')} Atualizar</button><button class="mini sec" id="tv">Tela cheia</button></div></div>
+    ${d.followups_pendentes && temArea('comercial') ? `<div class="aviso-box">${ico('info')}<span><b>${d.followups_pendentes} orçamento(s)</b> aguardando retorno do comercial. <a href="#orcamentos">Abrir orçamentos</a></span></div>` : ''}
+    <div class="grid">
+      <div class="card kpi"><div class="l">Hoje — orçamentos</div><div class="v">${h.qtd}</div><small class="mut">${brl(h.valor)} orçados</small></div>
+      <div class="card kpi"><div class="l">Hoje — vendido</div><div class="v">${brl(h.valor_ganho)}</div><small class="mut">${h.qtd_ganho} venda(s)</small></div>
+      <div class="card kpi"><div class="l">No mês — orçado</div><div class="v">${brl(m.valor)}</div><small class="mut">${m.qtd} orçamento(s)</small></div>
+      <div class="card kpi"><div class="l">No mês — vendido</div><div class="v">${brl(m.valor_ganho)}</div><small class="mut">${m.qtd_ganho} venda(s) · conversão ${conv}</small></div>
+      <div class="card kpi"><div class="l">Em aberto agora</div><div class="v">${brl(d.em_aberto.valor)}</div><small class="mut">${d.em_aberto.qtd} orçamento(s)</small></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>Clientes do mês</h2>
+        <div class="mk-grade"><div><div class="mut">Novos</div><div class="grande">${m.clientes_novos}</div></div><div><div class="mut">Recorrentes</div><div class="grande">${m.clientes_recorrentes}</div></div>
+          <div><div class="mut">Orçamentos revisitados</div><div class="grande">${m.revisitados}</div></div></div>
+        <p class="legenda" style="margin-top:10px">Revisitado = orçamento em que o comercial registrou um novo contato no mês.</p></div>
+      <div class="card"><h2>Perdidos e cancelados no mês</h2>
+        <div class="mk-grade"><div><div class="mut">Perdidos</div><div class="grande">${m.qtd_perdido}</div><small class="mut">${brl(m.valor_perdido)}</small></div><div><div class="mut">Cancelados</div><div class="grande">${m.qtd_cancelado}</div><small class="mut">${brl(m.valor_cancelado)}</small></div></div>
+        ${d.motivos.length ? `<div style="margin-top:12px">${d.motivos.map((x) => `<p style="margin:4px 0;font-size:13px"><span class="tag ${x.status === 'perdido' ? 'ruim' : 'aviso'}">${STATUS_ORC[x.status]}</span> ${esc(x.motivo || 'sem motivo')} <span class="mut">— ${x.qtd}x · ${brl(x.valor)}</span></p>`).join('')}</div>` : '<p class="mut" style="margin-top:10px">Nenhum no mês.</p>'}</div></div>
+    <div class="card"><h2>Produtos mais orçados no mês</h2>${d.produtos.length ? d.produtos.map((p) => `<div class="barra"><span class="nome" title="${esc(p.nome)}">${esc(p.nome)}</span><span class="trilho"><span class="fill" style="display:block;width:${(p.valor_orcado / maxP) * 100}%"></span></span><span class="val">${brl(p.valor_orcado)}</span><span class="val mut" style="width:90px">${p.qtd}x · ${p.qtd_ganho} vend.</span></div>`).join('') : '<p class="mut">Sem orçamentos no mês.</p>'}</div>
+    <div class="card"><h2>Comparativo do mês</h2><div class="tbl"><table><thead><tr><th></th><th class="n">${nomeMes(d.mes)} (até hoje)</th><th class="n">Mês anterior (mesmo período)</th><th class="n">Mês anterior (inteiro)</th><th class="n">Mesmo mês, ano passado</th></tr></thead><tbody>
+      ${linha('Orçamentos', 'qtd')}${linha('Valor orçado', 'valor', brl)}${linha('Vendas (qtd)', 'qtd_ganho')}${linha('Valor vendido', 'valor_ganho', brl)}${linha('Clientes novos', 'clientes_novos')}${linha('Clientes recorrentes', 'clientes_recorrentes')}${linha('Perdidos', 'qtd_perdido')}${linha('Cancelados', 'qtd_cancelado')}
+      </tbody></table></div></div>
+    <div class="card"><h2>Semestre e ano</h2><div class="tbl"><table><thead><tr><th></th><th class="n">Semestre atual</th><th class="n">Semestre anterior</th><th class="n">${c.ano.rotulo} (até hoje)</th><th class="n">${c.ano_anterior.rotulo} (inteiro)</th></tr></thead><tbody>
+      ${linhaP('Orçamentos', 'qtd')}${linhaP('Valor orçado', 'valor', brl)}${linhaP('Valor vendido', 'valor_ganho', brl)}${linhaP('Clientes novos', 'clientes_novos')}
+      </tbody></table></div><p class="legenda" style="margin-top:8px">O percentual compara a coluna anterior com o período atual (verde: acima; vermelho: abaixo).</p></div>
+    <div class="card"><h2>Últimos 12 meses</h2>${graficoSerie(d.serie)}</div>
+    <div class="card"><h2>Orçamentos de hoje</h2>${d.recentes.length ? `<div class="tbl"><table><tbody>${d.recentes.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td><td class="mut">${esc(o.criado_por_nome || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
+  document.getElementById('att').onclick = () => aovivo();
+  document.getElementById('tv').onclick = () => { document.body.classList.toggle('modo-tv'); document.documentElement.requestFullscreen?.().catch(() => {}); };
+  clearInterval(state.timerVivo);
+  state.timerVivo = setInterval(() => { if (location.hash === '#aovivo' && !document.querySelector('.modal-fundo') && !document.hidden) aovivo().catch(() => {}); else if (location.hash !== '#aovivo') clearInterval(state.timerVivo); }, 30000);
 }
 
 rota();

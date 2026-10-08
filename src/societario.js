@@ -2,6 +2,7 @@
 import { query, one } from './db.js';
 import { ErroNegocio, isMes, painelMes, hoje, intervaloMes, MESES } from './services.js';
 import * as P from './patrimonio.js';
+import { dadosParaRelatorio } from './comercial.js';
 
 export const rotuloMes = (mes) => `${MESES[Number(mes.slice(5)) - 1].replace(/^./, (c) => c.toUpperCase())} de ${mes.slice(0, 4)}`;
 
@@ -132,6 +133,6 @@ export async function dadosRelatorio(mes, socioId, usuario) {
     dias_abertos: p.dias_abertos, dias_fechados: p.dias_fechados,
     contas, saldo_total: saldoTotal,
     saidas_por_grupo: p.saidas_por_grupo, saidas_por_categoria: p.saidas_por_categoria, saidas_por_pagador: p.saidas_por_pagador,
-    serie, patrimonio, quadro: q, socio, movimentos_socios: mov, nota: texto, alertas, comercial: null,
+    serie, patrimonio, quadro: q, socio, movimentos_socios: mov, nota: texto, alertas, comercial: await dadosParaRelatorio(mes),
   };
 }

@@ -9,6 +9,7 @@ import { excelDia, excelMes } from './export.js';
 import * as X from './extratos.js';
 import * as P from './patrimonio.js';
 import * as SO from './societario.js';
+import * as CO from './comercial.js';
 import { gerarPdf } from './relatorio.js';
 
 export const app = express();
@@ -119,6 +120,23 @@ app.get('/api/societario/relatorio/:mes', verSoc, h(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="relatorio-socios-${req.params.mes}${sufixo}.pdf"`);
   gerarPdf(d, res);
 }));
+
+// ---------- comercial: clientes, orçamentos, follow-up e painel ao vivo ----------
+// 'aovivo' = ver os números (admin, sócio, comercial); 'comercial' = lançar e trabalhar orçamentos/clientes (admin, comercial)
+const verVivo = A.exigirArea('aovivo'), trabCom = A.exigirArea('comercial');
+app.get('/api/aovivo', verVivo, h(async (_, res) => res.json(await CO.aoVivo())));
+app.get('/api/comercial/produtos', trabCom, h(async (_, res) => res.json(await CO.produtos())));
+app.get('/api/comercial/clientes', trabCom, h(async (req, res) => res.json(await CO.buscarClientes(req.query.q))));
+app.get('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.cliente(idNum(req.params.id)))));
+app.post('/api/comercial/clientes', trabCom, h(async (req, res) => res.status(201).json(await CO.salvarCliente(null, req.body, req.usuario))));
+app.put('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.salvarCliente(idNum(req.params.id), req.body, req.usuario))));
+app.get('/api/comercial/orcamentos', trabCom, h(async (req, res) => res.json(await CO.listarOrcamentos(req.query))));
+app.post('/api/comercial/orcamentos', trabCom, h(async (req, res) => res.status(201).json(await CO.criarOrcamento(req.body, req.usuario))));
+app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json(await CO.editarOrcamento(idNum(req.params.id), req.body))));
+app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
+app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
+app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias))));
+app.get('/api/comercial/followups', trabCom, h(async (_, res) => res.json(await CO.followupsPendentes())));
 
 app.post('/api/recorrencias/:id/lancar', operar, h(async (req, res) => res.status(201).json(await S.lancarRecorrencia(idNum(req.params.id), { ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id }))));
 

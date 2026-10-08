@@ -244,3 +244,68 @@ CREATE TABLE IF NOT EXISTS relatorio_notas (
 ALTER TABLE socios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE patrimonio_itens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE relatorio_notas ENABLE ROW LEVEL SECURITY;
+
+-- ---------- Comercial: clientes (CRM), orçamentos e follow-up ----------
+CREATE TABLE IF NOT EXISTS clientes (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nome text NOT NULL,
+  telefone text,
+  email text,
+  aniversario date,
+  empresa text,
+  origem text,
+  obs text,
+  criado_por_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_cli_nome ON clientes (lower(nome));
+CREATE INDEX IF NOT EXISTS idx_cli_criador ON clientes (criado_por_id);
+
+CREATE TABLE IF NOT EXISTS produtos_catalogo (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nome text NOT NULL UNIQUE,
+  ativo integer NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS orcamentos (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  numero text,
+  cliente_id bigint NOT NULL REFERENCES clientes(id),
+  produto_id bigint REFERENCES produtos_catalogo(id),
+  produto_desc text,
+  valor bigint NOT NULL CHECK (valor >= 0),
+  status text NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto','ganho','perdido','cancelado')),
+  motivo text,
+  cliente_tipo text NOT NULL CHECK (cliente_tipo IN ('novo','recorrente')),
+  data date NOT NULL,
+  followup_em date,
+  fechado_em timestamp,
+  fechado_por_id bigint REFERENCES usuarios(id),
+  obs text,
+  criado_por_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_orc_data ON orcamentos (data);
+CREATE INDEX IF NOT EXISTS idx_orc_cliente ON orcamentos (cliente_id);
+CREATE INDEX IF NOT EXISTS idx_orc_status_follow ON orcamentos (status, followup_em);
+CREATE INDEX IF NOT EXISTS idx_orc_produto ON orcamentos (produto_id);
+CREATE INDEX IF NOT EXISTS idx_orc_criador ON orcamentos (criado_por_id);
+CREATE INDEX IF NOT EXISTS idx_orc_fechador ON orcamentos (fechado_por_id);
+
+CREATE TABLE IF NOT EXISTS contatos (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  orcamento_id bigint NOT NULL REFERENCES orcamentos(id) ON DELETE CASCADE,
+  cliente_id bigint NOT NULL REFERENCES clientes(id),
+  usuario_id bigint REFERENCES usuarios(id),
+  tipo text NOT NULL DEFAULT 'follow-up',
+  nota text,
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_cont_orc ON contatos (orcamento_id);
+CREATE INDEX IF NOT EXISTS idx_cont_cliente ON contatos (cliente_id);
+CREATE INDEX IF NOT EXISTS idx_cont_usuario ON contatos (usuario_id);
+
+ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE produtos_catalogo ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orcamentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contatos ENABLE ROW LEVEL SECURITY;
