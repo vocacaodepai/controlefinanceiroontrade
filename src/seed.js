@@ -10,7 +10,7 @@ export async function seed() {
     const ins = async (sql, p) => (await one(sql + ' RETURNING id', p)).id;
     const emp = (nome, obs) => ins('INSERT INTO empresas (nome, obs) VALUES ($1,$2)', [nome, obs ?? null]);
     const ontrade = await emp('OnTrade', 'Empresa principal. Recebe com nota (bancos).');
-    const lt1 = await emp('LTON', 'Empresa da Dona Elisa. Recebe dos clientes OnTrade que pagam sem nota e paga a folha/despesas.');
+    const lt1 = await emp('LTON', 'Empresa da Elisa Maria. Recebe dos clientes OnTrade que pagam sem nota e paga a folha/despesas.');
     const dae = await emp('DAE / Fornecedor', 'Pagamento direto ao fornecedor chinês.');
 
     const conta = (nome, empresa, tipo, modalidade, obs) =>
@@ -46,7 +46,7 @@ export async function seed() {
     await cat('Água', 'saida', 'Contas');
     await cat('Combustível', 'saida', 'Contas');
     await cat('Tributos de funcionários', 'saida', 'Tributos');
-    const emprestimo = await cat('Empréstimo Dona Elisa', 'saida', 'Financeiro');
+    const emprestimo = await cat('Empréstimo Elisa Maria', 'saida', 'Financeiro');
     await cat('Papelaria', 'saida', 'Operacional');
     await cat('Estacionamento', 'saida', 'Operacional');
     await cat('Outras despesas', 'saida', 'Operacional');
@@ -63,19 +63,19 @@ export async function seed() {
     await pessoa('Fabiano', 'Comissionado', 'a_verificar', 'LTON', 'Recebe comissão.');
     await pessoa('Douglas', 'Prestador', 'a_verificar', 'LTON');
     await pessoa('Andresa', 'Prestadora', 'a_verificar', 'LTON');
-    await pessoa('Seu Dantas', 'Funcionário', 'a_verificar', 'OnTrade', 'Recebe pela OnTrade ou em dinheiro. CHECAR se está registrado.');
-    await pessoa('Dona Elisa', 'Sócia / credora', 'socio', 'LTON', 'Recebe o pagamento do empréstimo na conta pessoal.');
+    await pessoa('Dantas', 'Funcionário', 'a_verificar', 'OnTrade', 'Recebe pela OnTrade ou em dinheiro. CHECAR se está registrado.');
+    await pessoa('Elisa Maria', 'Sócia / credora', 'socio', 'LTON', 'Recebe o pagamento do empréstimo na conta pessoal.');
 
     const idConta = async (n) => (await one('SELECT id FROM contas WHERE nome = $1', [n])).id;
     const idPessoa = async (n) => (await one('SELECT id FROM pessoas WHERE nome = $1', [n])).id;
 
-    // Empréstimo da Dona Elisa: ~R$ 16.800 todo dia 5, da LTON para a conta pessoal.
+    // Empréstimo da Elisa Maria: ~R$ 16.800 todo dia 5, da LTON para a conta pessoal.
     await query(`INSERT INTO recorrencias
       (nome, dia_mes, valor, estimado, tipo, conta_id, categoria_id, pessoa_id, descricao)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [
-      'Empréstimo Dona Elisa (LTON → conta pessoal)', 5, 1680000, 1, 'saida',
-      await idConta('LTON'), emprestimo, await idPessoa('Dona Elisa'),
-      'Pagamento do empréstimo usado na OnTrade, enviado da LTON para a conta pessoal da Dona Elisa. Valor aproximado.']);
+      'Empréstimo Elisa Maria (LTON → conta pessoal)', 5, 1680000, 1, 'saida',
+      await idConta('LTON'), emprestimo, await idPessoa('Elisa Maria'),
+      'Pagamento do empréstimo usado na OnTrade, enviado da LTON para a conta pessoal da Elisa Maria. Valor aproximado.']);
   });
   return true;
 }

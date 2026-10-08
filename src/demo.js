@@ -32,7 +32,7 @@ await L(2, 'entrada', 3000, 'PagVeloz', 'Recebimento de cliente', { cliente: 'Cl
 await L(3, 'entrada', 1800, 'Dinheiro (caixa físico)', 'Recebimento de cliente', { cliente: 'Cliente E (demo)' });
 await L(3, 'saida', 15, 'Banco Bradesco', 'Papelaria', { descricao: 'Papelaria (exemplo do Renato)' });
 await L(4, 'saida', 15, 'Banco Infinity', 'Estacionamento');
-await L(5, 'saida', 16800, 'LTON', 'Empréstimo Dona Elisa', { pessoa: 'Dona Elisa', descricao: 'Parcela do empréstimo (demo)' });
+await L(5, 'saida', 16800, 'LTON', 'Empréstimo Elisa Maria', { pessoa: 'Elisa Maria', descricao: 'Parcela do empréstimo (demo)' });
 await L(5, 'saida', 250, 'LTON', 'Recarga de celular', { descricao: 'Recargas (demo)' });
 await L(6, 'saida', 400, 'LTON', 'Combustível');
 await L(6, 'saida', 120, 'Dinheiro (caixa físico)', 'Passagem', { pessoa: 'Kátia' });
