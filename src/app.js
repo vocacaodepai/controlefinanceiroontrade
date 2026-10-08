@@ -10,11 +10,14 @@ import * as X from './extratos.js';
 import * as P from './patrimonio.js';
 import * as SO from './societario.js';
 import * as CO from './comercial.js';
+import * as DP from './dp.js';
 import { gerarPdf } from './relatorio.js';
 
 export const app = express();
 app.set('trust proxy', 1);
 app.post('/api/extratos', express.json({ limit: '5mb' })); // upload em base64; as demais rotas ficam com limite pequeno
+app.post('/api/dp/ausencias', express.json({ limit: '5mb' })); // atestado anexado em base64 (até 3 MB)
+app.post('/api/dp/ausencias/:id/anexo', express.json({ limit: '5mb' }));
 app.post('/api/auth/foto', express.json({ limit: '300kb' })); // foto de perfil já reduzida no navegador
 app.use(express.json({ limit: '100kb' }));
 app.use((_, res, next) => {
@@ -137,6 +140,25 @@ app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => 
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias))));
 app.get('/api/comercial/followups', trabCom, h(async (_, res) => res.json(await CO.followupsPendentes())));
+
+// ---------- Departamento de Pessoas (só administrador: dados pessoais e de saúde) ----------
+const verDP = A.exigirArea('dp');
+app.get('/api/dp/meta', verDP, h(async (_, res) => res.json({ regimes: DP.REGIMES, vinculos: DP.VINCULOS, tipos_ausencia: DP.TIPOS_AUSENCIA })));
+app.get('/api/dp/funcionarios', verDP, h(async (req, res) => res.json(await DP.listar({ todos: req.query.todos === '1' }))));
+app.post('/api/dp/funcionarios', verDP, h(async (req, res) => res.status(201).json(await DP.salvar(null, req.body))));
+app.get('/api/dp/funcionarios/:id', verDP, h(async (req, res) => res.json(await DP.ficha(idNum(req.params.id)))));
+app.put('/api/dp/funcionarios/:id', verDP, h(async (req, res) => res.json(await DP.salvar(idNum(req.params.id), req.body))));
+app.get('/api/dp/resumo/:mes', verDP, h(async (req, res) => res.json(await DP.resumo(mes(req)))));
+app.get('/api/dp/ausencias/:mes', verDP, h(async (req, res) => res.json(await DP.listarAusencias(mes(req)))));
+app.post('/api/dp/ausencias', verDP, h(async (req, res) => res.status(201).json(await DP.criarAusencia(req.body, req.usuario))));
+app.post('/api/dp/ausencias/:id/anexo', verDP, h(async (req, res) => { await DP.anexarAusencia(idNum(req.params.id), req.body.anexo); res.status(204).end(); }));
+app.get('/api/dp/ausencias/:id/anexo', verDP, h(async (req, res) => {
+  const a = await DP.lerAnexoAusencia(idNum(req.params.id));
+  res.setHeader('Content-Type', a.tipo); res.setHeader('Content-Disposition', `inline; filename="${a.nome}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cache-Control', 'private, no-store');
+  res.end(a.buf);
+}));
+app.delete('/api/dp/ausencias/:id', verDP, h(async (req, res) => { await DP.excluirAusencia(idNum(req.params.id)); res.status(204).end(); }));
 
 app.post('/api/recorrencias/:id/lancar', operar, h(async (req, res) => res.status(201).json(await S.lancarRecorrencia(idNum(req.params.id), { ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id }))));
 

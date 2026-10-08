@@ -23,6 +23,7 @@ Object.assign(ICONES, {
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  dp: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
   societario: '<path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10Z"/>',
 });
 const ico = (n) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[n]}</svg>`;
@@ -189,12 +190,13 @@ document.getElementById('senha').onclick = trocarSenha;
 document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
   ['Comercial', [['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Sociedade', [['societario', 'Quadro societário']]],
+  ['Pessoas', [['dp', 'Departamento de Pessoas']]],
   ['Sistema', [['fluxo', 'Mapa do fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
 ];
 const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n === r)?.[2] || r;
@@ -1035,6 +1037,119 @@ async function aovivo() {
   document.getElementById('tv').onclick = () => { document.body.classList.toggle('modo-tv'); document.documentElement.requestFullscreen?.().catch(() => {}); };
   clearInterval(state.timerVivo);
   state.timerVivo = setInterval(() => { if (location.hash === '#aovivo' && !document.querySelector('.modal-fundo') && !document.hidden) aovivo().catch(() => {}); else if (location.hash !== '#aovivo') clearInterval(state.timerVivo); }, 30000);
+}
+
+// =====================================================================
+// DEPARTAMENTO DE PESSOAS: fichas dos funcionários e controle de ausências
+// =====================================================================
+const DIAS_SEM = [['1', 'Seg'], ['2', 'Ter'], ['3', 'Qua'], ['4', 'Qui'], ['5', 'Sex'], ['6', 'Sáb'], ['0', 'Dom']];
+const campo = (rot, nome, v, tipo = 'text', extra = '') => `<div ${extra}><label>${rot}</label><input name="${nome}" type="${tipo}" value="${esc(v ?? '')}"></div>`;
+const seletor = (rot, nome, lista, v) => `<div><label>${rot}</label><select name="${nome}">${Object.entries(lista).map(([k, t]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`;
+const tagAus = (t) => `<span class="tag ${{ falta: 'ruim', atestado: 'aviso', ferias: 'ok' }[t] || ''}">${esc(state.dp.meta.tipos_ausencia[t])}</span>`;
+const periodoAus = (a) => (a.data_inicio === a.data_fim ? dataBR(a.data_inicio) : `${dataBR(a.data_inicio)} a ${dataBR(a.data_fim)}`);
+const linkAnexo = (a) => (a.anexo_nome ? `<a href="/api/dp/ausencias/${a.id}/anexo" target="_blank" rel="noopener">${esc(a.anexo_nome)}</a>` : '<span class="mut">sem anexo</span>');
+
+async function dp() {
+  state.dp = state.dp || { aba: 'equipe', todos: false };
+  if (!state.dp.meta) state.dp.meta = await api('/api/dp/meta');
+  const mesSel = state.mes;
+  const [res, funcs, aus] = await Promise.all([api(`/api/dp/resumo/${mesSel}`), api(`/api/dp/funcionarios${state.dp.todos ? '?todos=1' : ''}`), api(`/api/dp/ausencias/${mesSel}`)]);
+  const aba = state.dp.aba, M = state.dp.meta;
+  const horario = (f) => (f.jornada_entrada ? `${f.jornada_entrada}–${f.jornada_saida}${f.jornada_horas ? ` · ${String(f.jornada_horas).replace('.', ',')} h/dia` : ''}` : '<span class="mut">não informado</span>');
+  $app.innerHTML = `<h1>Departamento de Pessoas</h1>
+    <p class="sub">Ficha de cada funcionário e controle de faltas, atestados e férias. Acesso só do administrador (dados pessoais e de saúde).</p>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Funcionários ativos</div><div class="v">${res.ativos}</div></div>
+      <div class="card kpi"><div class="l">Fora hoje</div><div class="v">${res.fora_hoje.length}</div><small class="mut">${esc(res.fora_hoje.map((x) => `${x.nome} (${M.tipos_ausencia[x.tipo].toLowerCase()})`).join(', ') || 'todos presentes')}</small></div>
+      <div class="card kpi"><div class="l">Fichas incompletas</div><div class="v">${res.fichas_incompletas.length}</div><small class="mut">dados que ainda faltam</small></div>
+      <div class="card kpi"><div class="l">Aniversariantes de ${MESES[+mesSel.slice(5) - 1].toLowerCase()}</div><div class="v">${res.aniversarios.length}</div><small class="mut">${esc(res.aniversarios.map((a) => `${a.nome} (${a.dia})`).join(', ') || '—')}</small></div>
+    </div>
+    ${res.aso_vencendo.length ? `<div class="aviso-box">${ico('info')}<span>Exame ocupacional (ASO) ${res.aso_vencendo.some((a) => a.vencido) ? 'vencido ou ' : ''}vencendo em até 30 dias: ${esc(res.aso_vencendo.map((a) => `${a.nome} (${dataBR(a.validade)})`).join(', '))}.</span></div>` : ''}
+    <div class="abas"><button class="${aba === 'equipe' ? 'on' : 'sec'}" data-aba="equipe">Equipe</button><button class="${aba === 'ausencias' ? 'on' : 'sec'}" data-aba="ausencias">Faltas e atestados</button></div>
+    ${aba === 'equipe' ? `<div class="row"><button id="novo">Novo funcionário</button><label class="chk"><input type="checkbox" id="todos" ${state.dp.todos ? 'checked' : ''}> mostrar desligados</label></div>
+      <div class="card"><div class="tbl"><table><thead><tr><th>Funcionário</th><th>Vínculo</th><th>Contato</th><th>Horário</th><th>Admissão</th><th>Ficha</th></tr></thead><tbody>
+      ${funcs.map((f) => `<tr class="clicavel" data-id="${f.id}"><td><b>${esc(f.nome)}</b>${f.ativo ? '' : ' <span class="tag">desligado</span>'}<br><small class="mut">${esc(f.cargo || '')}</small></td>
+        <td>${esc(M.regimes[f.regime])}<br><small class="mut">${esc(M.vinculos[f.vinculo])}</small></td><td><small>${esc([f.telefone, f.email].filter(Boolean).join(' · ') || '—')}</small></td>
+        <td><small>${horario(f)}</small></td><td>${f.data_admissao ? dataBR(f.data_admissao) : '<span class="mut">—</span>'}</td>
+        <td>${f.pendencias.length ? `<span class="tag aviso" title="${esc(f.pendencias.join(', '))}">faltam ${f.pendencias.length}</span>` : '<span class="tag ok">completa</span>'}</td></tr>`).join('')}</tbody></table></div>
+        <p class="legenda" style="margin-top:10px">Clique em um funcionário para abrir e preencher a ficha. As fichas foram criadas a partir de quem já estava cadastrado; a foto entra depois.</p></div>`
+    : `<div class="row">${seletorMes()}<button id="nova-aus">Registrar ausência</button></div>
+      <div class="card"><h2>Ausências em ${nomeMes(mesSel)}</h2>${aus.length ? `<div class="tbl"><table><thead><tr><th>Funcionário</th><th>Tipo</th><th>Período</th><th class="n">Dias úteis</th><th>Anexo</th><th></th></tr></thead><tbody>
+        ${aus.map((a) => `<tr><td><b>${esc(a.funcionario_nome)}</b>${a.obs ? `<br><small class="mut">${esc(a.obs)}</small>` : ''}</td><td>${tagAus(a.tipo)} ${a.justificada ? '' : '<span class="tag ruim">injustificada</span>'}</td><td>${periodoAus(a)}</td>
+          <td class="n">${a.dias_uteis}</td><td>${linkAnexo(a)}</td><td class="n"><button class="mini sec" data-del="${a.id}">excluir</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhuma ausência neste mês.</p>'}</div>
+      <div class="card"><h2>Resumo por pessoa — ${nomeMes(mesSel)}</h2><div class="tbl"><table><thead><tr><th>Funcionário</th><th class="n">Faltas</th><th class="n">Atestados</th><th class="n">Férias/licença</th><th class="n">Folgas</th><th class="n">Atrasos</th><th class="n">Dias fora</th><th class="n">Horas fora</th></tr></thead><tbody>
+        ${res.por_pessoa.map((p) => `<tr><td>${esc(p.nome)}</td><td class="n">${p.falta || '—'}</td><td class="n">${p.atestado || '—'}</td><td class="n">${p.ferias + p.licenca || '—'}</td><td class="n">${p.folga || '—'}</td><td class="n">${p.atraso || '—'}</td><td class="n"><b>${p.dias || '—'}</b></td><td class="n">${p.horas ?? '<span class="mut">sem horário</span>'}</td></tr>`).join('')}</tbody></table></div>
+        <p class="legenda" style="margin-top:8px">Só contam os dias em que a pessoa trabalharia (conforme os dias da semana da ficha). As horas usam a jornada diária informada na ficha.</p></div>`}`;
+  const recarrega = () => dp();
+  $app.querySelectorAll('[data-aba]').forEach((b) => (b.onclick = () => { state.dp.aba = b.dataset.aba; dp(); }));
+  document.getElementById('novo')?.addEventListener('click', () => fichaFuncionario(null, recarrega));
+  document.getElementById('todos')?.addEventListener('change', (e) => { state.dp.todos = e.target.checked; dp(); });
+  $app.querySelectorAll('tr.clicavel').forEach((tr) => (tr.onclick = () => fichaFuncionario(+tr.dataset.id, recarrega)));
+  if (aba === 'ausencias') {
+    ligaMes(dp);
+    document.getElementById('nova-aus').onclick = () => janelaAusencia(funcs.filter((f) => f.ativo), null, recarrega);
+    $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir esta ausência (e o anexo)?') && acao(async () => { await api(`/api/dp/ausencias/${b.dataset.del}`, { method: 'DELETE' }); await dp(); }, 'Ausência excluída')));
+  }
+}
+
+function janelaAusencia(funcs, funcId, depois) {
+  const M = state.dp.meta;
+  const m = modal(`<h2>Registrar ausência</h2><form class="form" id="fa" style="margin-top:14px">
+    <div class="larg"><label>Funcionário</label><select name="funcionario_id">${funcs.map((f) => `<option value="${f.id}" ${f.id === funcId ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
+    ${seletor('Tipo', 'tipo', M.tipos_ausencia, 'atestado')}
+    ${campo('De', 'data_inicio', hojeISO(), 'date')}${campo('Até (deixe igual se for 1 dia)', 'data_fim', hojeISO(), 'date')}
+    <div class="cheio"><label class="chk"><input type="checkbox" name="justificada" checked> Justificada (atestado, férias, acordo com a empresa)</label></div>
+    <div class="cheio"><label>Observação</label><input name="obs" placeholder="Ex.: CID não informado, retorno dia 10"></div>
+    <div class="cheio"><label>Anexar atestado (PDF, JPG ou PNG, até 3 MB)</label><input type="file" name="arq" accept="application/pdf,image/jpeg,image/png"></div></form>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Registrar</button></div>`, 560);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => acao(async () => {
+    const f = m.el.querySelector('#fa'), v = Object.fromEntries(new FormData(f)), arq = f.arq.files[0];
+    if (arq && arq.size > 3 * 1024 * 1024) throw new Error('O arquivo passa de 3 MB.');
+    const corpo = { funcionario_id: +v.funcionario_id, tipo: v.tipo, data_inicio: v.data_inicio, data_fim: v.data_fim || v.data_inicio, justificada: f.justificada.checked, obs: v.obs };
+    if (arq) corpo.anexo = { nome: arq.name, base64: await lerBase64(arq) };
+    await api('/api/dp/ausencias', { method: 'POST', body: corpo });
+    m.fechar(); await depois();
+  }, 'Ausência registrada');
+}
+
+async function fichaFuncionario(id, depois) {
+  const M = state.dp.meta;
+  const f = id ? await api(`/api/dp/funcionarios/${id}`) : { regime: 'a_verificar', vinculo: 'a_verificar', dias_trabalho: '1,2,3,4,5', ausencias: [], pendencias: [], ativo: 1 };
+  const dias = new Set(String(f.dias_trabalho).split(','));
+  const sec = (t, conteudo) => `<fieldset class="ficha-sec"><legend>${t}</legend><div class="form">${conteudo}</div></fieldset>`;
+  const m = modal(`<h2>${id ? esc(f.nome) : 'Novo funcionário'}</h2>
+    ${f.pendencias.length ? `<p class="legenda">Falta preencher: ${esc(f.pendencias.join(', '))}.</p>` : ''}
+    <form id="ff" autocomplete="off">
+    ${sec('Dados pessoais', `${campo('Nome completo', 'nome', f.nome, 'text', 'class="larg"')}${campo('Apelido', 'apelido', f.apelido)}${campo('Nascimento', 'data_nascimento', f.data_nascimento, 'date')}
+      ${seletor('Sexo', 'sexo', { '': '—', feminino: 'Feminino', masculino: 'Masculino', outro: 'Outro' }, f.sexo || '')}${seletor('Estado civil', 'estado_civil', { '': '—', solteiro: 'Solteiro(a)', casado: 'Casado(a)', uniao: 'União estável', divorciado: 'Divorciado(a)', viuvo: 'Viúvo(a)' }, f.estado_civil || '')}
+      ${campo('Nacionalidade', 'nacionalidade', f.nacionalidade)}${campo('Naturalidade', 'naturalidade', f.naturalidade)}${campo('Escolaridade', 'escolaridade', f.escolaridade)}
+      ${campo('Nome da mãe', 'nome_mae', f.nome_mae)}${campo('Nome do pai', 'nome_pai', f.nome_pai)}${campo('Dependentes', 'dependentes', f.dependentes, 'text', 'class="cheio"')}`)}
+    ${sec('Documentos', `${campo('CPF', 'cpf', f.cpf)}${campo('RG', 'rg', f.rg)}${campo('Órgão emissor', 'rg_orgao', f.rg_orgao)}${campo('Título de eleitor', 'titulo_eleitor', f.titulo_eleitor)}${campo('CNH', 'cnh', f.cnh)}${campo('PIS/PASEP', 'pis', f.pis)}`)}
+    ${sec('Carteira de trabalho (CTPS)', `${campo('Número', 'ctps_numero', f.ctps_numero)}${campo('Série', 'ctps_serie', f.ctps_serie)}${campo('UF', 'ctps_uf', f.ctps_uf)}${campo('Emissão', 'ctps_emissao', f.ctps_emissao, 'date')}`)}
+    ${sec('Contato e endereço', `${campo('Telefone', 'telefone', f.telefone, 'tel')}${campo('E-mail', 'email', f.email, 'email')}${campo('CEP', 'cep', f.cep)}${campo('Endereço', 'endereco', f.endereco, 'text', 'class="larg"')}${campo('Número', 'numero', f.numero)}${campo('Complemento', 'complemento', f.complemento)}${campo('Bairro', 'bairro', f.bairro)}${campo('Cidade', 'cidade', f.cidade)}${campo('UF', 'uf', f.uf)}`)}
+    ${sec('Emergência e saúde', `${campo('Contato de emergência', 'emergencia_nome', f.emergencia_nome)}${campo('Parentesco', 'emergencia_parentesco', f.emergencia_parentesco)}${campo('Telefone de emergência', 'emergencia_telefone', f.emergencia_telefone, 'tel')}
+      ${campo('Plano de saúde', 'plano_saude', f.plano_saude)}${campo('Nº da carteirinha', 'plano_saude_numero', f.plano_saude_numero)}${seletor('Tipo sanguíneo', 'tipo_sanguineo', { '': '—', ...Object.fromEntries(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((t) => [t, t])) }, f.tipo_sanguineo || '')}
+      ${campo('Alergias / observações de saúde', 'alergias', f.alergias, 'text', 'class="cheio"')}${campo('ASO admissional', 'aso_admissional', f.aso_admissional, 'date')}${campo('Validade do ASO', 'aso_validade', f.aso_validade, 'date')}`)}
+    ${sec('Contrato e jornada', `${campo('Cargo / função', 'cargo', f.cargo)}${campo('Setor', 'setor', f.setor)}${seletor('Regime', 'regime', M.regimes, f.regime)}${seletor('Registrado em', 'vinculo', M.vinculos, f.vinculo)}
+      ${campo('Admissão', 'data_admissao', f.data_admissao, 'date')}${campo('Desligamento', 'data_demissao', f.data_demissao, 'date')}${campo('Salário (R$)', 'salario', f.salario != null ? brlInput(f.salario) : '', 'text')}
+      ${campo('Entrada', 'jornada_entrada', f.jornada_entrada, 'time')}${campo('Saída', 'jornada_saida', f.jornada_saida, 'time')}${campo('Intervalo (min)', 'jornada_intervalo_min', f.jornada_intervalo_min, 'number')}
+      <div class="cheio"><label>Dias de trabalho</label><div class="dias">${DIAS_SEM.map(([v, n]) => `<label class="chk"><input type="checkbox" name="dia" value="${v}" ${dias.has(v) ? 'checked' : ''}> ${n}</label>`).join('')}</div></div>
+      ${campo('Vale-transporte', 'vale_transporte', f.vale_transporte)}${campo('Tamanho do uniforme', 'tamanho_uniforme', f.tamanho_uniforme)}`)}
+    ${sec('Pagamento', `${campo('Banco', 'banco', f.banco)}${campo('Agência', 'agencia', f.agencia)}${campo('Conta', 'conta', f.conta)}${campo('Chave PIX', 'pix', f.pix)}`)}
+    ${sec('Observações', `${campo('Observações', 'obs', f.obs, 'text', 'class="cheio"')}<div class="cheio"><label class="chk"><input type="checkbox" name="ativo" ${f.ativo ? 'checked' : ''}> Funcionário ativo (desmarque ao desligar)</label></div>`)}</form>
+    ${id ? `<h3 style="margin:16px 0 6px;font-size:14px">Ausências</h3>${f.ausencias.length ? `<div class="tbl"><table><tbody>${f.ausencias.map((a) => `<tr><td>${tagAus(a.tipo)}</td><td>${periodoAus(a)}</td><td class="n">${a.dias_uteis} dia(s)</td><td>${linkAnexo(a)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhuma ausência registrada.</p>'}` : ''}
+    <div class="modal-acoes">${id ? '<button class="sec" id="aus">Registrar ausência</button>' : ''}<span style="flex:1"></span><button class="sec" id="x">Fechar</button><button id="ok">Salvar ficha</button></div>`, 760);
+  m.el.querySelector('#x').onclick = m.fechar;
+  if (id) m.el.querySelector('#aus').onclick = () => { m.fechar(); janelaAusencia([f], f.id, depois); };
+  m.el.querySelector('#ok').onclick = () => acao(async () => {
+    const form = m.el.querySelector('#ff'), v = Object.fromEntries(new FormData(form));
+    const corpo = { ...v, dias_trabalho: [...form.querySelectorAll('[name=dia]:checked')].map((c) => c.value), ativo: form.ativo.checked };
+    delete corpo.dia;
+    if (v.salario) { corpo.salario = paraCentavos(v.salario); if (!(corpo.salario >= 0)) throw new Error('Salário inválido'); } else corpo.salario = null;
+    await api(id ? `/api/dp/funcionarios/${id}` : '/api/dp/funcionarios', { method: id ? 'PUT' : 'POST', body: corpo });
+    m.fechar(); await depois();
+  }, 'Ficha salva');
 }
 
 rota();

@@ -84,6 +84,11 @@ export async function seed() {
     await query(`INSERT INTO socios (nome, participacao_bp, aporte, obs) VALUES ($1,$2,$3,$4),($5,$6,$7,$8)`, [
       'Luiz Túlio', null, 0, 'Participação a confirmar.',
       'Luiz Amaro', 2000, 200000000, 'Entrou na sociedade com 20%, mediante aporte de R$ 2.000.000.']);
+    // Fichas do Departamento de Pessoas para quem já está cadastrado como funcionário, comissionado ou prestador
+    await query(`INSERT INTO funcionarios (pessoa_id, nome, cargo, vinculo, regime, obs)
+      SELECT id, nome, funcao, vinculo,
+        CASE WHEN funcao ILIKE 'Comission%' THEN 'comissionado' WHEN funcao ILIKE 'Prestador%' THEN 'prestador' ELSE 'a_verificar' END, obs
+      FROM pessoas WHERE vinculo <> 'socio' ORDER BY id`);
     // Catálogo inicial de produtos do comercial (a equipe acrescenta os demais na própria tela)
     await query(`INSERT INTO produtos_catalogo (nome) VALUES ('Painel P3.9'), ('Painel P5')`);
   });
