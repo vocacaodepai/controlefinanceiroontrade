@@ -1,0 +1,19 @@
+{
+  "name": "controle-financeiro-ontrade",
+  "version": "0.1.0",
+  "description": "Controle de caixa diário e mensal da OnTrade / LT1",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "reset": "node src/reset.js",
+    "test": "node --test test/*.test.js",
+    "demo": "node src/demo.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2"
+  }
+}

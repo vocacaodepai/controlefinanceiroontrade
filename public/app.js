@@ -1,0 +1,313 @@
+const $app = document.getElementById('app');
+const state = { meta: null, mes: null, dia: null, tipo: 'saida' };
+
+// ---------- util ----------
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const brl = (c) => ((c ?? 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const dataBR = (d) => d.split('-').reverse().join('/');
+const cls = (c) => (c < 0 ? 'neg' : c > 0 ? 'pos' : 'mut');
+const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const nomeMes = (m) => `${MESES[+m.slice(5) - 1]} de ${m.slice(0, 4)}`;
+const VINCULOS = { lt1: 'Registrado na LT1', ontrade: 'Registrado na OnTrade', japeri: 'Registrado em Japeri', informal: 'Sem registro', socio: 'Sócio(a)', a_verificar: '⚠ A verificar' };
+const TIPOS_CONTA = { banco: 'Banco', dinheiro: 'Dinheiro', intermediaria: 'Intermediária' };
+
+// "1.234,56" -> 123456 centavos
+function paraCentavos(txt) {
+  const n = String(txt).trim().replace(/[R$\s.]/g, '').replace(',', '.');
+  const v = Math.round(parseFloat(n) * 100);
+  return Number.isFinite(v) ? v : NaN;
+}
+
+function toast(msg, erro = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'on' + (erro ? ' erro' : '');
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 3200);
+}
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (r.status === 204) return null;
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || 'Erro inesperado');
+  return j;
+}
+const acao = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e) { toast(e.message, true); } };
+
+const opts = (lista, sel, vazio) =>
+  (vazio ? `<option value="">${vazio}</option>` : '') + lista.map((o) => `<option value="${o.id}" ${String(o.id) === String(sel) ? 'selected' : ''}>${esc(o.nome)}</option>`).join('');
+
+const barras = (dados, total) => {
+  const max = Math.max(...dados.map((d) => d.valor), 1);
+  return dados.length
+    ? dados.map((d) => `<div class="barra"><span class="nome" title="${esc(d.nome)}">${esc(d.nome)}</span><span class="trilho"><span class="fill" style="display:block;width:${(d.valor / max) * 100}%"></span></span><span class="val">${brl(d.valor)}</span></div>`).join('')
+    : '<p class="mut">Sem dados no período.</p>';
+};
+
+// ---------- roteamento ----------
+const rotas = { painel, lancar, fechar, mensal, fluxo, cadastros, roadmap };
+async function rota() {
+  const nome = location.hash.slice(1) || 'painel';
+  document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome));
+  if (!state.meta) {
+    state.meta = await api('/api/meta');
+    state.dia = state.dia || state.meta.hoje;
+    state.mes = state.mes || state.meta.hoje.slice(0, 7);
+  }
+  try { await (rotas[nome] || painel)(); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
+}
+addEventListener('hashchange', rota);
+const recarregarMeta = async () => { state.meta = { ...(await api('/api/meta')), hoje: state.meta.hoje }; };
+
+function seletorMes(onChange) {
+  return `<div><label>Mês</label><input type="month" id="sel-mes" value="${state.mes}"></div>`;
+}
+function ligaMes(fn) {
+  document.getElementById('sel-mes').onchange = (e) => { if (e.target.value) { state.mes = e.target.value; fn(); } };
+}
+
+// ---------- PAINEL ----------
+async function painel() {
+  const p = await api(`/api/painel/${state.mes}`);
+  const pendentes = p.recorrencias.filter((r) => !r.lancada);
+  const maxSerie = Math.max(...p.serie.flatMap((s) => [s.entradas, s.saidas]), 1);
+  $app.innerHTML = `
+    <h1>Painel</h1><p class="sub">Visão do mês: quanto entrou (com e sem nota), quanto saiu e quem pagou.</p>
+    <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">⬇ Emitir controle mensal (Excel)</a></div>
+    ${p.dias_abertos.length ? `<div class="aviso-box">⚠ ${p.dias_abertos.length} dia(s) com lançamentos ainda <b>sem fechamento</b>: ${p.dias_abertos.map(dataBR).join(', ')}. <a href="#fechar">Fechar caixa</a></div>` : ''}
+    <div class="grid">
+      <div class="card kpi"><div class="l">Entradas COM nota</div><div class="v">${brl(p.entradas_com_nota)}</div></div>
+      <div class="card kpi"><div class="l">Entradas SEM nota</div><div class="v">${brl(p.entradas_sem_nota)}</div></div>
+      <div class="card kpi"><div class="l">Saídas</div><div class="v neg">${brl(p.saidas)}</div></div>
+      <div class="card kpi"><div class="l">Resultado do mês</div><div class="v ${cls(p.resultado)}">${brl(p.resultado)}</div></div>
+    </div>
+    <div class="grid dois">
+      <div class="card"><h2>Saldo por conta (fim do período)</h2><div class="tbl"><table>
+        <tbody>${p.saldos.map((s) => `<tr><td>${esc(s.nome)}</td><td><span class="tag ${s.modalidade}">${s.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td><td class="n ${cls(s.saldo)}">${brl(s.saldo)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="2">Total</td><td class="n">${brl(p.saldos.reduce((a, s) => a + s.saldo, 0))}</td></tr></tfoot></table></div></div>
+      <div class="card"><h2>Entradas e saídas por dia</h2>
+        ${p.serie.length ? `<div class="serie">${p.serie.map((s) => `<div class="col" title="${dataBR(s.data)}: +${brl(s.entradas)} / -${brl(s.saidas)}"><div class="e" style="height:${(s.entradas / maxSerie) * 100}%"></div><div class="s" style="height:${(s.saidas / maxSerie) * 100}%"></div></div>`).join('')}</div><p class="legenda"><span class="pos">■</span> entradas &nbsp; <span class="neg">■</span> saídas</p>` : '<p class="mut">Nenhum lançamento neste mês ainda.</p>'}
+      </div>
+    </div>
+    <div class="grid dois">
+      <div class="card"><h2>Saídas por quem pagou</h2>${barras(p.saidas_por_pagador)}</div>
+      <div class="card"><h2>Saídas por grupo</h2>${barras(p.saidas_por_grupo)}</div>
+    </div>
+    <div class="card"><h2>Saídas por categoria</h2>${barras(p.saidas_por_categoria)}</div>
+    <div class="card"><h2>Pagamentos recorrentes de ${nomeMes(state.mes)}</h2>
+      ${p.recorrencias.length ? `<table>${p.recorrencias.map((r) => `<tr><td>${esc(r.nome)}</td><td>dia ${dataBR(r.data_prevista).slice(0, 2)}</td><td class="n">${r.valor ? brl(r.valor) + (r.estimado ? ' ~' : '') : '—'}</td><td class="n">${r.lancada ? '<span class="tag ok">lançado</span>' : `<button class="mini" data-lancar="${r.id}">Lançar</button>`}</td></tr>`).join('')}</table>` : '<p class="mut">Nenhuma recorrência cadastrada.</p>'}
+      ${pendentes.length ? '<p class="legenda">O valor é estimado — ajuste-o ao lançar se necessário.</p>' : ''}
+    </div>`;
+  ligaMes(painel);
+  $app.querySelectorAll('[data-lancar]').forEach((b) => (b.onclick = () => lancarRecorrencia(+b.dataset.lancar, p.recorrencias, painel)));
+}
+
+async function lancarRecorrencia(id, lista, volta) {
+  const r = lista.find((x) => x.id === id);
+  const v = prompt(`Valor real de "${r.nome}" (R$):`, r.valor ? (r.valor / 100).toFixed(2).replace('.', ',') : '');
+  if (v === null) return;
+  const valor = paraCentavos(v);
+  if (!(valor > 0)) return toast('Valor inválido', true);
+  await acao(async () => { await api(`/api/recorrencias/${id}/lancar`, { method: 'POST', body: { mes: state.mes, valor } }); await volta(); }, 'Lançado!');
+}
+
+// ---------- LANÇAR ----------
+async function lancar() {
+  const { contas, categorias, pessoas } = state.meta;
+  const dia = await api(`/api/dia/${state.dia}`);
+  const fechado = !!dia.fechado;
+  const t = state.tipo;
+  const cats = categorias.filter((c) => c.ativo && (t === 'entrada' ? c.tipo === 'entrada' : t === 'saida' ? c.tipo === 'saida' : false));
+  $app.innerHTML = `
+    <h1>Lançar</h1><p class="sub">Registre cada entrada, saída ou transferência do dia. Ex.: "Papelaria R$ 15 pago pela OnTrade no Bradesco".</p>
+    <div class="row"><div><label>Dia</label><input type="date" id="dia" value="${state.dia}"></div>
+      <div>${fechado ? '<span class="tag aviso">🔒 dia fechado — reabra em "Fechar o dia" para lançar</span>' : '<span class="tag ok">dia aberto</span>'}</div></div>
+    <form class="card" id="f" ${fechado ? 'inert style="opacity:.5"' : ''}>
+      <div class="seg" style="margin-bottom:14px">${['saida', 'entrada', 'transferencia'].map((x) => `<button type="button" data-tipo="${x}" class="${x} ${t === x ? 'on' : ''}">${{ saida: '− Saída', entrada: '+ Entrada', transferencia: '⇄ Transferência' }[x]}</button>`).join('')}</div>
+      <div class="form">
+        <div class="larg"><label>${t === 'entrada' ? 'Entrou em qual conta?' : t === 'saida' ? 'Saiu de qual conta? (quem pagou)' : 'Origem'}</label>
+          <select name="conta_id" required>${contas.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)} — ${esc(c.empresa)} (${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'})</option>`).join('')}</select></div>
+        ${t === 'transferencia' ? `<div><label>Destino</label><select name="conta_destino_id" required>${contas.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>` : `<div><label>Categoria</label><select name="categoria_id" required>${opts(cats, '', 'Selecione…')}</select></div>`}
+        <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" placeholder="0,00" required autofocus></div>
+        ${t === 'entrada' ? '<div><label>Cliente</label><input name="cliente" placeholder="Nome do cliente"></div>' : ''}
+        ${t === 'saida' ? `<div><label>Pessoa (se for pagamento a alguém)</label><select name="pessoa_id">${opts(pessoas.filter((p) => p.ativo), '', '— nenhuma —')}</select></div>` : ''}
+        <div class="cheio"><label>Descrição</label><input name="descricao" placeholder="Ex.: papelaria, estacionamento, adiantamento…"></div>
+        <div><label>Lançado por</label><input name="criado_por" value="${esc(localStorage.getItem('operador') || '')}" placeholder="Seu nome"></div>
+        <div style="align-self:end"><button>Salvar lançamento</button></div>
+      </div>
+    </form>
+    <div class="card"><h2>Lançamentos de ${dataBR(state.dia)}</h2>
+      ${dia.lancamentos.length ? `<div class="tbl"><table><thead><tr><th>Tipo</th><th>Conta</th><th>Categoria / pessoa</th><th>Descrição</th><th class="n">Valor</th><th></th></tr></thead><tbody>
+      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">+ Entrada</span>', saida: '<span class="neg">− Saída</span>', transferencia: '⇄ Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="4">Entradas ${brl(dia.totais.entradas)} · Saídas ${brl(dia.totais.saidas)}</td><td class="n">${brl(dia.totais.entradas - dia.totais.saidas)}</td><td></td></tr></tfoot></table></div>` : '<p class="mut">Nada lançado neste dia.</p>'}
+    </div>`;
+  document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; lancar(); } };
+  $app.querySelectorAll('[data-tipo]').forEach((b) => (b.onclick = () => { state.tipo = b.dataset.tipo; lancar(); }));
+  $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir este lançamento?') && acao(async () => { await api(`/api/lancamentos/${b.dataset.del}`, { method: 'DELETE' }); lancar(); }, 'Excluído')));
+  document.getElementById('f').onsubmit = (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const valor = paraCentavos(f.valor);
+    if (!(valor > 0)) return toast('Informe um valor válido', true);
+    if (f.criado_por) localStorage.setItem('operador', f.criado_por);
+    acao(async () => { await api('/api/lancamentos', { method: 'POST', body: { ...f, valor, tipo: t, data: state.dia } }); await lancar(); }, 'Lançamento salvo!');
+  };
+}
+
+// ---------- FECHAR O DIA ----------
+async function fechar() {
+  const d = await api(`/api/dia/${state.dia}`);
+  const fechado = !!d.fechado;
+  $app.innerHTML = `
+    <h1>Fechar o dia</h1><p class="sub">Confira o saldo de cada conta. Para dinheiro e bancos, informe o valor <b>contado/conferido</b> e o sistema mostra a diferença.</p>
+    <div class="row"><div><label>Dia</label><input type="date" id="dia" value="${state.dia}"></div>
+      <a class="btn sec" href="/api/export/dia/${state.dia}">⬇ Excel do dia</a></div>
+    ${fechado ? `<div class="aviso-box">🔒 Dia fechado em ${esc(d.fechado.fechado_em)}${d.fechado.fechado_por ? ' por <b>' + esc(d.fechado.fechado_por) + '</b>' : ''}. ${d.fechado.obs ? esc(d.fechado.obs) : ''}</div>` : ''}
+    <div class="card tbl"><table>
+      <thead><tr><th>Conta</th><th class="n">Saldo anterior</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Transf.</th><th class="n">Saldo do sistema</th><th class="n">Contado</th><th class="n">Diferença</th></tr></thead>
+      <tbody>${d.contas.map((c) => {
+        const contado = fechado ? c.saldo_contado : null;
+        const dif = contado != null ? contado - c.saldo : null;
+        return `<tr><td>${esc(c.nome)} <span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
+        <td class="n">${brl(c.saldo_anterior)}</td><td class="n pos">${brl(c.entradas)}</td><td class="n neg">${brl(c.saidas)}</td><td class="n">${brl(c.transf_entrada - c.transf_saida)}</td>
+        <td class="n"><b>${brl(c.saldo)}</b></td>
+        <td class="n">${fechado ? (contado != null ? brl(contado) : '—') : `<input data-conta="${c.id}" inputmode="decimal" placeholder="opcional" style="width:120px;text-align:right">`}</td>
+        <td class="n ${dif ? cls(dif) : ''}" data-dif="${c.id}">${dif != null ? brl(dif) : ''}</td></tr>`;
+      }).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td class="n">${brl(d.totais.saldo_anterior)}</td><td class="n">${brl(d.totais.entradas)}</td><td class="n">${brl(d.totais.saidas)}</td><td></td><td class="n">${brl(d.totais.saldo)}</td><td></td><td></td></tr></tfoot></table></div>
+    ${fechado ? `<button class="perigo" id="reabrir">Reabrir dia</button>` : `
+      <div class="card"><div class="form"><div><label>Fechado por</label><input id="por" value="${esc(localStorage.getItem('operador') || '')}"></div><div class="cheio"><label>Observações do fechamento</label><input id="obs" placeholder="Ex.: sobrou R$ 20 no caixa, aguardando comprovante…"></div></div><br><button id="fechar">🔒 Fechar caixa de ${dataBR(state.dia)}</button></div>`}`;
+  document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; fechar(); } };
+  $app.querySelectorAll('[data-conta]').forEach((i) => (i.oninput = () => {
+    const c = d.contas.find((x) => x.id === +i.dataset.conta);
+    const v = paraCentavos(i.value);
+    const cel = $app.querySelector(`[data-dif="${c.id}"]`);
+    cel.textContent = Number.isNaN(v) ? '' : brl(v - c.saldo);
+    cel.className = 'n ' + (Number.isNaN(v) ? '' : cls(v - c.saldo));
+  }));
+  document.getElementById('reabrir')?.addEventListener('click', () => confirm('Reabrir o dia?') && acao(async () => { await api(`/api/dia/${state.dia}/fechar`, { method: 'DELETE' }); fechar(); }, 'Dia reaberto'));
+  document.getElementById('fechar')?.addEventListener('click', () => {
+    const contagens = {};
+    $app.querySelectorAll('[data-conta]').forEach((i) => { if (i.value.trim()) contagens[i.dataset.conta] = paraCentavos(i.value); });
+    const por = document.getElementById('por').value;
+    if (por) localStorage.setItem('operador', por);
+    acao(async () => { await api(`/api/dia/${state.dia}/fechar`, { method: 'POST', body: { contagens, obs: document.getElementById('obs').value, fechado_por: por } }); fechar(); }, 'Caixa fechado!');
+  });
+}
+
+// ---------- MENSAL ----------
+async function mensal() {
+  const p = await api(`/api/painel/${state.mes}`);
+  $app.innerHTML = `
+    <h1>Controle mensal</h1><p class="sub">A Dona Elisa clica em <b>Emitir</b> e recebe a planilha completa do mês.</p>
+    <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">⬇ Emitir controle mensal — ${nomeMes(state.mes)}</a></div>
+    <div class="card"><h2>O que vai na planilha</h2>
+      <ul><li><b>Resumo</b> — entradas com/sem nota, saídas por pagador (OnTrade × LT1), por grupo e por categoria, saldo final por conta</li>
+      <li><b>Por conta</b> — movimento de cada banco / canal</li><li><b>Pessoas e folha</b> — quanto cada pessoa recebeu, de que tipo e quem pagou</li>
+      <li><b>Fechamento diário</b> — saldo dia a dia e quais dias foram fechados</li><li><b>Lançamentos</b> — todos os registros, com filtro</li><li><b>Mapa do fluxo</b> — referência de como o dinheiro circula</li></ul>
+      <p class="legenda"><b>Google Sheets:</b> salve o arquivo no Drive e abra com “Planilhas Google” — fórmulas e formatação são preservadas. (Envio automático ao Drive está no <a href="#roadmap">roadmap</a>.)</p></div>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Lançamentos no mês</div><div class="v">${p.qtd_lancamentos}</div></div>
+      <div class="card kpi"><div class="l">Dias fechados</div><div class="v">${p.dias_fechados}</div></div>
+      <div class="card kpi"><div class="l">Resultado</div><div class="v ${cls(p.resultado)}">${brl(p.resultado)}</div></div>
+    </div>
+    ${p.dias_abertos.length ? `<div class="aviso-box">⚠ Dias com lançamentos ainda não fechados: ${p.dias_abertos.map(dataBR).join(', ')}. Recomenda-se fechar antes de emitir.</div>` : ''}`;
+  ligaMes(mensal);
+}
+
+// ---------- FLUXO ----------
+function fluxo() {
+  const lista = (itens) => `<ul>${itens.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+  $app.innerHTML = `
+    <h1>Mapa do fluxo</h1><p class="sub">Como o dinheiro entra, passa pela LT1 e sai. Esta é a lógica que o sistema segue.</p>
+    <div class="card"><div class="fluxo">
+      <div class="col-fluxo">
+        <div class="no com"><h3>🧾 Cliente paga COM nota</h3>${lista(['Banco Safra', 'Banco Infinity', 'Banco Bradesco', 'Banco do Brasil'])}</div>
+        <div class="no sem"><h3>💵 Cliente paga SEM nota</h3>${lista(['DAE → direto ao fornecedor chinês', 'PagVeloz', 'LT1 (empresa da Dona Elisa)', 'Dinheiro'])}</div>
+      </div>
+      <div class="seta">➜</div>
+      <div class="col-fluxo">
+        <div class="no ont"><h3>🏢 OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Seu Dantas (conta ou dinheiro) ⚠ checar registro'])}</div>
+        <div class="no lt1"><h3>🏦 LT1 paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
+      </div>
+      <div class="seta">➜</div>
+      <div class="col-fluxo">
+        <div class="no"><h3>👤 Dona Elisa</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LT1 para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
+        <div class="no"><h3>📌 Registros</h3>${lista(['Carla e João → registrados na LT1', 'Dona Kátia → registrada na empresa de Japeri', 'Seu Dantas → a confirmar'])}</div>
+      </div>
+    </div>
+    <p class="legenda" style="margin-top:12px"><span class="tag com_nota">com nota</span> entra pelos bancos da OnTrade &nbsp; <span class="tag sem_nota">sem nota</span> entra por DAE, PagVeloz, LT1 e dinheiro. No sistema cada conta pertence a uma empresa e tem a modalidade — assim o relatório separa automaticamente “quem pagou” e “com/sem nota”.</p></div>`;
+}
+
+// ---------- CADASTROS ----------
+async function cadastros() {
+  await recarregarMeta();
+  const { contas, pessoas, categorias, empresas } = state.meta;
+  const rec = await api(`/api/painel/${state.mes}`).then((p) => p.recorrencias);
+  $app.innerHTML = `
+    <h1>Cadastros</h1><p class="sub">Contas, pessoas e categorias. Os valores (salários, iFood…) entram aos poucos — comece pelos saldos iniciais das contas.</p>
+    <div class="card"><h2>Contas e saldo inicial</h2><div class="tbl"><table><thead><tr><th>Conta</th><th>Empresa</th><th>Nota</th><th class="n">Saldo inicial (R$)</th></tr></thead><tbody>
+      ${contas.map((c) => `<tr><td>${esc(c.nome)}${c.obs ? `<br><small class="mut">${esc(c.obs)}</small>` : ''}</td><td>${esc(c.empresa)}</td><td><span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
+      <td class="n"><input data-saldo="${c.id}" value="${(c.saldo_inicial / 100).toFixed(2).replace('.', ',')}" style="width:130px;text-align:right"></td></tr>`).join('')}</tbody></table></div>
+      <details style="margin-top:12px"><summary>+ Nova conta</summary><form class="form" id="nova-conta" style="margin-top:10px">
+        <div><label>Nome</label><input name="nome" required></div><div><label>Empresa</label><select name="empresa_id">${opts(empresas)}</select></div>
+        <div><label>Tipo</label><select name="tipo">${Object.entries(TIPOS_CONTA).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+        <div><label>Nota</label><select name="modalidade"><option value="com_nota">Com nota</option><option value="sem_nota">Sem nota</option></select></div>
+        <div style="align-self:end"><button>Adicionar</button></div></form></details></div>
+    <div class="card"><h2>Pessoas</h2><div class="tbl"><table><thead><tr><th>Nome</th><th>Função</th><th>Vínculo</th><th>Pagador padrão</th></tr></thead><tbody>
+      ${pessoas.map((p) => `<tr><td>${esc(p.nome)}${p.obs ? `<br><small class="mut">${esc(p.obs)}</small>` : ''}</td><td>${esc(p.funcao || '')}</td>
+      <td><select data-vinculo="${p.id}">${Object.entries(VINCULOS).map(([k, v]) => `<option value="${k}" ${p.vinculo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td><td>${esc(p.pagador_padrao || '')}</td></tr>`).join('')}</tbody></table></div>
+      <details style="margin-top:12px"><summary>+ Nova pessoa</summary><form class="form" id="nova-pessoa" style="margin-top:10px">
+        <div><label>Nome</label><input name="nome" required></div><div><label>Função</label><input name="funcao"></div>
+        <div><label>Vínculo</label><select name="vinculo">${Object.entries(VINCULOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+        <div><label>Pagador padrão</label><input name="pagador_padrao" placeholder="LT1 / OnTrade"></div><div style="align-self:end"><button>Adicionar</button></div></form></details></div>
+    <div class="grid dois"><div class="card"><h2>Categorias</h2>
+      ${['entrada', 'saida'].map((t) => `<p><b>${t === 'entrada' ? 'Entradas' : 'Saídas'}</b></p>` + [...new Set(categorias.filter((c) => c.tipo === t).map((c) => c.grupo))].map((g) => `<p style="margin:2px 0"><span class="mut">${esc(g)}:</span> ${categorias.filter((c) => c.tipo === t && c.grupo === g).map((c) => esc(c.nome)).join(' · ')}</p>`).join('')).join('')}
+      <details style="margin-top:12px"><summary>+ Nova categoria</summary><form class="form" id="nova-cat" style="margin-top:10px"><div><label>Nome</label><input name="nome" required></div>
+        <div><label>Tipo</label><select name="tipo"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div><div><label>Grupo</label><input name="grupo" required placeholder="Ex.: Pessoal"></div><div style="align-self:end"><button>Adicionar</button></div></form></details></div>
+      <div class="card"><h2>Recorrências</h2>${rec.map((r) => `<p><b>${esc(r.nome)}</b><br>Todo dia ${r.dia_mes} · ${r.valor ? brl(r.valor) + (r.estimado ? ' (aprox.)' : '') : 'valor a definir'} · ${esc(r.conta)}</p>`).join('') || '<p class="mut">Nenhuma.</p>'}
+      <p class="legenda">Aparecem no Painel, onde um clique as transforma em lançamento no mês.</p></div></div>`;
+  $app.querySelectorAll('[data-saldo]').forEach((i) => (i.onchange = () => {
+    const v = paraCentavos(i.value);
+    if (Number.isNaN(v)) return toast('Valor inválido', true);
+    acao(() => api(`/api/contas/${i.dataset.saldo}`, { method: 'PUT', body: { saldo_inicial: v } }), 'Saldo inicial salvo');
+  }));
+  $app.querySelectorAll('[data-vinculo]').forEach((s) => (s.onchange = () => acao(() => api(`/api/pessoas/${s.dataset.vinculo}`, { method: 'PUT', body: { vinculo: s.value } }), 'Vínculo atualizado')));
+  const novo = (id, tabela, ajusta = (x) => x) => document.getElementById(id).addEventListener('submit', (e) => {
+    e.preventDefault();
+    acao(async () => { await api(`/api/${tabela}`, { method: 'POST', body: ajusta(Object.fromEntries(new FormData(e.target))) }); await cadastros(); }, 'Adicionado!');
+  });
+  novo('nova-conta', 'contas'); novo('nova-pessoa', 'pessoas'); novo('nova-cat', 'categorias');
+}
+
+// ---------- ROADMAP ----------
+function roadmap() {
+  const item = (t, d) => `<li><b>${t}</b> — ${d}</li>`;
+  $app.innerHTML = `
+    <h1>Roadmap e sugestões</h1><p class="sub">O que já está no esqueleto e o que podemos construir em seguida.</p>
+    <div class="card"><h2>✅ Já no esqueleto</h2><ul>
+      ${item('Lançamentos', 'entrada, saída e transferência por conta, categoria e pessoa')}
+      ${item('Com nota × sem nota', 'cada conta tem modalidade; relatórios separam automaticamente')}
+      ${item('Quem pagou', 'OnTrade × LT1 × outros em todos os relatórios')}
+      ${item('Fechamento diário', 'saldo do sistema × contado, com trava do dia')}
+      ${item('Excel diário e mensal', 'com fórmulas, abre direto no Google Sheets')}
+      ${item('Recorrências', 'empréstimo da Dona Elisa (~R$ 16.800 dia 5) pronto para lançar')}</ul></div>
+    <div class="card"><h2>🚀 Próximos passos sugeridos</h2><ul>
+      ${item('Login e perfis', 'Dona Elisa (tudo), operador (só lançar), contador (só leitura)')}
+      ${item('Google Drive automático', 'o botão “Emitir” já salvar o Google Sheets na pasta do Drive')}
+      ${item('Folha por pessoa', 'valor mensal de cada salário, iFood, passagem e alimentação como recorrências')}
+      ${item('Conciliação bancária', 'importar OFX/CSV de Safra, Bradesco, BB e Infinity e casar com os lançamentos')}
+      ${item('Anexar comprovantes', 'foto do recibo / comprovante PIX em cada lançamento (celular)')}
+      ${item('Lançamento pelo WhatsApp', 'mandar “papelaria 15 bradesco” e virar lançamento')}
+      ${item('Contas a pagar e a receber', 'vencimentos de tributos, luz, gás, água e alertas')}
+      ${item('Previsão de caixa', 'projetar 30/60/90 dias com folha + empréstimo + recorrências')}
+      ${item('Controle do empréstimo', 'saldo devedor, parcelas pagas e restantes')}
+      ${item('Metas e alertas', 'ex.: “LT1 com saldo menor que a folha + empréstimo do mês”')}
+      ${item('Regularização de vínculos', 'lista de quem está ou não registrado (Seu Dantas, Fátima, Tayane…)')}
+      ${item('Backup automático', 'cópia diária do banco no Drive')}</ul></div>
+    <div class="card"><h2>❓ Perguntas em aberto</h2><ul>
+      <li>Kátia e Dona Kátia são a mesma pessoa?</li><li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>
+      <li>O PagVeloz é conta da OnTrade ou da LT1?</li><li>As despesas em dinheiro saem de um caixa físico único ou de vários?</li>
+      <li>O empréstimo tem prazo/saldo devedor para acompanhar?</li></ul></div>`;
+}
+
+rota();
