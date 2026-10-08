@@ -51,7 +51,7 @@ test('lançar: exige categoria, cria nas datas do extrato, respeita dia fechado 
   const [entrada, compra1, compra2] = d.movimentos;
   const catRec = await id('categorias', 'Recebimento de cliente'), catPap = await id('categorias', 'Papelaria');
 
-  const semCat = await X.lancarMovimentos(ext.id, [entrada.id], 'Elisa');
+  const semCat = await X.lancarMovimentos(ext.id, [entrada.id], { nome: 'Elisa', id: null });
   assert.equal(semCat.lancados, 0);
   assert.match(semCat.falhas[0].motivo, /categoria/i);
 
@@ -61,7 +61,7 @@ test('lançar: exige categoria, cria nas datas do extrato, respeita dia fechado 
   await X.editarMovimento(compra2.id, { categoria_id: catPap });
 
   await S.fecharDia('2026-03-10'); // dia da entrada fica fechado
-  const r = await X.lancarMovimentos(ext.id, [entrada.id, compra1.id, compra2.id], 'Elisa');
+  const r = await X.lancarMovimentos(ext.id, [entrada.id, compra1.id, compra2.id], { nome: 'Elisa', id: null });
   assert.equal(r.lancados, 2);
   assert.match(r.falhas[0].motivo, /fechado/);
 
@@ -69,7 +69,7 @@ test('lançar: exige categoria, cria nas datas do extrato, respeita dia fechado 
   assert.equal(lancs.length, 2);
   assert.equal(lancs[0].conta, 'Banco Safra');
   assert.equal(lancs[0].criado_por, 'Elisa (extrato)');
-  const reproc = await X.lancarMovimentos(ext.id, [compra1.id], 'Elisa');
+  const reproc = await X.lancarMovimentos(ext.id, [compra1.id], { nome: 'Elisa', id: null });
   assert.equal(reproc.lancados, 0, 'não lança duas vezes');
 
   const regra = await one("SELECT * FROM regras_classificacao WHERE termo = 'papelaria central'");

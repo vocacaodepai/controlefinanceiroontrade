@@ -67,6 +67,8 @@ const linhaLanc = (l) => ({
   cliente: l.cliente || '',
   descricao: l.descricao || '',
   valor: brl(l.valor) * (l.tipo === 'saida' ? -1 : 1),
+  autor: l.criado_por || '',
+  quando: l.criado_em ? `${fmtData(l.criado_em.slice(0, 10))} ${l.criado_em.slice(11, 16)}` : '',
 });
 const COLS_LANC = [
   { titulo: 'Data', chave: 'data' }, { titulo: 'Tipo', chave: 'tipo' }, { titulo: 'Nota', chave: 'nota' },
@@ -74,8 +76,9 @@ const COLS_LANC = [
   { titulo: 'Categoria', chave: 'categoria' }, { titulo: 'Pessoa', chave: 'pessoa' },
   { titulo: 'Cliente', chave: 'cliente' }, { titulo: 'Descrição', chave: 'descricao' },
   { titulo: 'Valor', chave: 'valor', moeda: true },
+  { titulo: 'Lançado por', chave: 'autor' }, { titulo: 'Lançado em', chave: 'quando' },
 ];
-const LARG_LANC = [12, 14, 10, 30, 22, 24, 16, 22, 40, 16];
+const LARG_LANC = [12, 14, 10, 30, 22, 24, 16, 22, 40, 16, 24, 17];
 
 function novoLivro() {
   const wb = new ExcelJS.Workbook();
@@ -109,7 +112,7 @@ export async function excelDia(data) {
   ws.getCell(linha, 1).value = 'Lançamentos do dia';
   ws.getCell(linha, 1).font = { bold: true, size: 12 };
   tabela(ws, linha + 1, COLS_LANC, r.lancamentos.map(linhaLanc));
-  larguras(ws, [30, 12, 16, 16, 16, 16, 18, 18, 16, 16]);
+  larguras(ws, [30, 12, 16, 16, 16, 16, 18, 18, 16, 16, 24, 17]);
   ws.getColumn(9).width = 40;
   return wb;
 }

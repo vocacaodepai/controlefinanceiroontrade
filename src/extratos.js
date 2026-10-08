@@ -339,7 +339,7 @@ export async function lancarMovimentos(extratoId, ids, usuario) {
       await tx(async () => {
         const l = await criarLancamento({
           data: m.data, tipo: m.tipo, valor: m.valor, conta_id: e.conta_id, categoria_id: m.categoria_id,
-          pessoa_id: m.pessoa_id, cliente: m.cliente, descricao: m.descricao, criado_por: `${usuario} (extrato)`,
+          pessoa_id: m.pessoa_id, cliente: m.cliente, descricao: m.descricao, criado_por: `${usuario.nome} (extrato)`, criado_por_id: usuario.id,
         });
         await query("UPDATE movimentos_importados SET status='lancado', lancamento_id=$1 WHERE id=$2", [l.id, id]);
         await aprender(m);

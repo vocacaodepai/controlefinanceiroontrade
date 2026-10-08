@@ -11,6 +11,89 @@ const ICONES = {
   'arrow-right': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
 };
 const ico = (n) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[n]}</svg>`;
+// ---------- Avatar: rosto da pessoa sobre o uniforme da OnTrade ----------
+// admin: terno e gravata · operador: polo · somente leitura: camisa social. A foto é o rosto; o resto é desenho.
+let _av = 0;
+function avatar(p, tam = 40, fotoUrl) {
+  const n = ++_av;
+  const papel = p?.papel || 'leitor';
+  const foto = fotoUrl || (p?.tem_foto ? `/api/usuarios/${p.id}/foto?v=${p.foto_v}` : null);
+  const inicial = esc((p?.nome || '?').trim().charAt(0).toUpperCase());
+  const cracha = '<circle cx="69" cy="84" r="6.2" fill="#fff"/><image href="favicon.png" x="63.5" y="78.5" width="11" height="11"/>';
+  const corpos = {
+    admin: '<path d="M8 100C10 76 28 66 50 66s40 10 42 34Z" fill="#012d61"/><path d="M38 66l12 21 12-21Z" fill="#fff"/><path d="M47 69h6l1.5 8L50 96l-4.5-19Z" fill="#0c5aa6"/><path d="M38 66l12 21M62 66L50 87" stroke="#0a2146" stroke-width="1.3" fill="none"/>' + cracha,
+    operador: '<path d="M8 100C10 76 28 66 50 66s40 10 42 34Z" fill="#0c5aa6"/><path d="M38 65l12 9 12-9-4-4-8 6-8-6Z" fill="#fff"/><path d="M50 74v18" stroke="#fff" stroke-width="1.4"/><circle cx="50" cy="80" r="1.3" fill="#fff"/><circle cx="50" cy="86" r="1.3" fill="#fff"/>' + cracha,
+    leitor: '<path d="M8 100C10 76 28 66 50 66s40 10 42 34Z" fill="#f4f6f9" stroke="#c4cedb" stroke-width="1"/><path d="M38 65l12 10 12-10-4-4-8 6-8-6Z" fill="#fff" stroke="#c4cedb" stroke-width="1"/>' + cracha,
+  };
+  return `<svg class="avatar" width="${tam}" height="${tam}" viewBox="0 0 100 100" role="img" aria-label="${esc(p?.nome || '')}">
+    <defs><clipPath id="ao${n}"><circle cx="50" cy="50" r="50"/></clipPath><clipPath id="ah${n}"><circle cx="50" cy="35" r="22"/></clipPath></defs>
+    <g clip-path="url(#ao${n})"><rect width="100" height="100" fill="#e3eaf4"/>${corpos[papel] || corpos.leitor}
+      <circle cx="50" cy="35" r="22" fill="#c9d3e0"/>
+      ${foto ? `<image href="${foto}" x="28" y="13" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#ah${n})"/>` : `<text x="50" y="44" text-anchor="middle" font-size="24" font-weight="600" fill="#012d61" font-family="system-ui,sans-serif">${inicial}</text>`}
+      <circle cx="50" cy="35" r="22" fill="none" stroke="#fff" stroke-width="1.5"/></g></svg>`;
+}
+const equipePorId = (id) => state.meta?.equipe?.find((p) => p.id === id);
+// Quem fez o lançamento: foto, nome e hora
+function quemLancou(l) {
+  const p = equipePorId(l.criado_por_id);
+  const nome = p?.nome || String(l.criado_por || '—').replace(/ \(extrato\)$/, '');
+  const via = /\(extrato\)$/.test(l.criado_por || '') ? ' · via extrato' : '';
+  return `<div class="quem">${avatar(p || { nome, papel: 'leitor' }, 30)}<div><span>${esc(nome)}</span><small class="mut">${esc((l.criado_em || '').slice(11, 16))}${via}</small></div></div>`;
+}
+
+// Janela (pop-up) genérica
+function modal(conteudo, largura = 480) {
+  const fundo = document.createElement('div');
+  fundo.className = 'modal-fundo';
+  fundo.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:${largura}px">${conteudo}</div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => { fundo.remove(); document.removeEventListener('keydown', aoTeclar); };
+  const aoTeclar = (e) => { if (e.key === 'Escape') fechar(); };
+  document.addEventListener('keydown', aoTeclar);
+  fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(); });
+  return { el: fundo.querySelector('.modal'), fechar };
+}
+
+// Foto de perfil: escolher, enquadrar o rosto e ver como fica no uniforme antes de salvar
+function abrirFoto() {
+  const u = state.usuario;
+  const m = modal(`<h2>Sua foto</h2>
+    <p class="legenda">Escolha uma foto do rosto e ajuste o enquadramento. Ela aparece sobre o uniforme da OnTrade (${{ admin: 'terno', operador: 'polo', leitor: 'camisa social' }[u.papel]}).</p>
+    <div class="foto-area"><div><canvas id="fc" width="280" height="280"></canvas>
+      <input type="range" id="fz" min="1" max="3" step="0.01" value="1" disabled aria-label="Zoom"></div>
+      <div class="foto-previa"><div id="fp">${avatar(u, 120)}</div><small class="mut">Como vai aparecer</small></div></div>
+    <input type="file" id="ff" accept="image/*">
+    <div class="modal-acoes"><button class="sec" id="fr" ${u.tem_foto ? '' : 'hidden'}>Remover foto</button><span style="flex:1"></span><button class="sec" id="fx">Cancelar</button><button id="fs" disabled>Salvar foto</button></div>`, 560);
+  const P = 280, D = 240, off = (P - D) / 2;
+  const cv = m.el.querySelector('#fc'), cx = cv.getContext('2d'), zoom = m.el.querySelector('#fz');
+  let img = null, base = 1, z = 1, x = 0, y = 0, arrasto = null, quadro = 0;
+  const tam = () => ({ w: img.width * base * z, h: img.height * base * z });
+  const limitar = () => { const { w, h } = tam(); x = Math.min(off, Math.max(off + D - w, x)); y = Math.min(off, Math.max(off + D - h, y)); };
+  const recorte = (lado) => { const o = document.createElement('canvas'); o.width = o.height = lado; const k = lado / D, { w, h } = tam(); o.getContext('2d').drawImage(img, (x - off) * k, (y - off) * k, w * k, h * k); return o.toDataURL('image/jpeg', 0.85); };
+  const desenhar = () => {
+    cx.clearRect(0, 0, P, P); cx.fillStyle = '#eef1f5'; cx.fillRect(0, 0, P, P);
+    if (img) { const { w, h } = tam(); cx.drawImage(img, x, y, w, h); }
+    cx.fillStyle = 'rgba(1,45,97,.55)'; cx.beginPath(); cx.rect(0, 0, P, P); cx.arc(P / 2, P / 2, D / 2, 0, Math.PI * 2, true); cx.fill('evenodd');
+    cx.strokeStyle = '#fff'; cx.lineWidth = 2; cx.beginPath(); cx.arc(P / 2, P / 2, D / 2, 0, Math.PI * 2); cx.stroke();
+    if (img && !quadro) quadro = requestAnimationFrame(() => { quadro = 0; m.el.querySelector('#fp').innerHTML = avatar(u, 120, recorte(160)); });
+  };
+  desenhar();
+  m.el.querySelector('#ff').onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const i = new Image();
+    i.onload = () => { img = i; base = D / Math.min(i.width, i.height); z = 1; zoom.value = 1; zoom.disabled = false; const { w, h } = tam(); x = P / 2 - w / 2; y = P / 2 - h / 2; limitar(); m.el.querySelector('#fs').disabled = false; desenhar(); };
+    i.onerror = () => toast('Não consegui abrir esta imagem.', true);
+    i.src = URL.createObjectURL(f);
+  };
+  zoom.oninput = () => { if (!img) return; const a = tam(), fx = (P / 2 - x) / a.w, fy = (P / 2 - y) / a.h; z = +zoom.value; const b = tam(); x = P / 2 - fx * b.w; y = P / 2 - fy * b.h; limitar(); desenhar(); };
+  cv.onpointerdown = (e) => { if (img) { arrasto = { px: e.clientX, py: e.clientY }; cv.setPointerCapture(e.pointerId); } };
+  cv.onpointermove = (e) => { if (!arrasto) return; x += e.clientX - arrasto.px; y += e.clientY - arrasto.py; arrasto = { px: e.clientX, py: e.clientY }; limitar(); desenhar(); };
+  cv.onpointerup = () => { arrasto = null; };
+  const atualizar = async () => { state.usuario = (await api('/api/auth/estado')).usuario; state.meta = null; m.fechar(); await rota(); };
+  m.el.querySelector('#fx').onclick = m.fechar;
+  m.el.querySelector('#fs').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'POST', body: { imagem: recorte(256) } }); await atualizar(); }, 'Foto salva');
+  m.el.querySelector('#fr').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'DELETE' }); await atualizar(); }, 'Foto removida');
+}
 const NIVEL = { leitor: 1, operador: 2, admin: 3 };
 const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura' };
 const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
@@ -87,6 +170,7 @@ function trocarSenha() {
 }
 document.getElementById('sair').onclick = sair;
 document.getElementById('senha').onclick = trocarSenha;
+document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
 const rotas = { painel, lancar, fechar, extratos, mensal, fluxo, cadastros, roadmap };
@@ -98,7 +182,7 @@ async function rota() {
     state.usuario = e.usuario;
   }
   document.body.classList.remove('deslogado');
-  document.getElementById('quem').innerHTML = `<b>${esc(state.usuario.nome)}</b><br><small>${PAPEL_NOME[state.usuario.papel]}</small>`;
+  document.getElementById('quem').innerHTML = `<div class="quem">${avatar(state.usuario, 46)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></div>`;
   const nome = location.hash.slice(1) || 'painel';
   document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome));
   if (!state.meta) {
@@ -210,9 +294,9 @@ async function lancar() {
       </div>
     </form>
     <div class="card"><h2>Lançamentos de ${dataBR(state.dia)}</h2>
-      ${dia.lancamentos.length ? `<div class="tbl"><table><thead><tr><th>Tipo</th><th>Conta</th><th>Categoria / pessoa</th><th>Descrição</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">Entrada</span>', saida: '<span class="neg">Saída</span>', transferencia: 'Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado || !pode('operador') ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td colspan="4">Entradas ${brl(dia.totais.entradas)} · Saídas ${brl(dia.totais.saidas)}</td><td class="n">${brl(dia.totais.entradas - dia.totais.saidas)}</td><td></td></tr></tfoot></table></div>` : '<p class="mut">Nada lançado neste dia.</p>'}
+      ${dia.lancamentos.length ? `<div class="tbl"><table><thead><tr><th>Tipo</th><th>Conta</th><th>Categoria / pessoa</th><th>Descrição</th><th>Lançado por</th><th class="n">Valor</th><th></th></tr></thead><tbody>
+      ${dia.lancamentos.map((l) => `<tr><td>${{ entrada: '<span class="pos">Entrada</span>', saida: '<span class="neg">Saída</span>', transferencia: 'Transf.' }[l.tipo]}</td><td>${esc(l.conta)}${l.conta_destino ? ' → ' + esc(l.conta_destino) : ''}<br><span class="tag ${l.modalidade}">${l.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span> <small class="mut">${esc(l.empresa)}</small></td><td>${esc(l.categoria || '')}${l.pessoa ? '<br><small class="mut">' + esc(l.pessoa) + '</small>' : ''}${l.cliente ? '<br><small class="mut">cliente: ' + esc(l.cliente) + '</small>' : ''}</td><td>${esc(l.descricao || '')}</td><td>${quemLancou(l)}</td><td class="n ${l.tipo === 'saida' ? 'neg' : l.tipo === 'entrada' ? 'pos' : ''}">${brl(l.valor)}</td><td class="n">${fechado || !pode('operador') ? '' : `<button class="mini sec" data-del="${l.id}">excluir</button>`}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="5">Entradas ${brl(dia.totais.entradas)} · Saídas ${brl(dia.totais.saidas)}</td><td class="n">${brl(dia.totais.entradas - dia.totais.saidas)}</td><td></td></tr></tfoot></table></div>` : '<p class="mut">Nada lançado neste dia.</p>'}
     </div>`;
   document.getElementById('dia').onchange = (e) => { if (e.target.value) { state.dia = e.target.value; lancar(); } };
   $app.querySelectorAll('[data-tipo]').forEach((b) => (b.onclick = () => { state.tipo = b.dataset.tipo; lancar(); }));
@@ -273,8 +357,36 @@ async function fechar() {
   document.getElementById('fechar')?.addEventListener('click', () => {
     const contagens = {};
     $app.querySelectorAll('[data-conta]').forEach((i) => { if (i.value.trim()) contagens[i.dataset.conta] = paraCentavos(i.value); });
-    acao(async () => { await api(`/api/dia/${state.dia}/fechar`, { method: 'POST', body: { contagens, obs: document.getElementById('obs').value } }); fechar(); }, 'Caixa fechado!');
+    checklistFechamento(d, contagens, document.getElementById('obs').value);
   });
+}
+
+// Pop-up de segurança: cada conta precisa ser conferida e a pessoa assume a responsabilidade antes de fechar.
+function checklistFechamento(d, contagens, obs) {
+  const contas = state.meta.contas.filter((c) => c.ativo);
+  const saldoDe = (id) => d.contas.find((c) => c.id === id)?.saldo ?? 0;
+  const grupos = [
+    ['Extratos bancários do dia', contas.filter((c) => c.tipo === 'banco'), (c) => `Conferi o extrato de <b>${esc(c.nome)}</b>`],
+    ['Dinheiro em caixa', contas.filter((c) => c.tipo === 'dinheiro'), (c) => `Fiz a contagem do dinheiro em <b>${esc(c.nome)}</b>`],
+    ['Outros canais', contas.filter((c) => !['banco', 'dinheiro'].includes(c.tipo)), (c) => `Conferi o saldo em <b>${esc(c.nome)}</b>`],
+  ].filter(([, lista]) => lista.length);
+  const u = state.usuario;
+  const m = modal(`<h2>Antes de fechar o dia ${dataBR(state.dia)}</h2>
+    <p class="legenda">Confirme cada item. O fechamento só é liberado com tudo marcado.</p>
+    ${grupos.map(([titulo, lista, texto]) => `<div class="check-grupo"><h3>${titulo}</h3>${lista.map((c) => `<label class="check-item"><input type="checkbox" data-c="${c.id}"><span>${texto(c)}</span><small class="mut">sistema: ${brl(saldoDe(c.id))}</small></label>`).join('')}</div>`).join('')}
+    <label class="check-resp"><input type="checkbox" id="resp">
+      <span class="quem">${avatar(u, 44)}<span><b>${esc(u.nome)}</b><small class="mut">${PAPEL_NOME[u.papel]}</small></span></span>
+      <span class="resp-texto">Eu me responsabilizo pelos lançamentos feitos hoje.</span></label>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="cx">Voltar</button><button id="cok" disabled>Fechar o dia</button></div>`, 560);
+  const marcas = () => [...m.el.querySelectorAll('input[type=checkbox]')];
+  const atualizar = () => { m.el.querySelector('#cok').disabled = !marcas().every((c) => c.checked); };
+  marcas().forEach((c) => (c.onchange = atualizar));
+  m.el.querySelector('#cx').onclick = m.fechar;
+  m.el.querySelector('#cok').onclick = () => acao(async () => {
+    const confirmacao = { contas: marcas().filter((c) => c.dataset.c).map((c) => +c.dataset.c), responsabilidade: m.el.querySelector('#resp').checked };
+    await api(`/api/dia/${state.dia}/fechar`, { method: 'POST', body: { contagens, obs, confirmacao } });
+    m.fechar(); await fechar();
+  }, 'Caixa fechado');
 }
 
 
@@ -442,7 +554,7 @@ async function cadastros() {
     ${adm ? `<div class="card"><h2>Usuários e permissões</h2>
       <p class="legenda"><b>Administrador:</b> tudo, inclusive cadastros, usuários e reabrir dia. <b>Operador:</b> lança, exclui lançamentos e fecha o dia. <b>Somente leitura:</b> consulta e baixa Excel (ideal para o contador).</p>
       <div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Último acesso</th><th></th></tr></thead><tbody>
-      ${usuarios.map((u) => `<tr style="${u.ativo ? '' : 'opacity:.5'}"><td>${esc(u.nome)}</td><td>${esc(u.email)}</td>
+      ${usuarios.map((u) => `<tr style="${u.ativo ? '' : 'opacity:.5'}"><td><div class="quem">${avatar(u, 30)}<span>${esc(u.nome)}</span></div></td><td>${esc(u.email)}</td>
         <td><select data-papel="${u.id}">${Object.entries(PAPEL_NOME).map(([k, v]) => `<option value="${k}" ${u.papel === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${esc(u.ultimo_acesso || 'nunca')}</td>
         <td class="n"><button class="mini sec" data-resetsenha="${u.id}">nova senha</button> <button class="mini sec" data-ativo="${u.id}" data-val="${u.ativo ? 0 : 1}">${u.ativo ? 'desativar' : 'reativar'}</button></td></tr>`).join('')}</tbody></table></div>
