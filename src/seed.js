@@ -84,6 +84,8 @@ export async function seed() {
     await query(`INSERT INTO socios (nome, participacao_bp, aporte, obs) VALUES ($1,$2,$3,$4),($5,$6,$7,$8)`, [
       'Luiz Túlio', null, 0, 'Participação a confirmar.',
       'Luiz Amaro', 2000, 200000000, 'Entrou na sociedade com 20%, mediante aporte de R$ 2.000.000.']);
+    // Catálogo inicial de produtos do comercial (a equipe acrescenta os demais na própria tela)
+    await query(`INSERT INTO produtos_catalogo (nome) VALUES ('Painel P3.9'), ('Painel P5')`);
   });
   return true;
 }
