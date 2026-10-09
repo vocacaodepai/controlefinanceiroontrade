@@ -33,26 +33,12 @@ Object.assign(ICONES, {
   societario: '<path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10Z"/>',
 });
 const ico = (n) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[n]}</svg>`;
-// ---------- Avatar: rosto da pessoa sobre o uniforme da OnTrade ----------
-// admin: terno e gravata · operador: polo · somente leitura: camisa social. A foto é o rosto; o resto é desenho.
-let _av = 0;
+// ---------- Avatar: a foto da pessoa em círculo (sem foto: a inicial do nome) ----------
 function avatar(p, tam = 40, fotoUrl) {
-  const n = ++_av;
-  const papel = p?.papel || 'leitor';
   const foto = fotoUrl || (p?.tem_foto ? `/api/usuarios/${p.id}/foto?v=${p.foto_v}` : null);
-  const inicial = esc((p?.nome || '?').trim().charAt(0).toUpperCase());
-  const cracha = '<circle cx="69" cy="84" r="6.2" fill="#fff"/><image href="favicon.png" x="63.5" y="78.5" width="11" height="11"/>';
-  const corpos = {
-    admin: '<path d="M8 100C10 76 28 66 50 66s40 10 42 34Z" fill="#012d61"/><path d="M38 66l12 21 12-21Z" fill="#fff"/><path d="M47 69h6l1.5 8L50 96l-4.5-19Z" fill="#0c5aa6"/><path d="M38 66l12 21M62 66L50 87" stroke="#0a2146" stroke-width="1.3" fill="none"/>' + cracha,
-    operador: '<path d="M8 100C10 76 28 66 50 66s40 10 42 34Z" fill="#0c5aa6"/><path d="M38 65l12 9 12-9-4-4-8 6-8-6Z" fill="#fff"/><path d="M50 74v18" stroke="#fff" stroke-width="1.4"/><circle cx="50" cy="80" r="1.3" fill="#fff"/><circle cx="50" cy="86" r="1.3" fill="#fff"/>' + cracha,
-    leitor: '<path d="M8 100C10 76 28 66 50 66s40 10 42 34Z" fill="#f4f6f9" stroke="#c4cedb" stroke-width="1"/><path d="M38 65l12 10 12-10-4-4-8 6-8-6Z" fill="#fff" stroke="#c4cedb" stroke-width="1"/>' + cracha,
-  };
-  return `<svg class="avatar" width="${tam}" height="${tam}" viewBox="0 0 100 100" role="img" aria-label="${esc(p?.nome || '')}">
-    <defs><clipPath id="ao${n}"><circle cx="50" cy="50" r="50"/></clipPath><clipPath id="ah${n}"><circle cx="50" cy="35" r="22"/></clipPath></defs>
-    <g clip-path="url(#ao${n})"><rect width="100" height="100" fill="#e3eaf4"/>${corpos[papel] || corpos.leitor}
-      <circle cx="50" cy="35" r="22" fill="#c9d3e0"/>
-      ${foto ? `<image href="${foto}" x="28" y="13" width="44" height="44" preserveAspectRatio="xMidYMid slice" clip-path="url(#ah${n})"/>` : `<text x="50" y="44" text-anchor="middle" font-size="24" font-weight="600" fill="#012d61" font-family="system-ui,sans-serif">${inicial}</text>`}
-      <circle cx="50" cy="35" r="22" fill="none" stroke="#fff" stroke-width="1.5"/></g></svg>`;
+  const nome = p?.nome || '';
+  const inicial = esc(nome.trim().charAt(0).toUpperCase() || '?');
+  return `<span class="avatar" role="img" aria-label="${esc(nome)}" style="width:${tam}px;height:${tam}px;font-size:${Math.round(tam * 0.42)}px">${foto ? `<img src="${foto}" alt="" width="${tam}" height="${tam}" loading="lazy">` : inicial}</span>`;
 }
 const equipePorId = (id) => state.meta?.equipe?.find((p) => p.id === id);
 // Quem fez o lançamento: foto, nome e hora
@@ -76,11 +62,11 @@ function modal(conteudo, largura = 480) {
   return { el: fundo.querySelector('.modal'), fechar };
 }
 
-// Foto de perfil: escolher, enquadrar o rosto e ver como fica no uniforme antes de salvar
+// Foto de perfil: escolher, enquadrar o rosto e ver como fica antes de salvar
 function abrirFoto() {
   const u = state.usuario;
   const m = modal(`<h2>Sua foto</h2>
-    <p class="legenda">Escolha uma foto do rosto e ajuste o enquadramento. Ela aparece sobre o uniforme da OnTrade (${({ admin: 'terno', operador: 'polo' }[u.papel] || 'camisa social')}).</p>
+    <p class="legenda">Escolha uma foto do rosto e ajuste o enquadramento. Ela aparece no seu perfil, no menu e ao lado do que você lança.</p>
     <div class="foto-area"><div><canvas id="fc" width="280" height="280"></canvas>
       <input type="range" id="fz" min="1" max="3" step="0.01" value="1" disabled aria-label="Zoom"></div>
       <div class="foto-previa"><div id="fp">${avatar(u, 120)}</div><small class="mut">Como vai aparecer</small></div></div>
@@ -206,7 +192,7 @@ const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , a
 function renderMenu() {
   document.getElementById('nav').innerHTML = MENU.map(([grupo, itens]) => {
     const vis = itens.filter(([n, , area]) => rotas[n] && temArea(area || n));
-    return vis.length ? `<div class="nav-grupo">${grupo}</div>` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span></a>`).join('') : '';
+    return vis.length ? `<div class="nav-grupo">${grupo}</div>` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span>${n === 'aovivo' ? '<i class="live-dot" title="Ao vivo: atualiza sozinho de hora em hora" aria-hidden="true"></i>' : ''}</a>`).join('') : '';
   }).join('');
 }
 async function rota() {
@@ -1086,7 +1072,7 @@ async function aovivo() {
   const linha = (rot, campo, f = String) => `<tr><td>${rot}</td>${['mes_atual', 'mes_anterior_parcial', 'mes_anterior_total', 'mesmo_mes_ano_anterior'].map((k, i) => { const o = i === 0 ? m : c[k]; return `<td class="n ${i === 0 ? 'dest' : ''}">${f(o[campo])}${i === 1 ? ' ' + variacao(m[campo], o[campo]) : i === 3 ? ' ' + variacao(m[campo], o[campo]) : ''}</td>`; }).join('')}</tr>`;
   const linhaP = (rot, campo, f = String) => `<tr><td>${rot}</td>${[['semestre', 'semestre_anterior'], ['ano', 'ano_anterior']].map(([a, b]) => `<td class="n dest">${f(c[a][campo])}</td><td class="n">${f(c[b][campo])} ${variacao(c[a][campo], c[b][campo])}</td>`).join('')}</tr>`;
   const maxP = Math.max(...d.produtos.map((p) => p.valor_orcado), 1);
-  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao vivo — comercial</h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho de hora em hora (próxima às ${String((+d.atualizado_em.slice(11, 13) + 1) % 24).padStart(2, '0')}:${d.atualizado_em.slice(14, 16)}) · use Atualizar para ver agora</p></div>
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao Vivo — Comercial <i class="live-dot grande" title="Atualiza sozinho de hora em hora" aria-hidden="true"></i></h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho de hora em hora (próxima às ${String((+d.atualizado_em.slice(11, 13) + 1) % 24).padStart(2, '0')}:${d.atualizado_em.slice(14, 16)}) · use Atualizar para ver agora</p></div>
       <div class="row" style="margin:0"><button class="mini sec" id="att">${ico('refresh')} Atualizar</button><button class="mini sec" id="tv">Tela cheia</button></div></div>
     ${d.followups_pendentes && temArea('comercial') ? `<div class="aviso-box">${ico('info')}<span><b>${d.followups_pendentes} orçamento(s)</b> aguardando retorno do comercial. <a href="#orcamentos">Abrir orçamentos</a></span></div>` : ''}
     <div class="grid">

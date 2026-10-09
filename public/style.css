@@ -130,7 +130,7 @@ body.deslogado main{flex:0 1 auto;width:100%;max-width:none;display:flex;align-i
 .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
 
 /* avatar, janelas e checklist */
-.avatar{display:block;flex:none;border-radius:50%}
+.avatar{display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:50%;overflow:hidden;background:var(--tint);color:var(--navy);font-weight:600;line-height:1;border:1px solid var(--bd);box-sizing:border-box}.avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .quem{display:flex;align-items:center;gap:10px;text-align:left}.quem>div,.quem>span:not(.avatar){display:flex;flex-direction:column;line-height:1.25}
 .quem small{font-size:11.5px;color:var(--mut)}
 .usuario .quem{margin-bottom:2px}
@@ -220,3 +220,11 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 .usuario .mini{margin:0;flex:0 0 auto}
 .tema button.so-icone{padding:5px 11px}
 .perfil-topo{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+
+/* luz piscando: mostra que o Ao Vivo se atualiza sozinho */
+.live-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--azul);margin-left:auto;flex:none;position:relative;animation:live-pisca 1.8s ease-in-out infinite}
+.live-dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--azul);opacity:0;animation:live-onda 1.8s ease-out infinite}
+.live-dot.grande{width:11px;height:11px;margin-left:10px;vertical-align:middle}
+@keyframes live-pisca{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes live-onda{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+@media(prefers-reduced-motion:reduce){.live-dot,.live-dot::after{animation:none}}
