@@ -80,7 +80,7 @@ function modal(conteudo, largura = 480) {
 function abrirFoto() {
   const u = state.usuario;
   const m = modal(`<h2>Sua foto</h2>
-    <p class="legenda">Escolha uma foto do rosto e ajuste o enquadramento. Ela aparece sobre o uniforme da OnTrade (${{ admin: 'terno', operador: 'polo', leitor: 'camisa social' }[u.papel]}).</p>
+    <p class="legenda">Escolha uma foto do rosto e ajuste o enquadramento. Ela aparece sobre o uniforme da OnTrade (${({ admin: 'terno', operador: 'polo' }[u.papel] || 'camisa social')}).</p>
     <div class="foto-area"><div><canvas id="fc" width="280" height="280"></canvas>
       <input type="range" id="fz" min="1" max="3" step="0.01" value="1" disabled aria-label="Zoom"></div>
       <div class="foto-previa"><div id="fp">${avatar(u, 120)}</div><small class="mut">Como vai aparecer</small></div></div>
@@ -188,17 +188,10 @@ function telaLogin(e) {
   };
 }
 async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state.followups = null; sessionStorage.removeItem('fu_ate'); await api('/api/auth/logout', { method: 'POST' }); state.usuario = null; state.meta = null; telaLogin(); }
-function trocarSenha() {
-  const atual = prompt('Senha atual:'); if (atual === null) return;
-  const nova = prompt('Nova senha (mínimo 8 caracteres):'); if (nova === null) return;
-  acao(() => api('/api/auth/senha', { method: 'POST', body: { atual, nova } }), 'Senha alterada');
-}
 document.getElementById('sair').onclick = sair;
-document.getElementById('senha').onclick = trocarSenha;
-document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio']]],
@@ -226,13 +219,14 @@ async function rota() {
   document.body.classList.remove('deslogado');
   document.getElementById('tema-login')?.remove();
   desenharTema();
-  document.getElementById('quem').innerHTML = `<div class="quem">${avatar(state.usuario, 46)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></div>`;
+  document.getElementById('quem').innerHTML = `<a href="#perfil" class="quem quem-link" title="Abrir meu perfil: foto e senha">${avatar(state.usuario, 40)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></a>`;
   renderMenu();
   if (!state.fuIniciado) { state.fuIniciado = true; iniciarFollowups(); } else if (state.followups) atualizarBadge(state.followups.length);
   const permitidas = rotasPermitidas();
   let nome = location.hash.slice(1) || permitidas[0] || 'painel';
-  if (!permitidas.includes(nome)) { nome = permitidas[0]; if (!nome) { $app.innerHTML = '<div class="card">Seu perfil ainda não tem nenhuma área liberada. Fale com o administrador.</div>'; return; } history.replaceState(null, '', '#' + nome); }
-  document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome));
+  if (nome !== 'perfil' && !permitidas.includes(nome)) { nome = permitidas[0]; if (!nome) { $app.innerHTML = '<div class="card">Seu perfil ainda não tem nenhuma área liberada. Fale com o administrador.</div>'; return; } history.replaceState(null, '', '#' + nome); }
+  document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome && !a.classList.contains('quem-link')));
+  document.querySelector('.quem-link')?.classList.toggle('ativo', nome === 'perfil');
   if (!state.meta) {
     if (pode('leitor')) state.meta = await api('/api/meta');
     else { const e = await api('/api/equipe'); state.meta = { equipe: e.equipe, hoje: e.hoje, contas: [], categorias: [], pessoas: [], empresas: [] }; }
@@ -1350,7 +1344,7 @@ function aplicarTema(t) {
   try { if (t === 'auto') localStorage.removeItem('tema'); else localStorage.setItem('tema', t); } catch { /* sem armazenamento: vale só nesta visita */ }
   desenharTema();
 }
-const seletorTema = () => `<div class="tema" role="group" aria-label="Aparência">${[['auto', 'Auto', 'auto'], ['claro', 'Claro', 'sol'], ['escuro', 'Escuro', 'lua']].map(([k, r, i]) => `<button type="button" data-tema="${k}" class="${temaAtual() === k ? 'on' : ''}" title="${k === 'auto' ? 'Seguir o aparelho' : 'Visual ' + r.toLowerCase()}" aria-pressed="${temaAtual() === k}">${ico(i)} ${r}</button>`).join('')}</div>`;
+const seletorTema = () => `<div class="tema" role="group" aria-label="Aparência">${[['auto', 'Auto', 'auto', 'Seguir o aparelho'], ['claro', '', 'sol', 'Visual claro'], ['escuro', '', 'lua', 'Visual escuro']].map(([k, r, i, dica]) => `<button type="button" data-tema="${k}" class="${temaAtual() === k ? 'on' : ''} ${r ? '' : 'so-icone'}" title="${dica}" aria-label="${dica}" aria-pressed="${temaAtual() === k}">${ico(i)}${r ? ' ' + r : ''}</button>`).join('')}</div>`;
 function desenharTema() {
   const alvos = [document.getElementById('tema-menu'), document.getElementById('tema-login')].filter(Boolean);
   alvos.forEach((el) => { el.innerHTML = seletorTema(); el.querySelectorAll('[data-tema]').forEach((b) => (b.onclick = () => aplicarTema(b.dataset.tema))); });
@@ -1384,5 +1378,32 @@ function ajustaTitulos(raiz) {
 }
 new MutationObserver((muts) => { for (const m of muts) m.addedNodes.forEach((n) => ajustaTitulos(n.nodeType === 3 ? n.parentElement : n)); }).observe(document.body, { childList: true, subtree: true });
 ajustaTitulos(document.body);
+
+// ---- meu perfil: foto e senha ficam aqui (clicando no nome, no rodapé do menu) ----
+async function perfil() {
+  const { usuario: u } = await api('/api/auth/estado');
+  state.usuario = u;
+  $app.innerHTML = `<h1>Meu Perfil</h1><p class="sub">Seus dados de acesso, sua foto e a troca de senha.</p>
+    <div class="card perfil-topo">${avatar(u, 110)}
+      <div class="perfil-dados"><h2 style="margin:0">${esc(u.nome)}</h2><p class="mut" style="margin:2px 0 0">${esc(u.email)}</p>
+        <p style="margin:8px 0 0"><span class="tag">${PAPEL_NOME[u.papel]}</span>${u.ultimo_acesso ? ` <small class="mut">último acesso em ${esc(u.ultimo_acesso.slice(0, 16).replace(/(\d{4})-(\d\d)-(\d\d)/, '$3/$2/$1'))}</small>` : ''}</p>
+        <p style="margin:14px 0 0"><button class="sec" id="alt-foto">${u.tem_foto ? 'Alterar Foto' : 'Adicionar Foto'}</button></p></div></div>
+    <div class="card" style="max-width:520px"><h2>Alterar Senha</h2><p class="legenda">Campos com ${ast} são obrigatórios. A nova senha deve ter pelo menos 8 caracteres.</p>
+      <form class="form" id="f-senha" novalidate style="margin-top:12px;grid-template-columns:1fr">
+        ${campoObr('Senha atual', 'atual', '', 'password')}${campoObr('Nova senha', 'nova', '', 'password')}${campoObr('Repita a nova senha', 'repete', '', 'password')}
+        <div><button>Salvar Nova Senha</button></div></form></div>`;
+  document.getElementById('alt-foto').onclick = abrirFoto;
+  document.querySelectorAll('#f-senha input').forEach((i) => i.setAttribute('autocomplete', i.name === 'atual' ? 'current-password' : 'new-password'));
+  document.getElementById('f-senha').onsubmit = (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (!validarObrigatorios(f)) return;
+    const v = Object.fromEntries(new FormData(f));
+    const erro = (el, msg) => { limpaErro(el); el.classList.add('invalido'); el.insertAdjacentHTML('afterend', `<small class="erro-campo">${msg}</small>`); el.addEventListener('input', () => limpaErro(el), { once: true }); el.focus(); };
+    if (v.nova.length < 8) return erro(f.nova, 'A nova senha precisa ter pelo menos 8 caracteres.');
+    if (v.nova !== v.repete) return erro(f.repete, 'As senhas não conferem.');
+    acao(async () => { await api('/api/auth/senha', { method: 'POST', body: { atual: v.atual, nova: v.nova } }); f.reset(); }, 'Senha alterada');
+  };
+}
 
 rota();

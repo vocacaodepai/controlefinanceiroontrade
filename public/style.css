@@ -209,3 +209,14 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 .ext-linha.enviado td{background:var(--chip)}.ext-linha.enviado td:not(.ext-status):not(:last-child){opacity:.72}
 .ext-linha.ext-falta td{background:var(--verm-bg)}
 .ext-ok{display:inline-flex;align-items:center;gap:6px;color:var(--azul);font-weight:600}.ext-ok .ico{width:16px;height:16px}
+
+/* rodapé do menu: nome clicável (abre o perfil) e Sair ao lado */
+.usuario{display:flex;align-items:center;gap:8px;padding:12px 4px 0}
+.usuario #quem{flex:1;min-width:0}
+.quem-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;padding:6px 8px;border-radius:10px;margin:0 -2px}
+.quem-link:hover,.quem-link.ativo{background:var(--tint)}
+.quem-link b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:112px}
+.quem-link small{display:block;font-size:11.5px;color:var(--mut)}
+.usuario .mini{margin:0;flex:0 0 auto}
+.tema button.so-icone{padding:5px 11px}
+.perfil-topo{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
