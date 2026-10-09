@@ -27,6 +27,9 @@ Object.assign(ICONES, {
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   dp: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
+  sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/>',
+  lua: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  auto: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
   societario: '<path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10Z"/>',
 });
 const ico = (n) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[n]}</svg>`;
@@ -164,6 +167,8 @@ const barras = (dados, total) => {
 // ---------- LOGIN ----------
 function telaLogin(e) {
   document.body.classList.add('deslogado');
+  if (!document.getElementById('tema-login')) document.body.insertAdjacentHTML('beforeend', '<div id="tema-login" class="tema-flutuante"></div>');
+  desenharTema();
   const primeiro = e?.precisaCriarAdmin;
   $app.innerHTML = `<form class="card login" id="lg">
     <img src="logo.png" alt="OnTrade" class="logo-login" onerror="this.remove()">
@@ -219,6 +224,8 @@ async function rota() {
     state.usuario = e.usuario;
   }
   document.body.classList.remove('deslogado');
+  document.getElementById('tema-login')?.remove();
+  desenharTema();
   document.getElementById('quem').innerHTML = `<div class="quem">${avatar(state.usuario, 46)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></div>`;
   renderMenu();
   if (!state.fuIniciado) { state.fuIniciado = true; iniciarFollowups(); } else if (state.followups) atualizarBadge(state.followups.length);
@@ -1322,6 +1329,19 @@ async function janelaDias(campId, depois) {
     if (!(gasto >= 0)) return toast('Valor gasto inválido', true);
     acao(async () => { await api('/api/marketing/dias', { method: 'POST', body: { ...v, campanha_id: +v.campanha_id, gasto } }); f.gasto.value = ''; await carrega(); await depois(); }, 'Números salvos');
   };
+}
+
+// ---- tema: automático (segue o aparelho), claro ou escuro ----
+const temaAtual = () => { try { const t = localStorage.getItem('tema'); return t === 'claro' || t === 'escuro' ? t : 'auto'; } catch { return 'auto'; } };
+function aplicarTema(t) {
+  if (t === 'auto') delete document.documentElement.dataset.tema; else document.documentElement.dataset.tema = t;
+  try { if (t === 'auto') localStorage.removeItem('tema'); else localStorage.setItem('tema', t); } catch { /* sem armazenamento: vale só nesta visita */ }
+  desenharTema();
+}
+const seletorTema = () => `<div class="tema" role="group" aria-label="Aparência">${[['auto', 'Auto', 'auto'], ['claro', 'Claro', 'sol'], ['escuro', 'Escuro', 'lua']].map(([k, r, i]) => `<button type="button" data-tema="${k}" class="${temaAtual() === k ? 'on' : ''}" title="${k === 'auto' ? 'Seguir o aparelho' : 'Visual ' + r.toLowerCase()}" aria-pressed="${temaAtual() === k}">${ico(i)} ${r}</button>`).join('')}</div>`;
+function desenharTema() {
+  const alvos = [document.getElementById('tema-menu'), document.getElementById('tema-login')].filter(Boolean);
+  alvos.forEach((el) => { el.innerHTML = seletorTema(); el.querySelectorAll('[data-tema]').forEach((b) => (b.onclick = () => aplicarTema(b.dataset.tema))); });
 }
 
 rota();

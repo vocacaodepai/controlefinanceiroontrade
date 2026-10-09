@@ -6,13 +6,14 @@
 <title>Caixa OnTrade</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="favicon.png">
+<script>try{var t=localStorage.getItem("tema");if(t==="claro"||t==="escuro")document.documentElement.dataset.tema=t}catch(e){}</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <aside id="menu">
   <div class="marca"><img src="logo.png" alt="OnTrade — Importação e Exportação" class="logo-menu" onerror="this.remove()"><span class="marca-txt"><b>Caixa</b> OnTrade<small>OnTrade · LTON</small></span></div>
   <nav id="nav" aria-label="Menu principal"></nav>
-  <div class="usuario"><div id="quem"></div><button class="mini sec" id="foto">Foto</button> <button class="mini sec" id="senha" title="Trocar senha">Senha</button> <button class="mini sec" id="sair">Sair</button></div>
+  <div class="usuario"><div id="quem"></div><button class="mini sec" id="foto">Foto</button> <button class="mini sec" id="senha" title="Trocar senha">Senha</button> <button class="mini sec" id="sair">Sair</button><div id="tema-menu"></div></div>
 </aside>
 <main id="app"></main>
 <div id="toast"></div>
