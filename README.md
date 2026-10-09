@@ -103,7 +103,7 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 - **Ao vivo** (admin, sócio e comercial): dia, mês, produtos, novos x recorrentes, revisitados, perdidos/cancelados com motivo, comparativos com o mês anterior, mesmo mês do ano passado, semestre e ano; atualiza a cada 30 s e tem modo tela cheia.
 - O resumo comercial do mês entra no PDF dos sócios.
 
-## Departamento de Pessoas (só administrador)
+## Funcionários — Departamento de Pessoas (só administrador)
 
 - Ficha do funcionário: dados pessoais, documentos, CTPS, endereço, contato de emergência, plano de saúde, tipo sanguíneo, ASO, contrato, jornada, dias de trabalho e dados de pagamento. A ficha aponta o que ainda falta preencher.
 - Faltas e atestados: tipos falta, atestado, férias, licença, folga e atraso; anexo de PDF/JPG/PNG de até 3 MB; só contam os dias em que a pessoa trabalharia; horas fora calculadas pela jornada.
@@ -113,5 +113,5 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 
 - Todo orçamento exige a **origem** (Instagram, Facebook, Google, anúncio na rua, indicação, etc.) e, quando veio de anúncio, pode ser ligado à campanha.
 - A ficha do cliente (nome, telefone com DDD, e-mail e aniversário) e os dados do orçamento são **obrigatórios**: o formulário marca com asterisco e destaca o que falta; o servidor também confere.
-- **Painel de marketing** (admin, sócio e perfil Marketing): investimento, leads, custo por lead, orçamentos e vendas por campanha, semana a semana e origem de todos os orçamentos. Os números diários dos anúncios são lançados à mão; Meta Ads e Google Ads entram numa próxima etapa.
+- **Marketing > Painel** (admin, sócio e perfil Marketing): investimento, leads, custo por lead, orçamentos e vendas por campanha, semana a semana e origem de todos os orçamentos. Os números diários dos anúncios são lançados à mão; Meta Ads e Google Ads entram numa próxima etapa.
 - Novo perfil **Marketing**: acessa só o painel de marketing.

@@ -203,9 +203,9 @@ const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
   ['Comercial', [['comercial', 'Painel'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
-  ['Marketing', [['marketing', 'Painel de marketing']]],
+  ['Marketing', [['marketing', 'Painel']]],
   ['Sociedade', [['societario', 'Quadro societário']]],
-  ['Pessoas', [['dp', 'Departamento de Pessoas']]],
+  ['Pessoas', [['dp', 'Funcionários']]],
   ['Sistema', [['fluxo', 'Mapa do fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
 ];
 const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n === r)?.[2] || r;
@@ -569,32 +569,44 @@ const lerBase64 = (file) => new Promise((res, rej) => { const r = new FileReader
 
 async function extratos() {
   if (state.extrato) return extratoDetalhe(state.extrato);
-  const { extratos: lista, ia } = await api('/api/extratos');
+  const { extratos: lista0, ia } = await api('/api/extratos');
   const contas = state.meta.contas.filter((c) => c.ativo);
+  const hoje = () => state.meta.hoje;
+  // Uma conta está "enviada" quando já tem extrato enviado hoje
+  const enviadoHoje = (lista, contaId) => lista.find((e) => e.conta_id === contaId && String(e.enviado_em).slice(0, 10) === hoje());
+  const statusHtml = (e) => (e
+    ? `<span class="ext-ok">${ico('check')} Enviado às ${esc(String(e.enviado_em).slice(11, 16))}</span><br><small class="mut">${e.total} linha(s) · <a href="#extratos" data-abrir="${e.id}">${e.pendentes ? 'conferir' : 'ver'}</a></small>`
+    : '<span class="mut">Aguardando extrato</span>');
+  const historico = (lista) => (lista.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Conta</th><th>Arquivo</th><th class="n">Linhas</th><th class="n">Pendentes</th><th class="n">Lançadas</th><th></th></tr></thead><tbody>
+      ${lista.map((e) => `<tr><td>${esc(e.enviado_em)}<br><small class="mut">${esc(e.enviado_por || '')}</small></td><td>${esc(e.conta)}</td><td>${esc(e.arquivo_nome)} <span class="tag ${e.formato === 'ofx' || e.formato === 'csv' ? 'ok' : 'aviso'}">${esc(e.formato)}</span></td><td class="n">${e.total}</td><td class="n">${e.pendentes}</td><td class="n">${e.lancados}</td><td class="n"><button class="mini" data-abrir="${e.id}">${e.pendentes ? 'Conferir' : 'Ver'}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum extrato enviado ainda.</p>');
+  const placar = (lista) => { const n = contas.filter((c) => enviadoHoje(lista, c.id)).length; return `<b>${n} de ${contas.length}</b> contas com extrato enviado hoje${n === contas.length ? ' — todas enviadas' : ''}`; };
   $app.innerHTML = `
     <h1>Extratos bancários</h1>
-    <p class="sub">Envie o extrato do banco. O sistema lê, separa dia a dia e <b>sugere</b> categoria e pessoa de cada linha com IA. Nada vira lançamento até alguém conferir e confirmar.</p>
-    ${ia ? '' : '<div class="aviso-box">A IA ainda não está configurada neste servidor: arquivos <b>OFX</b> e <b>CSV</b> funcionam (a classificação fica manual); <b>PDF e foto</b> precisam da IA.</div>'}
-    ${pode('operador') ? `<form class="card" id="up"><div class="form">
-      <div><label>De qual conta é o extrato?</label><select name="conta_id" required>${contas.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
-      <div class="larg"><label>Arquivo (PDF, OFX, CSV ou foto — até 3 MB)</label><input type="file" name="arq" accept=".pdf,.ofx,.csv,.txt,.png,.jpg,.jpeg,.webp" required></div>
-      <div style="align-self:end"><button id="enviar">Enviar e analisar</button></div></div>
-      <p class="legenda">Dica: prefira <b>OFX</b> (exportação do internet banking) — é exato e não usa IA. PDFs e fotos são lidos pela IA e precisam de conferência. Os dados do arquivo são enviados ao serviço de IA da Anthropic para leitura.</p></form>` : ''}
-    <div class="card"><h2>Extratos enviados</h2>${lista.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Conta</th><th>Arquivo</th><th class="n">Linhas</th><th class="n">Pendentes</th><th class="n">Lançadas</th><th></th></tr></thead><tbody>
-      ${lista.map((e) => `<tr><td>${esc(e.enviado_em)}<br><small class="mut">${esc(e.enviado_por || '')}</small></td><td>${esc(e.conta)}</td><td>${esc(e.arquivo_nome)} <span class="tag ${e.formato === 'ofx' || e.formato === 'csv' ? 'ok' : 'aviso'}">${esc(e.formato)}</span></td><td class="n">${e.total}</td><td class="n">${e.pendentes}</td><td class="n">${e.lancados}</td><td class="n"><button class="mini" data-abrir="${e.id}">${e.pendentes ? 'Conferir' : 'Ver'}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum extrato enviado ainda.</p>'}</div>`;
-  $app.querySelectorAll('[data-abrir]').forEach((b) => (b.onclick = () => { state.extrato = +b.dataset.abrir; extratos(); }));
-  document.getElementById('up')?.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const f = ev.target, file = f.arq.files[0];
-    if (!file) return;
+    <p class="sub">Envie o extrato de cada conta. O sistema lê, separa dia a dia e <b>sugere</b> categoria e pessoa de cada linha com IA. Nada vira lançamento até alguém conferir e confirmar.</p>
+    ${ia ? '' : `<div class="aviso-box">${ico('info')}<span>A IA ainda não está configurada neste servidor: arquivos <b>OFX</b> e <b>CSV</b> funcionam (a classificação fica manual); <b>PDF e foto</b> precisam da IA.</span></div>`}
+    ${pode('operador') ? `<div class="card" id="up"><div class="titulo-saldos"><h2>Enviar extratos de hoje</h2><span id="placar" class="legenda">${placar(lista0)}</span></div>
+      <div class="tbl"><table class="ext-tabela"><thead><tr><th>Conta</th><th>Arquivo (PDF, OFX, CSV ou foto — até 3 MB)</th><th></th><th>Situação</th></tr></thead><tbody>
+      ${contas.map((c) => { const e = enviadoHoje(lista0, c.id); return `<tr class="ext-linha ${e ? 'enviado' : ''}" data-conta="${c.id}"><td><b>${esc(c.nome)}</b> <span class="tag ${c.modalidade}">${c.modalidade === 'com_nota' ? 'com nota' : 'sem nota'}</span></td>
+        <td><input type="file" class="arq" accept=".pdf,.ofx,.csv,.txt,.png,.jpg,.jpeg,.webp" aria-label="Extrato de ${esc(c.nome)}"></td><td><button class="mini" data-enviar="${c.id}">Enviar e analisar</button></td><td class="ext-status">${statusHtml(e)}</td></tr>`; }).join('')}</tbody></table></div>
+      <p class="legenda" style="margin-top:12px">Dica: prefira <b>OFX</b> (exportação do internet banking) — é exato e não usa IA. PDFs e fotos são lidos pela IA e precisam de conferência. Os dados do arquivo são enviados ao serviço de IA da Anthropic para leitura. A linha escurece quando o extrato daquela conta já foi enviado hoje.</p></div>` : ''}
+    <div class="card"><h2>Extratos enviados</h2><div id="hist">${historico(lista0)}</div></div>`;
+  const ligaAbrir = () => $app.querySelectorAll('[data-abrir]').forEach((b) => (b.onclick = (ev) => { ev.preventDefault(); state.extrato = +b.dataset.abrir; extratos(); }));
+  ligaAbrir();
+  $app.querySelectorAll('[data-enviar]').forEach((btn) => (btn.onclick = async () => {
+    const linha = btn.closest('tr'), contaId = +btn.dataset.enviar, file = linha.querySelector('.arq').files[0];
+    const nome = contas.find((c) => c.id === contaId).nome;
+    if (!file) { linha.classList.add('ext-falta'); setTimeout(() => linha.classList.remove('ext-falta'), 1800); return toast(`Escolha o arquivo do extrato de ${nome}.`, true); }
     if (file.size > 3 * 1024 * 1024) return toast('Arquivo maior que 3 MB. Divida o extrato por período.', true);
-    const btn = document.getElementById('enviar'); btn.disabled = true; btn.textContent = 'Analisando… (pode levar um minuto)';
+    btn.disabled = true; btn.textContent = 'Analisando… (pode levar um minuto)';
     try {
-      const r = await api('/api/extratos', { method: 'POST', body: { conta_id: f.conta_id.value, nome: file.name, base64: await lerBase64(file) } });
-      toast(`${r.novos} linha(s) lida(s)${r.duplicados ? `, ${r.duplicados} já importada(s) antes` : ''}.${r.observacao ? ' Aviso: ' + r.observacao : ''}`);
-      state.extrato = r.id; extratos();
-    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Enviar e analisar'; }
-  });
+      const r = await api('/api/extratos', { method: 'POST', body: { conta_id: contaId, nome: file.name, base64: await lerBase64(file) } });
+      toast(`${nome}: ${r.novos} linha(s) lida(s)${r.duplicados ? `, ${r.duplicados} já importada(s) antes` : ''}.${r.observacao ? ' Aviso: ' + r.observacao : ''}`);
+      const { extratos: lista } = await api('/api/extratos'); // atualiza só a situação e o histórico; os arquivos escolhidos nas outras linhas continuam lá
+      linha.classList.add('enviado'); linha.querySelector('.ext-status').innerHTML = statusHtml(enviadoHoje(lista, contaId)); linha.querySelector('.arq').value = '';
+      document.getElementById('placar').innerHTML = placar(lista); document.getElementById('hist').innerHTML = historico(lista); ligaAbrir();
+    } catch (e) { toast(e.message, true); }
+    btn.disabled = false; btn.textContent = linha.classList.contains('enviado') ? 'Enviar outro' : 'Enviar e analisar';
+  }));
 }
 
 async function extratoDetalhe(id) {
@@ -1116,7 +1128,7 @@ async function dp() {
   const [res, funcs, aus] = await Promise.all([api(`/api/dp/resumo/${mesSel}`), api(`/api/dp/funcionarios${state.dp.todos ? '?todos=1' : ''}`), api(`/api/dp/ausencias/${mesSel}`)]);
   const aba = state.dp.aba, M = state.dp.meta;
   const horario = (f) => (f.jornada_entrada ? `${f.jornada_entrada}–${f.jornada_saida}${f.jornada_horas ? ` · ${String(f.jornada_horas).replace('.', ',')} h/dia` : ''}` : '<span class="mut">não informado</span>');
-  $app.innerHTML = `<h1>Departamento de Pessoas</h1>
+  $app.innerHTML = `<h1>Funcionários</h1>
     <p class="sub">Ficha de cada funcionário e controle de faltas, atestados e férias. Acesso só do administrador (dados pessoais e de saúde).</p>
     <div class="grid">
       <div class="card kpi"><div class="l">Funcionários ativos</div><div class="v">${res.ativos}</div></div>
@@ -1259,7 +1271,7 @@ async function marketing() {
   const a = d.atual, p = d.anterior, edita = edicaoMkt();
   const comp = (x, y) => (y > 0 ? variacao(x, y) : '<small class="mut">—</small>');
   const maxO = Math.max(...d.por_origem.map((o) => o.qtd), 1);
-  $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel de marketing</h1><p class="sub">Anúncios, leads e orçamentos que eles geraram. Os números dos anúncios são lançados por aqui; a ligação automática com Meta e Google entra numa próxima etapa.</p></div>
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Marketing</h1><p class="sub">Anúncios, leads e orçamentos que eles geraram. Os números dos anúncios são lançados por aqui; a ligação automática com Meta e Google entra numa próxima etapa.</p></div>
       ${edita ? '<div class="row" style="margin:0"><button id="nova-camp">Nova campanha</button><button class="sec" id="lanc-dia">Lançar números</button></div>' : ''}</div>
     <div class="row">${seletorMes()}</div>
     <div class="grid">

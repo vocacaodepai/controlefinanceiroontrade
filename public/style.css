@@ -202,3 +202,10 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 .tema .ico{width:14px;height:14px}
 .usuario .tema{margin-top:8px;display:flex}.usuario .tema button{flex:1;justify-content:center}
 .tema-flutuante{position:fixed;top:14px;right:16px;z-index:5}
+
+/* extratos: uma linha por conta */
+.ext-tabela td{vertical-align:middle}.ext-tabela input[type=file]{width:100%;max-width:340px;font-size:12.5px}
+.ext-linha{transition:background .2s}
+.ext-linha.enviado td{background:var(--chip)}.ext-linha.enviado td:not(.ext-status):not(:last-child){opacity:.72}
+.ext-linha.ext-falta td{background:var(--verm-bg)}
+.ext-ok{display:inline-flex;align-items:center;gap:6px;color:var(--azul);font-weight:600}.ext-ok .ico{width:16px;height:16px}
