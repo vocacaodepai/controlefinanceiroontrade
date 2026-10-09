@@ -146,7 +146,7 @@ app.get('/api/comercial/followups', trabCom, h(async (_, res) => res.json(await 
 
 // ---------- Departamento de Pessoas (só administrador: dados pessoais e de saúde) ----------
 const verDP = A.exigirArea('dp');
-app.get('/api/dp/meta', verDP, h(async (_, res) => res.json({ regimes: DP.REGIMES, vinculos: DP.VINCULOS, tipos_ausencia: DP.TIPOS_AUSENCIA })));
+app.get('/api/dp/meta', verDP, h(async (_, res) => res.json({ regimes: DP.REGIMES, grupos: DP.GRUPOS, vinculos: DP.VINCULOS, tipos_ausencia: DP.TIPOS_AUSENCIA })));
 app.get('/api/dp/funcionarios', verDP, h(async (req, res) => res.json(await DP.listar({ todos: req.query.todos === '1' }))));
 app.post('/api/dp/funcionarios', verDP, h(async (req, res) => res.status(201).json(await DP.salvar(null, req.body))));
 app.get('/api/dp/funcionarios/:id', verDP, h(async (req, res) => res.json(await DP.ficha(idNum(req.params.id)))));

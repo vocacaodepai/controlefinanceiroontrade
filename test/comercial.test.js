@@ -145,3 +145,20 @@ test('opções do formulário trazem origens e campanhas ativas', async () => {
   assert.equal(op.origens.instagram, 'Instagram');
   assert.ok(op.produtos.length >= 2 && Array.isArray(op.campanhas));
 });
+
+test('cliente duplicado: mesmo e-mail ou mesmo telefone não cadastra de novo', async () => {
+  const base = fic('Duplicável');
+  const a = await CO.salvarCliente(null, base, null);
+  await assert.rejects(CO.salvarCliente(null, { ...fic('Outro nome'), email: base.email.toUpperCase() }, null), /Já existe um cliente.*Duplicável/);
+  await assert.rejects(CO.salvarCliente(null, { ...fic('Outro nome 2'), telefone: base.telefone.replace(/\D/g, '') }, null), /Já existe um cliente/);
+  const edit = await CO.salvarCliente(a.id, { ...base, empresa: 'Minha Empresa' }, null); // editar a própria ficha continua valendo
+  assert.equal(edit.empresa, 'Minha Empresa');
+  await assert.rejects(CO.criarOrcamento({ ...O, cliente: { ...fic('Duplicável 2'), email: base.email }, produto_nome: 'Painel P5', valor: 100000 }), /Já existe um cliente/);
+});
+
+test('novo cliente sozinho (sem orçamento): só a ficha, e já aparece na busca', async () => {
+  const c = await CO.salvarCliente(null, fic('Só Cliente'), null);
+  assert.equal((await CO.buscarClientes('Só Cliente'))[0].id, c.id);
+  assert.equal((await CO.cliente(c.id)).orcamentos.length, 0);
+  await assert.rejects(CO.salvarCliente(null, { nome: 'Incompleto' }, null), /obrigatórios da ficha do cliente/);
+});

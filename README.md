@@ -87,7 +87,6 @@ test/            testes das regras
 
 ## Pontos a confirmar (marcados nos cadastros)
 
-- Kátia e Dona Kátia são a mesma pessoa? (hoje está como uma só, vínculo Japeri)
 - O DAE gera saldo para a OnTrade ou é só canal de pagamento ao fornecedor?
 - PagVeloz é conta da OnTrade ou da LTON?
 - Dantas, Fátima, Tayane, Fabiano, Douglas e Andresa: quais são registrados?

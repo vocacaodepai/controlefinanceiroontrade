@@ -24,7 +24,8 @@ test('quadro societário nasce com Luiz Amaro 20% e sem presumir a parte do Luiz
   assert.equal(amaro.aporte, 200000000);
   assert.equal(amaro.valor_implicito, 1000000000, 'R$ 2 mi por 20% => R$ 10 mi para 100%');
   assert.equal(tulio.participacao_bp, null);
-  assert.deepEqual(q.sem_participacao, ['Luiz Túlio']);
+  assert.deepEqual([...q.sem_participacao].sort(), ['Elisa Maria', 'Luiz Túlio']);
+  assert.ok(q.socios.some((s) => s.nome === 'Elisa Maria'), 'Elisa Maria é sócia junto com o Luiz Túlio');
   assert.equal(q.soma_bp, 2000);
 });
 

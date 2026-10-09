@@ -3,8 +3,9 @@
 import { query, one } from './db.js';
 import { ErroNegocio, isData, isMes, hoje, addDias, intervaloMes } from './services.js';
 
-export const REGIMES = { clt: 'CLT (registrado)', pj: 'PJ', comissionado: 'Comissionado', prestador: 'Prestador de serviço', informal: 'Sem registro', a_verificar: 'A verificar' };
+export const REGIMES = { clt: 'CLT (registrado)', pj: 'PJ', comissionado: 'Comissionado', prestador: 'Prestador de serviço', informal: 'Sem registro', socio: 'Sócio', a_verificar: 'A verificar' };
 export const VINCULOS = { lt1: 'Registrado na LTON', ontrade: 'Registrado na OnTrade', japeri: 'Registrado em Japeri', informal: 'Sem registro', socio: 'Sócio(a)', a_verificar: 'A verificar' };
+export const GRUPOS = { funcionario: 'Funcionário', gestao: 'Diretoria e Gerência' };
 export const TIPOS_AUSENCIA = { falta: 'Falta', atestado: 'Atestado médico', ferias: 'Férias', licenca: 'Licença', folga: 'Folga / banco de horas', atraso: 'Atraso' };
 const ANEXO_MAX = 3 * 1024 * 1024; // cabe no limite de 4,5 MB do corpo da requisição na Vercel (base64 cresce ~33%)
 
@@ -45,6 +46,7 @@ function ler(b) {
   if (o.data_admissao && o.data_demissao && o.data_demissao < o.data_admissao) throw new ErroNegocio('A demissão não pode ser antes da admissão.');
   o.vinculo = b.vinculo || 'a_verificar';
   if (!VINCULOS[o.vinculo]) throw new ErroNegocio('Vínculo inválido.');
+  o.grupo = b.grupo === 'gestao' ? 'gestao' : 'funcionario';
   o.regime = b.regime || 'a_verificar';
   if (!REGIMES[o.regime]) throw new ErroNegocio('Regime inválido.');
   o.salario = b.salario == null || b.salario === '' ? null : Math.round(Number(b.salario));
@@ -58,7 +60,7 @@ function ler(b) {
   o.ativo = b.ativo === 0 || b.ativo === false || b.ativo === '0' ? 0 : 1;
   return o;
 }
-const CAMPOS = [...TEXTOS, ...DATAS, 'cpf', 'vinculo', 'regime', 'salario', 'jornada_entrada', 'jornada_saida', 'jornada_intervalo_min', 'dias_trabalho', 'ativo'];
+const CAMPOS = [...TEXTOS, ...DATAS, 'cpf', 'vinculo', 'regime', 'grupo', 'salario', 'jornada_entrada', 'jornada_saida', 'jornada_intervalo_min', 'dias_trabalho', 'ativo'];
 
 export async function salvar(id, b) {
   const o = ler(b);
@@ -74,16 +76,17 @@ export async function salvar(id, b) {
 // O que falta preencher na ficha
 export function pendencias(f) {
   const falta = [];
-  const exige = [['cpf', 'CPF'], ['data_nascimento', 'Nascimento'], ['telefone', 'Telefone'], ['endereco', 'Endereço'], ['emergencia_nome', 'Contato de emergência'], ['emergencia_telefone', 'Telefone de emergência'], ['data_admissao', 'Admissão'], ['jornada_entrada', 'Horário de trabalho']];
+  const gestao = f.grupo === 'gestao'; // sócios e gerentes: sem exigir horário nem carteira de trabalho
+  const exige = [['cpf', 'CPF'], ['data_nascimento', 'Nascimento'], ['telefone', 'Telefone'], ['endereco', 'Endereço'], ['emergencia_nome', 'Contato de emergência'], ['emergencia_telefone', 'Telefone de emergência'], ['data_admissao', gestao ? 'Data de entrada' : 'Admissão'], ...(gestao ? [] : [['jornada_entrada', 'Horário de trabalho']])];
   for (const [c, n] of exige) if (!f[c]) falta.push(n);
-  if (['clt', 'a_verificar'].includes(f.regime) && !f.ctps_numero) falta.push('Carteira de trabalho');
+  if (!gestao && ['clt', 'a_verificar'].includes(f.regime) && !f.ctps_numero) falta.push('Carteira de trabalho');
   return falta;
 }
 
 const comExtras = (f) => ({ ...f, jornada_horas: jornadaHoras(f), pendencias: pendencias(f) });
 
 export async function listar({ todos } = {}) {
-  const l = await query(`SELECT * FROM funcionarios ${todos ? '' : 'WHERE ativo = 1'} ORDER BY ativo DESC, lower(nome)`);
+  const l = await query(`SELECT * FROM funcionarios ${todos ? '' : 'WHERE ativo = 1'} ORDER BY ativo DESC, (grupo = 'gestao') DESC, CASE WHEN grupo = 'gestao' THEN id END, lower(nome)`);
   return l.map(comExtras);
 }
 
@@ -185,5 +188,5 @@ export async function resumo(mes) {
   const aniversarios = funcs.filter((f) => f.data_nascimento && f.data_nascimento.slice(5, 7) === mes.slice(5)).map((f) => ({ id: f.id, nome: f.nome, dia: Number(f.data_nascimento.slice(8)), idade: Number(mes.slice(0, 4)) - Number(f.data_nascimento.slice(0, 4)) })).sort((a, b) => a.dia - b.dia);
   const em30 = addDias(h, 30);
   const asoVencendo = funcs.filter((f) => f.aso_validade && f.aso_validade <= em30).map((f) => ({ id: f.id, nome: f.nome, validade: f.aso_validade, vencido: f.aso_validade < h }));
-  return { mes, hoje: h, ativos: funcs.length, fora_hoje: fora, aniversarios, aso_vencendo: asoVencendo, por_pessoa: porPessoa, fichas_incompletas: funcs.filter((f) => f.pendencias.length).map((f) => ({ id: f.id, nome: f.nome, faltam: f.pendencias })) };
+  return { mes, hoje: h, ativos: funcs.filter((f) => f.grupo !== 'gestao').length, gestao: funcs.filter((f) => f.grupo === 'gestao').length, fora_hoje: fora, aniversarios, aso_vencendo: asoVencendo, por_pessoa: porPessoa, fichas_incompletas: funcs.filter((f) => f.pendencias.length).map((f) => ({ id: f.id, nome: f.nome, faltam: f.pendencias })) };
 }

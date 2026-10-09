@@ -356,7 +356,7 @@ CREATE TABLE IF NOT EXISTS funcionarios (
   cargo text,
   setor text,
   vinculo text NOT NULL DEFAULT 'a_verificar' CHECK (vinculo IN ('lt1','ontrade','japeri','informal','socio','a_verificar')),
-  regime text NOT NULL DEFAULT 'a_verificar' CHECK (regime IN ('clt','pj','comissionado','prestador','informal','a_verificar')),
+  regime text NOT NULL DEFAULT 'a_verificar' CHECK (regime IN ('clt','pj','comissionado','prestador','informal','socio','a_verificar')),
   data_admissao date,
   data_demissao date,
   salario bigint CHECK (salario IS NULL OR salario >= 0),
@@ -434,3 +434,15 @@ CREATE INDEX IF NOT EXISTS idx_orc_origem ON orcamentos (origem);
 
 ALTER TABLE campanhas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campanha_dias ENABLE ROW LEVEL SECURITY;
+
+-- Diretoria e gerência ficam na mesma tela de Funcionários, mas separadas da equipe
+ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS grupo text NOT NULL DEFAULT 'funcionario';
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'funcionarios_grupo_check') THEN
+    ALTER TABLE funcionarios ADD CONSTRAINT funcionarios_grupo_check CHECK (grupo IN ('funcionario','gestao'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'funcionarios_regime_check' AND pg_get_constraintdef(oid) LIKE '%socio%') THEN
+    ALTER TABLE funcionarios DROP CONSTRAINT IF EXISTS funcionarios_regime_check;
+    ALTER TABLE funcionarios ADD CONSTRAINT funcionarios_regime_check CHECK (regime IN ('clt','pj','comissionado','prestador','informal','socio','a_verificar'));
+  END IF;
+END $$;

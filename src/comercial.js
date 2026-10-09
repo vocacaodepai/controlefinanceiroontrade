@@ -3,6 +3,7 @@
 import { query, one, tx } from './db.js';
 import { ErroNegocio, isData, isMes, hoje, addDias, intervaloMes } from './services.js';
 
+const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 export const PRAZO_FOLLOWUP = 3; // dias após o orçamento
 export const STATUS = { aberto: 'Em aberto', ganho: 'Ganho', perdido: 'Perdido', cancelado: 'Cancelado' };
 // De onde veio o orçamento (obrigatório): base do rastreio de marketing
@@ -43,6 +44,10 @@ function lerCliente(b) {
 
 export async function salvarCliente(id, b, usuario) {
   const c = lerCliente(b);
+  // não deixa cadastrar a mesma pessoa duas vezes (mesmo e-mail ou mesmo telefone)
+  const dig = soDigitos(c.telefone);
+  const igual = await one(`SELECT id, nome FROM clientes WHERE ($3::bigint IS NULL OR id <> $3) AND (lower(email) = lower($1) OR regexp_replace(coalesce(telefone,''), '\\D', '', 'g') = $2) LIMIT 1`, [c.email, dig, id ?? null]);
+  if (igual) throw new ErroNegocio(`Já existe um cliente com este e-mail ou telefone: ${igual.nome}. Busque por ele em Clientes.`, 409);
   if (id) {
     const r = await one(`UPDATE clientes SET nome=$1,telefone=$2,email=$3,aniversario=$4,empresa=$5,origem=coalesce($6,origem),obs=$7 WHERE id=$8 RETURNING *`,
       [c.nome, c.telefone, c.email, c.aniversario, c.empresa, c.origem, c.obs, id]);
@@ -53,7 +58,6 @@ export async function salvarCliente(id, b, usuario) {
     [c.nome, c.telefone, c.email, c.aniversario, c.empresa, c.origem, c.obs, usuario?.id ?? null]);
 }
 
-const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 
 // "Cliente já cadastrado?": procura por nome, telefone ou e-mail
 export async function buscarClientes(q) {
