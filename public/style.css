@@ -179,3 +179,9 @@ body.modo-tv main{max-width:none;margin:0;padding:28px 40px}
 .dias{display:flex;gap:14px;flex-wrap:wrap;padding-top:4px}
 .ficha-sec{border:1px solid var(--bd);border-radius:10px;padding:6px 16px 16px;margin:12px 0}.ficha-sec legend{font-size:12.5px;font-weight:600;color:var(--navy);padding:0 8px;text-transform:uppercase;letter-spacing:.06em}
 a.zap{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--navy);background:var(--card);border:1px solid var(--bd2);border-radius:8px;padding:4px 11px;font-size:12.5px;font-weight:500;white-space:nowrap}a.zap:hover{background:var(--tint)}a.zap .ico{width:14px;height:14px}
+
+/* ---- campos obrigatórios ---- */
+.ast{color:var(--verm);font-weight:700}
+input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!important;background:var(--verm-bg);box-shadow:0 0 0 3px color-mix(in srgb,var(--verm) 18%,transparent)}
+.erro-campo{display:block;color:var(--verm);font-size:12px;margin-top:4px;font-weight:500}
+[hidden]{display:none!important}

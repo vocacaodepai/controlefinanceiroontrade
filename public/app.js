@@ -20,6 +20,7 @@ Object.assign(ICONES, {
   cadastros: '<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>',
   roadmap: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   patrimonio: '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+  marketing: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
   zap: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   comercial: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
@@ -112,8 +113,8 @@ function abrirFoto() {
   m.el.querySelector('#fs').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'POST', body: { imagem: recorte(256) } }); await atualizar(); }, 'Foto salva');
   m.el.querySelector('#fr').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'DELETE' }); await atualizar(); }, 'Foto removida');
 }
-const NIVEL = { comercial: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
-const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura', socio: 'Sócio', comercial: 'Comercial' };
+const NIVEL = { comercial: 0, marketing: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
+const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura', socio: 'Sócio', comercial: 'Comercial', marketing: 'Marketing' };
 const temArea = (a) => !!state.usuario?.areas?.includes(a);
 const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
 
@@ -192,11 +193,12 @@ document.getElementById('senha').onclick = trocarSenha;
 document.getElementById('foto').onclick = abrirFoto;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
   ['Comercial', [['comercial', 'Painel'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
+  ['Marketing', [['marketing', 'Painel de marketing']]],
   ['Sociedade', [['societario', 'Quadro societário']]],
   ['Pessoas', [['dp', 'Departamento de Pessoas']]],
   ['Sistema', [['fluxo', 'Mapa do fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
@@ -781,6 +783,7 @@ function roadmap() {
 // =====================================================================
 // COMERCIAL: ao vivo, orçamentos, clientes e aviso de follow-up
 // =====================================================================
+const ORIGENS_ROT = { instagram: 'Instagram', facebook: 'Facebook', google_anuncio: 'Google (anúncio)', google_busca: 'Google (busca)', tiktok: 'TikTok', youtube: 'YouTube', whatsapp: 'WhatsApp direto', site: 'Site', indicacao: 'Indicação', cliente_antigo: 'Cliente antigo', anuncio_rua: 'Anúncio na rua / outdoor', feira: 'Feira ou evento', outro: 'Outro' };
 const STATUS_ORC = { aberto: 'Em aberto', ganho: 'Ganho', perdido: 'Perdido', cancelado: 'Cancelado' };
 const TAG_ORC = { aberto: '', ganho: 'ok', perdido: 'ruim', cancelado: 'aviso' };
 const tagOrc = (s) => `<span class="tag ${TAG_ORC[s]}">${STATUS_ORC[s]}</span>`;
@@ -863,39 +866,76 @@ function iniciarFollowups() {
   verificarFollowups(); _fuTimer = setInterval(() => verificarFollowups(), 5 * 60 * 1000);
 }
 
+// ---- campos obrigatórios: asterisco, destaque em vermelho e aviso embaixo do campo ----
+const ast = '<span class="ast" title="Obrigatório">*</span>';
+const campoObr = (rot, nome, v, tipo = 'text', extra = '') => `<div ${extra}><label>${rot} ${ast}</label><input name="${nome}" type="${tipo}" value="${esc(v ?? '')}" data-obrig="${tipo}"></div>`;
+const seletorObr = (rot, nome, opcoesHtml, extra = '') => `<div ${extra}><label>${rot} ${ast}</label><select name="${nome}" data-obrig="select">${opcoesHtml}</select></div>`;
+const limpaErro = (el) => { el.classList.remove('invalido'); el.parentElement.querySelector('.erro-campo')?.remove(); };
+// Confere todos os campos obrigatórios visíveis do formulário. Devolve true se estiver tudo preenchido.
+function validarObrigatorios(raiz) {
+  let primeiro = null;
+  raiz.querySelectorAll('[data-obrig]').forEach((el) => {
+    if (el.closest('[hidden]')) return;
+    limpaErro(el);
+    const v = el.value.trim();
+    let msg = '';
+    if (!v) msg = 'Esta informação é obrigatória. Preencha para continuar.';
+    else if (el.dataset.obrig === 'tel' && v.replace(/\D/g, '').length < 10) msg = 'Informe o telefone com DDD.';
+    else if (el.dataset.obrig === 'email' && !/^\S+@\S+\.\S+$/.test(v)) msg = 'Informe um e-mail válido.';
+    if (msg) {
+      el.classList.add('invalido');
+      el.insertAdjacentHTML('afterend', `<small class="erro-campo">${msg}</small>`);
+      el.addEventListener('input', () => limpaErro(el), { once: true });
+      el.addEventListener('change', () => limpaErro(el), { once: true });
+      primeiro = primeiro || el;
+    }
+  });
+  if (primeiro) { primeiro.scrollIntoView({ block: 'center', behavior: 'smooth' }); primeiro.focus({ preventScroll: true }); toast('Faltam informações obrigatórias. Preencha os campos em destaque.', true); }
+  return !primeiro;
+}
+const CAMPOS_FICHA = [['nome', 'Nome', 'text'], ['telefone', 'Telefone (WhatsApp)', 'tel'], ['email', 'E-mail', 'email'], ['aniversario', 'Aniversário', 'date']];
+const faltasFicha = (c) => CAMPOS_FICHA.filter(([k, , t]) => !String(c?.[k] ?? '').trim() || (t === 'tel' && String(c[k]).replace(/\D/g, '').length < 10)).map(([k]) => k);
+const camposFicha = (c = {}, pre = '') => CAMPOS_FICHA.map(([k, r, t]) => campoObr(r, pre + k, c[k], t, k === 'nome' ? 'class="larg"' : '')).join('') + `<div><label>Empresa</label><input name="${pre}empresa" value="${esc(c.empresa || '')}"></div>`;
+
 // ---- novo orçamento: "cliente já cadastrado?" -> ficha -> orçamento ----
 async function novoOrcamento(depois, clientePre) {
-  const produtos = await api('/api/comercial/produtos');
+  const op = await api('/api/comercial/opcoes');
   const m = modal(`<h2>Novo orçamento</h2>
-    <form id="fo" autocomplete="off">
+    <p class="legenda">Campos com ${ast} são obrigatórios. O orçamento só é registrado com tudo preenchido.</p>
+    <form id="fo" autocomplete="off" novalidate>
       <div class="passo"><span class="num">1</span> Cliente</div>
-      <div id="cli-escolhido" ${clientePre ? '' : 'hidden'} class="cli-sel"></div>
+      <div id="cli-escolhido" hidden class="cli-sel"></div>
       <div id="cli-busca" ${clientePre ? 'hidden' : ''}>
         <label>O cliente já está cadastrado? Busque por nome, telefone ou e-mail</label>
         <input id="q" placeholder="Digite para buscar" autofocus><div id="res" class="busca-res"></div>
         <button type="button" class="sec mini" id="novo-cli" style="margin-top:8px">Não encontrei — cadastrar novo cliente</button></div>
-      <div id="ficha" hidden class="form" style="margin-top:8px">
-        <div class="larg"><label>Nome</label><input name="c_nome"></div><div><label>Telefone</label><input name="c_telefone" inputmode="tel"></div>
-        <div><label>E-mail</label><input name="c_email" type="email"></div><div><label>Aniversário</label><input name="c_aniversario" type="date"></div>
-        <div><label>Empresa</label><input name="c_empresa"></div></div>
+      <div id="ficha" hidden class="form" style="margin-top:8px"></div>
       <div class="passo"><span class="num">2</span> Orçamento</div>
       <div class="form">
-        <div><label>Tipo de produto</label><select name="produto_id">${produtos.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}<option value="">Outro (digitar)</option></select></div>
-        <div id="outro" hidden><label>Qual produto?</label><input name="produto_nome" placeholder="Ex.: Painel P2.5"></div>
-        <div><label>Valor do orçamento (R$)</label><input name="valor" inputmode="decimal" placeholder="0,00" required></div>
+        ${seletorObr('Tipo de produto', 'produto_id', `<option value="">Selecione</option>${op.produtos.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}<option value="outro">Outro (digitar)</option>`)}
+        <div id="outro" hidden><label>Qual produto? ${ast}</label><input name="produto_nome" data-obrig="text" placeholder="Ex.: Painel P2.5"></div>
+        ${campoObr('Valor do orçamento (R$)', 'valor', '', 'text')}
         <div><label>Nº do orçamento</label><input name="numero" placeholder="Opcional"></div>
+        ${seletorObr('De onde veio este orçamento?', 'origem', `<option value="">Selecione</option>${Object.entries(op.origens).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}`, 'class="larg"')}
+        <div id="origem-outro" hidden class="larg"><label>Qual origem? ${ast}</label><input name="origem_detalhe" data-obrig="text" placeholder="Ex.: panfleto no shopping"></div>
+        <div id="camp" hidden class="larg"><label>Veio de qual campanha de anúncio? (se souber)</label><select name="campanha_id"></select></div>
         <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></div>
       <p class="legenda" style="margin-top:10px">O sistema vai avisar para retomar o contato <b>3 dias</b> depois de hoje.</p>
-      <div class="modal-acoes"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Registrar orçamento</button></div></form>`, 620);
-  let escolhido = clientePre || null;
-  const f = m.el.querySelector('#fo');
+      <div class="modal-acoes"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Registrar orçamento</button></div></form>`, 640);
+  let escolhido = null, novo = false;
+  const f = m.el.querySelector('#fo'), ficha = m.el.querySelector('#ficha');
+  const abrirFicha = (dados) => { ficha.innerHTML = camposFicha(dados); ficha.hidden = false; };
   const mostraEscolhido = () => {
     const box = m.el.querySelector('#cli-escolhido');
-    box.hidden = !escolhido; m.el.querySelector('#cli-busca').hidden = !!escolhido;
-    if (escolhido) box.innerHTML = `<div><b>${esc(escolhido.nome)}</b> <span class="tag">cliente recorrente</span><br><small class="mut">${esc([escolhido.telefone, escolhido.email].filter(Boolean).join(' · ') || 'sem contato')} · ${escolhido.qtd_orcamentos || 0} orçamento(s) anterior(es)</small></div><button type="button" class="mini sec" id="trocar">Trocar</button>`;
-    box.querySelector('#trocar')?.addEventListener('click', () => { escolhido = null; mostraEscolhido(); });
+    box.hidden = !escolhido; m.el.querySelector('#cli-busca').hidden = !!escolhido || novo;
+    if (!escolhido) { if (!novo) ficha.hidden = true; return; }
+    const faltas = faltasFicha(escolhido);
+    box.innerHTML = `<div><b>${esc(escolhido.nome)}</b> <span class="tag">cliente recorrente</span><br><small class="mut">${esc([escolhido.telefone, escolhido.email].filter(Boolean).join(' · ') || 'sem contato')} · ${escolhido.qtd_orcamentos || 0} orçamento(s) anterior(es)</small>
+      ${faltas.length ? '<br><small class="neg">A ficha deste cliente está incompleta. Complete os campos abaixo para continuar.</small>' : ''}</div><button type="button" class="mini sec" id="trocar">Trocar</button>`;
+    box.querySelector('#trocar').onclick = () => { escolhido = null; mostraEscolhido(); };
+    if (faltas.length) abrirFicha(escolhido); else ficha.hidden = true;
   };
-  mostraEscolhido();
+  if (clientePre) { escolhido = clientePre; mostraEscolhido(); }
   const q = m.el.querySelector('#q'), res = m.el.querySelector('#res'); let t;
   q.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
     if (q.value.trim().length < 2) { res.innerHTML = ''; return; }
@@ -904,19 +944,27 @@ async function novoOrcamento(depois, clientePre) {
       : '<p class="mut" style="margin:8px 0">Nenhum cliente encontrado. Cadastre um novo abaixo.</p>';
     res.querySelectorAll('.busca-item').forEach((b) => (b.onclick = () => { escolhido = l.find((c) => c.id === +b.dataset.id); mostraEscolhido(); }));
   }, 250); };
-  m.el.querySelector('#novo-cli').onclick = () => { m.el.querySelector('#ficha').hidden = false; m.el.querySelector('#cli-busca').hidden = true; m.el.querySelector('[name=c_nome]').value = q.value.trim(); m.el.querySelector('[name=c_nome]').focus(); };
-  const sel = f.produto_id; sel.onchange = () => { m.el.querySelector('#outro').hidden = sel.value !== ''; };
+  m.el.querySelector('#novo-cli').onclick = () => { novo = true; abrirFicha({ nome: q.value.trim() }); m.el.querySelector('#cli-busca').hidden = true; ficha.querySelector('[name=nome]').focus(); };
+  const prod = f.produto_id, orig = f.origem, camp = f.campanha_id;
+  prod.onchange = () => { m.el.querySelector('#outro').hidden = prod.value !== 'outro'; };
+  orig.onchange = () => {
+    m.el.querySelector('#origem-outro').hidden = orig.value !== 'outro';
+    const canal = op.canal_da_origem[orig.value];
+    const lista = canal ? op.campanhas.filter((c) => c.canal === canal) : [];
+    m.el.querySelector('#camp').hidden = !lista.length;
+    camp.innerHTML = `<option value="">Não sei / nenhuma</option>${lista.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}`;
+  };
   m.el.querySelector('#x').onclick = m.fechar;
   f.onsubmit = (e) => {
     e.preventDefault();
+    if (!escolhido && ficha.hidden) { toast('Busque o cliente ou cadastre um novo.', true); q.focus(); return; }
+    if (!validarObrigatorios(f)) return;
     const v = Object.fromEntries(new FormData(f)); const valor = paraCentavos(v.valor);
-    if (!(valor >= 0)) return toast('Informe o valor do orçamento', true);
-    const novo = !m.el.querySelector('#ficha').hidden;
-    if (!escolhido && !novo) return toast('Busque o cliente ou cadastre um novo', true);
-    if (novo && !v.c_nome.trim()) return toast('Informe o nome do cliente', true);
-    const corpo = { valor, numero: v.numero, obs: v.obs, produto_id: v.produto_id || null, produto_nome: v.produto_nome };
-    if (escolhido) corpo.cliente_id = escolhido.id;
-    else corpo.cliente = { nome: v.c_nome, telefone: v.c_telefone, email: v.c_email, aniversario: v.c_aniversario, empresa: v.c_empresa };
+    if (!(valor > 0)) { const el = f.valor; el.classList.add('invalido'); el.insertAdjacentHTML('afterend', '<small class="erro-campo">Informe um valor maior que zero.</small>'); el.addEventListener('input', () => limpaErro(el), { once: true }); return toast('Informe o valor do orçamento.', true); }
+    const corpo = { valor, numero: v.numero, obs: v.obs, origem: v.origem, origem_detalhe: v.origem_detalhe, campanha_id: v.campanha_id || null };
+    if (v.produto_id === 'outro') corpo.produto_nome = v.produto_nome; else corpo.produto_id = v.produto_id;
+    const dadosFicha = !ficha.hidden ? { nome: v.nome, telefone: v.telefone, email: v.email, aniversario: v.aniversario, empresa: v.empresa } : null;
+    if (escolhido) { corpo.cliente_id = escolhido.id; if (dadosFicha) corpo.cliente = dadosFicha; } else corpo.cliente = dadosFicha;
     acao(async () => { await api('/api/comercial/orcamentos', { method: 'POST', body: corpo }); m.fechar(); await depois(); }, 'Orçamento registrado — aviso em 3 dias');
   };
 }
@@ -934,13 +982,11 @@ async function fichaCliente(id, depois) {
   m.el.querySelector('#no').onclick = () => { m.fechar(); novoOrcamento(depois, c); };
   m.el.querySelector('#ed').onclick = () => {
     m.fechar();
-    const e = modal(`<h2>Editar ficha</h2><form class="form" id="fe" style="margin-top:14px">
-      <div class="larg"><label>Nome</label><input name="nome" value="${esc(c.nome)}" required></div><div><label>Telefone</label><input name="telefone" value="${esc(c.telefone || '')}"></div>
-      <div><label>E-mail</label><input name="email" type="email" value="${esc(c.email || '')}"></div><div><label>Aniversário</label><input name="aniversario" type="date" value="${esc(c.aniversario || '')}"></div>
-      <div><label>Empresa</label><input name="empresa" value="${esc(c.empresa || '')}"></div><div class="cheio"><label>Observação</label><input name="obs" value="${esc(c.obs || '')}"></div></form>
+    const e = modal(`<h2>Editar ficha</h2><p class="legenda">Campos com ${ast} são obrigatórios.</p><form class="form" id="fe" style="margin-top:14px" novalidate>
+      ${camposFicha(c)}<div class="cheio"><label>Observação</label><input name="obs" value="${esc(c.obs || '')}"></div></form>
       <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 560);
     e.el.querySelector('#x').onclick = e.fechar;
-    e.el.querySelector('#ok').onclick = () => acao(async () => { await api(`/api/comercial/clientes/${c.id}`, { method: 'PUT', body: Object.fromEntries(new FormData(e.el.querySelector('#fe'))) }); e.fechar(); await depois(); }, 'Ficha salva');
+    e.el.querySelector('#ok').onclick = () => { if (!validarObrigatorios(e.el.querySelector('#fe'))) return; acao(async () => { await api(`/api/comercial/clientes/${c.id}`, { method: 'PUT', body: Object.fromEntries(new FormData(e.el.querySelector('#fe'))) }); e.fechar(); await depois(); }, 'Ficha salva'); };
   };
 }
 
@@ -956,7 +1002,7 @@ async function orcamentos() {
       <div><label>Buscar</label><input id="fq" value="${esc(f.q)}" placeholder="Cliente ou nº"></div></div>
     <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th class="n">Valor</th><th>Situação</th><th>Próximo aviso</th><th></th></tr></thead><tbody>
       ${lista.map((o) => `<tr><td>${dataBR(o.data)}</td><td><b>${esc(o.cliente_nome)}</b> ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : ''}<br><small>${contatoCli(o)}</small></td>
-        <td>${esc(o.produto)}${o.numero ? `<br><small class="mut">nº ${esc(o.numero)}</small>` : ''}</td><td class="n">${brl(o.valor)}</td>
+        <td>${esc(o.produto)}${o.numero ? `<br><small class="mut">nº ${esc(o.numero)}</small>` : ''}<br><small class="mut">${esc(o.origem ? (o.origem === 'outro' ? o.origem_detalhe : ORIGENS_ROT[o.origem]) : 'origem não informada')}${o.campanha_nome ? ' · ' + esc(o.campanha_nome) : ''}</small></td><td class="n">${brl(o.valor)}</td>
         <td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
         <td>${o.status === 'aberto' ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span>${o.qtd_contatos ? `<br><small class="mut">${o.qtd_contatos} contato(s)</small>` : ''}` : '<span class="mut">—</span>'}</td>
         <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `${botaoZap(o.cliente_telefone, msgOrc(o), '')}<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
@@ -1189,6 +1235,93 @@ async function comercial() {
     el.querySelector('[data-a=contato]').onclick = () => janelaContato(o, recarrega);
     el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
   });
+}
+
+// =====================================================================
+// MARKETING: campanhas, anúncios, leads, orçamentos gerados e de onde vêm os clientes
+// =====================================================================
+const CANAIS_MKT = { instagram: 'Instagram', facebook: 'Facebook', google: 'Google Ads', tiktok: 'TikTok', youtube: 'YouTube', outdoor: 'Anúncio na rua / outdoor', outro: 'Outro' };
+const num = (n) => Number(n || 0).toLocaleString('pt-BR');
+const brlOu = (c) => (c == null ? '—' : brl(Math.round(c)));
+const pctOu = (v) => (v == null ? '—' : v.toFixed(1).replace('.', ',') + '%');
+const xOu = (v) => (v == null ? '—' : v.toFixed(2).replace('.', ',') + 'x');
+const edicaoMkt = () => ['admin', 'marketing'].includes(state.usuario?.papel);
+
+async function marketing() {
+  const d = await api(`/api/marketing/painel/${state.mes}`);
+  const a = d.atual, p = d.anterior, edita = edicaoMkt();
+  const comp = (x, y) => (y > 0 ? variacao(x, y) : '<small class="mut">—</small>');
+  const maxO = Math.max(...d.por_origem.map((o) => o.qtd), 1);
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel de marketing</h1><p class="sub">Anúncios, leads e orçamentos que eles geraram. Os números dos anúncios são lançados por aqui; a ligação automática com Meta e Google entra numa próxima etapa.</p></div>
+      ${edita ? '<div class="row" style="margin:0"><button id="nova-camp">Nova campanha</button><button class="sec" id="lanc-dia">Lançar números</button></div>' : ''}</div>
+    <div class="row">${seletorMes()}</div>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Investido em anúncios</div><div class="v">${brl(a.gasto)}</div><small class="mut">mês anterior ${brl(p.gasto)} ${comp(a.gasto, p.gasto)}</small></div>
+      <div class="card kpi"><div class="l">Leads gerados</div><div class="v">${num(a.leads)}</div><small class="mut">custo por lead ${brlOu(a.cpl)} · mês anterior ${num(p.leads)} ${comp(a.leads, p.leads)}</small></div>
+      <div class="card kpi"><div class="l">Orçamentos vindos de campanhas</div><div class="v">${num(a.orcamentos)}</div><small class="mut">de ${num(a.orcamentos_todos)} no mês · custo por orçamento ${brlOu(a.custo_orcamento)}</small></div>
+      <div class="card kpi"><div class="l">Vendido pelas campanhas</div><div class="v">${brl(a.valor_vendido)}</div><small class="mut">${a.vendas} venda(s) · retorno ${xOu(a.roas)} sobre o investido</small></div>
+    </div>
+    <div class="card"><h2>Campanhas em ${nomeMes(d.mes)}</h2>${d.por_campanha.length ? `<div class="tbl"><table><thead><tr><th>Campanha</th><th>Início</th><th class="n">Investido</th><th class="n">Leads</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Custo/orçam.</th><th class="n">Vendido</th><th class="n">Retorno</th></tr></thead><tbody>
+      ${d.por_campanha.map((c) => `<tr><td><b>${esc(c.nome)}</b> ${c.ativa ? '' : '<span class="tag">encerrada</span>'}<br><small class="mut">${esc(CANAIS_MKT[c.canal])}${c.verba ? ` · verba ${brl(c.verba)} (usado ${brl(c.gasto_total)})` : ''}</small>${edita ? `<br><button class="mini sec" data-dias="${c.id}" style="margin-top:6px">Números</button> <button class="mini sec" data-edit="${c.id}" style="margin-top:6px">Editar</button>` : ''}</td>
+        <td>${dataBR(c.data_inicio)}${c.data_fim ? `<br><small class="mut">até ${dataBR(c.data_fim)}</small>` : ''}</td><td class="n">${brl(c.gasto)}</td><td class="n">${num(c.leads)}</td><td class="n">${brlOu(c.cpl)}</td>
+        <td class="n">${c.orcamentos}<br><small class="mut">${brl(c.valor_orcado)}</small></td><td class="n">${brlOu(c.custo_orcamento)}</td><td class="n">${brl(c.valor_vendido)}<br><small class="mut">${c.vendas} venda(s)</small></td><td class="n">${xOu(c.roas)}</td></tr>`).join('')}</tbody></table></div>`
+      : `<p class="mut">Nenhuma campanha neste mês.${edita ? ' Cadastre uma em "Nova campanha".' : ''}</p>`}</div>
+    <div class="card"><h2>Semana a semana</h2>${d.semanas.length ? `<div class="tbl"><table><thead><tr><th>Semana</th><th class="n">Investido</th><th class="n">Cliques</th><th class="n">Leads</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Vendido</th></tr></thead><tbody>
+      ${d.semanas.map((w) => `<tr><td>${dataBR(w.semana).slice(0, 5)} a ${dataBR(w.ate).slice(0, 5)}</td><td class="n">${brl(w.gasto)}</td><td class="n">${num(w.cliques)}</td><td class="n">${num(w.leads)}</td><td class="n">${w.leads ? brl(Math.round(w.gasto / w.leads)) : '—'}</td><td class="n">${w.orcamentos}</td><td class="n">${brl(w.valor_vendido)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Sem lançamentos nas semanas deste mês.</p>'}</div>
+    <div class="card"><h2>De onde vêm os orçamentos</h2><p class="legenda">Todos os orçamentos do mês, pela origem marcada pelo comercial (com ou sem campanha paga).</p>
+      ${d.por_origem.length ? d.por_origem.map((o) => `<div class="barra"><span class="nome" title="${esc(o.rotulo)}">${esc(o.rotulo)}</span><span class="trilho"><span class="fill" style="display:block;width:${(o.qtd / maxO) * 100}%"></span></span><span class="val">${o.qtd} orçam.</span><span class="val mut" style="width:150px">${brl(o.valor_vendido)} vendido</span></div>`).join('') : '<p class="mut">Nenhum orçamento no mês.</p>'}</div>
+    <div class="card"><h2>Ligação com as plataformas de anúncio</h2><p class="legenda">Hoje: lançamento manual dos números de cada campanha (gasto, cliques, leads). Próxima etapa: conectar as contas de anúncios (Meta Ads e Google Ads) para esses números chegarem sozinhos. Isso depende de você autorizar o acesso às contas de anúncio; nenhuma senha passa pelo chat.</p></div>`;
+  ligaMes(marketing);
+  if (!edita) return;
+  const recarrega = () => marketing();
+  document.getElementById('nova-camp').onclick = () => janelaCampanha(null, recarrega);
+  document.getElementById('lanc-dia').onclick = () => janelaDias(null, recarrega);
+  $app.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => janelaCampanha(d.por_campanha.find((c) => c.id === +b.dataset.edit), recarrega)));
+  $app.querySelectorAll('[data-dias]').forEach((b) => (b.onclick = () => janelaDias(+b.dataset.dias, recarrega)));
+}
+
+function janelaCampanha(c, depois) {
+  const m = modal(`<h2>${c ? 'Editar campanha' : 'Nova campanha'}</h2><p class="legenda">Campos com ${ast} são obrigatórios.</p><form class="form" id="fc" style="margin-top:12px" novalidate>
+    ${campoObr('Nome da campanha', 'nome', c?.nome, 'text', 'class="larg"')}
+    ${seletorObr('Canal', 'canal', `<option value="">Selecione</option>${Object.entries(CANAIS_MKT).map(([k, v]) => `<option value="${k}" ${c?.canal === k ? 'selected' : ''}>${v}</option>`).join('')}`)}
+    ${campoObr('Início', 'data_inicio', c?.data_inicio || hojeISO(), 'date')}
+    <div><label>Fim (se já tiver data)</label><input name="data_fim" type="date" value="${esc(c?.data_fim || '')}"></div>
+    <div><label>Verba total (R$)</label><input name="verba" inputmode="decimal" value="${c?.verba != null ? brlInput(c.verba) : ''}" placeholder="Opcional"></div>
+    <div class="cheio"><label>Objetivo</label><input name="objetivo" value="${esc(c?.objetivo || '')}" placeholder="Ex.: gerar orçamentos de painel P3.9"></div>
+    ${c ? `<div class="cheio"><label class="chk"><input type="checkbox" name="ativa" ${c.ativa ? 'checked' : ''}> Campanha ativa (desmarque ao encerrar)</label></div>` : ''}</form>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar campanha</button></div>`, 560);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => {
+    const f = m.el.querySelector('#fc'); if (!validarObrigatorios(f)) return;
+    const v = Object.fromEntries(new FormData(f)); const corpo = { ...v, verba: v.verba ? paraCentavos(v.verba) : null, ativa: c ? f.ativa.checked : true };
+    acao(async () => { await api(c ? `/api/marketing/campanhas/${c.id}` : '/api/marketing/campanhas', { method: c ? 'PUT' : 'POST', body: corpo }); m.fechar(); await depois(); }, 'Campanha salva');
+  };
+}
+
+async function janelaDias(campId, depois) {
+  const { campanhas } = await api('/api/marketing/campanhas');
+  if (!campanhas.length) return toast('Cadastre uma campanha primeiro.', true);
+  const m = modal(`<h2>Lançar números da campanha</h2><p class="legenda">Informe o que a plataforma de anúncios mostrou para o dia. Lançar o mesmo dia de novo substitui os números. Campos com ${ast} são obrigatórios.</p>
+    <form class="form" id="fd" style="margin-top:12px" novalidate>
+      ${seletorObr('Campanha', 'campanha_id', campanhas.map((c) => `<option value="${c.id}" ${c.id === campId ? 'selected' : ''}>${esc(c.nome)}${c.ativa ? '' : ' (encerrada)'}</option>`).join(''), 'class="larg"')}
+      ${campoObr('Dia', 'data', hojeISO(), 'date')}${campoObr('Valor gasto (R$)', 'gasto', '', 'text')}
+      <div><label>Impressões</label><input name="impressoes" type="number" min="0" placeholder="0"></div><div><label>Cliques</label><input name="cliques" type="number" min="0" placeholder="0"></div><div><label>Leads gerados</label><input name="leads" type="number" min="0" placeholder="0"></div></form>
+    <div id="hist"></div>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Fechar</button><button id="ok">Salvar números</button></div>`, 600);
+  const f = m.el.querySelector('#fd'), hist = m.el.querySelector('#hist');
+  const carrega = async () => {
+    const dias = await api(`/api/marketing/campanhas/${f.campanha_id.value}/dias`);
+    hist.innerHTML = dias.length ? `<h3 style="margin:16px 0 6px;font-size:14px">Últimos lançamentos</h3><div class="tbl" style="max-height:200px;overflow-y:auto"><table><tbody>${dias.slice(0, 15).map((x) => `<tr><td>${dataBR(x.data)}</td><td class="n">${brl(x.gasto)}</td><td class="n">${num(x.cliques)} cliques</td><td class="n">${num(x.leads)} leads</td><td class="n"><button type="button" class="mini sec" data-del="${x.id}">excluir</button></td></tr>`).join('')}</tbody></table></div>` : '';
+    hist.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => acao(async () => { await api(`/api/marketing/dias/${b.dataset.del}`, { method: 'DELETE' }); await carrega(); await depois(); }, 'Lançamento excluído')));
+  };
+  f.campanha_id.onchange = carrega; carrega();
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => {
+    if (!validarObrigatorios(f)) return;
+    const v = Object.fromEntries(new FormData(f)); const gasto = paraCentavos(v.gasto);
+    if (!(gasto >= 0)) return toast('Valor gasto inválido', true);
+    acao(async () => { await api('/api/marketing/dias', { method: 'POST', body: { ...v, campanha_id: +v.campanha_id, gasto } }); f.gasto.value = ''; await carrega(); await depois(); }, 'Números salvos');
+  };
 }
 
 rota();

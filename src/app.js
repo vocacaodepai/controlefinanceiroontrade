@@ -11,6 +11,7 @@ import * as P from './patrimonio.js';
 import * as SO from './societario.js';
 import * as CO from './comercial.js';
 import * as DP from './dp.js';
+import * as MK from './marketing.js';
 import { gerarPdf } from './relatorio.js';
 
 export const app = express();
@@ -129,6 +130,7 @@ app.get('/api/societario/relatorio/:mes', verSoc, h(async (req, res) => {
 const verVivo = A.exigirArea('aovivo'), trabCom = A.exigirArea('comercial');
 app.get('/api/aovivo', verVivo, h(async (_, res) => res.json(await CO.aoVivo())));
 app.get('/api/comercial/painel', trabCom, h(async (_, res) => res.json(await CO.painelComercial())));
+app.get('/api/comercial/opcoes', trabCom, h(async (_, res) => res.json(await CO.opcoes())));
 app.get('/api/comercial/produtos', trabCom, h(async (_, res) => res.json(await CO.produtos())));
 app.get('/api/comercial/clientes', trabCom, h(async (req, res) => res.json(await CO.buscarClientes(req.query.q))));
 app.get('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.cliente(idNum(req.params.id)))));
@@ -160,6 +162,18 @@ app.get('/api/dp/ausencias/:id/anexo', verDP, h(async (req, res) => {
   res.end(a.buf);
 }));
 app.delete('/api/dp/ausencias/:id', verDP, h(async (req, res) => { await DP.excluirAusencia(idNum(req.params.id)); res.status(204).end(); }));
+
+// ---------- Marketing: campanhas, números dos anúncios e retorno ----------
+// Ver: admin, sócio e marketing. Lançar/editar: admin e marketing.
+const verMkt = A.exigirArea('marketing');
+const editaMkt = (req, res, next) => (['admin', 'marketing'].includes(req.usuario?.papel) ? next() : res.status(403).json({ erro: 'Seu perfil só consulta o marketing.' }));
+app.get('/api/marketing/painel/:mes', verMkt, h(async (req, res) => res.json(await MK.painel(mes(req)))));
+app.get('/api/marketing/campanhas', verMkt, h(async (_, res) => res.json({ campanhas: await MK.listarCampanhas(), canais: MK.CANAIS })));
+app.post('/api/marketing/campanhas', verMkt, editaMkt, h(async (req, res) => res.status(201).json(await MK.salvarCampanha(null, req.body, req.usuario))));
+app.put('/api/marketing/campanhas/:id', verMkt, editaMkt, h(async (req, res) => res.json(await MK.salvarCampanha(idNum(req.params.id), req.body, req.usuario))));
+app.get('/api/marketing/campanhas/:id/dias', verMkt, h(async (req, res) => res.json(await MK.listarDias(idNum(req.params.id)))));
+app.post('/api/marketing/dias', verMkt, editaMkt, h(async (req, res) => res.status(201).json(await MK.lancarDia(req.body))));
+app.delete('/api/marketing/dias/:id', verMkt, editaMkt, h(async (req, res) => { await MK.excluirDia(idNum(req.params.id)); res.status(204).end(); }));
 
 app.post('/api/recorrencias/:id/lancar', operar, h(async (req, res) => res.status(201).json(await S.lancarRecorrencia(idNum(req.params.id), { ...req.body, criado_por: req.usuario.nome, criado_por_id: req.usuario.id }))));
 

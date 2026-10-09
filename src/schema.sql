@@ -202,9 +202,9 @@ CREATE INDEX IF NOT EXISTS idx_fech_usuario ON fechamentos(fechado_por_id);
 
 -- Novos perfis: sócio (consulta financeira e quadro societário) e comercial (CRM e orçamentos)
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_papel_check' AND pg_get_constraintdef(oid) LIKE '%comercial%') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_papel_check' AND pg_get_constraintdef(oid) LIKE '%marketing%') THEN
     ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_papel_check;
-    ALTER TABLE usuarios ADD CONSTRAINT usuarios_papel_check CHECK (papel IN ('admin','operador','leitor','socio','comercial'));
+    ALTER TABLE usuarios ADD CONSTRAINT usuarios_papel_check CHECK (papel IN ('admin','operador','leitor','socio','comercial','marketing'));
   END IF;
 END $$;
 
@@ -398,3 +398,39 @@ CREATE INDEX IF NOT EXISTS idx_aus_criador ON ausencias (criado_por_id);
 
 ALTER TABLE funcionarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ausencias ENABLE ROW LEVEL SECURITY;
+
+-- ---------- Marketing: campanhas, números diários e origem dos orçamentos ----------
+CREATE TABLE IF NOT EXISTS campanhas (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nome text NOT NULL,
+  canal text NOT NULL CHECK (canal IN ('instagram','facebook','google','tiktok','youtube','outdoor','outro')),
+  data_inicio date NOT NULL,
+  data_fim date,
+  objetivo text,
+  verba bigint CHECK (verba IS NULL OR verba >= 0),
+  ativa integer NOT NULL DEFAULT 1,
+  obs text,
+  criado_por_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_camp_criador ON campanhas (criado_por_id);
+
+CREATE TABLE IF NOT EXISTS campanha_dias (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  campanha_id bigint NOT NULL REFERENCES campanhas(id) ON DELETE CASCADE,
+  data date NOT NULL,
+  gasto bigint NOT NULL DEFAULT 0 CHECK (gasto >= 0),
+  impressoes integer NOT NULL DEFAULT 0 CHECK (impressoes >= 0),
+  cliques integer NOT NULL DEFAULT 0 CHECK (cliques >= 0),
+  leads integer NOT NULL DEFAULT 0 CHECK (leads >= 0),
+  UNIQUE (campanha_id, data)
+);
+
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS origem text;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS origem_detalhe text;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS campanha_id bigint REFERENCES campanhas(id);
+CREATE INDEX IF NOT EXISTS idx_orc_campanha ON orcamentos (campanha_id);
+CREATE INDEX IF NOT EXISTS idx_orc_origem ON orcamentos (origem);
+
+ALTER TABLE campanhas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campanha_dias ENABLE ROW LEVEL SECURITY;
