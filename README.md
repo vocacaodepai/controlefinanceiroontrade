@@ -100,7 +100,7 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 
 - **Orçamentos**: o comercial registra cada orçamento (cliente, produto, valor). Pergunta "cliente já cadastrado?" antes de criar a ficha; cliente com orçamento anterior entra como *recorrente*.
 - **Follow-up**: 3 dias depois do orçamento aparece um pop-up (e um contador no menu) para registrar contato, adiar ou encerrar (ganho, perdido ou cancelado, com motivo).
-- **Ao vivo** (admin, sócio e comercial): dia, mês, produtos, novos x recorrentes, revisitados, perdidos/cancelados com motivo, comparativos com o mês anterior, mesmo mês do ano passado, semestre e ano; atualiza a cada 30 s e tem modo tela cheia.
+- **Ao vivo** (admin, sócio e comercial): dia, mês, produtos, novos x recorrentes, revisitados, perdidos/cancelados com motivo, comparativos com o mês anterior, mesmo mês do ano passado, semestre e ano; atualiza sozinho de hora em hora (e tem botão Atualizar) e tem modo tela cheia.
 - O resumo comercial do mês entra no PDF dos sócios.
 
 ## Funcionários — Departamento de Pessoas (só administrador)

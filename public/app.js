@@ -1072,7 +1072,7 @@ async function aovivo() {
   const linha = (rot, campo, f = String) => `<tr><td>${rot}</td>${['mes_atual', 'mes_anterior_parcial', 'mes_anterior_total', 'mesmo_mes_ano_anterior'].map((k, i) => { const o = i === 0 ? m : c[k]; return `<td class="n ${i === 0 ? 'dest' : ''}">${f(o[campo])}${i === 1 ? ' ' + variacao(m[campo], o[campo]) : i === 3 ? ' ' + variacao(m[campo], o[campo]) : ''}</td>`; }).join('')}</tr>`;
   const linhaP = (rot, campo, f = String) => `<tr><td>${rot}</td>${[['semestre', 'semestre_anterior'], ['ano', 'ano_anterior']].map(([a, b]) => `<td class="n dest">${f(c[a][campo])}</td><td class="n">${f(c[b][campo])} ${variacao(c[a][campo], c[b][campo])}</td>`).join('')}</tr>`;
   const maxP = Math.max(...d.produtos.map((p) => p.valor_orcado), 1);
-  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao vivo — comercial</h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 19)} (renova sozinho a cada 30 segundos)</p></div>
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao vivo — comercial</h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho de hora em hora (próxima às ${String((+d.atualizado_em.slice(11, 13) + 1) % 24).padStart(2, '0')}:${d.atualizado_em.slice(14, 16)}) · use Atualizar para ver agora</p></div>
       <div class="row" style="margin:0"><button class="mini sec" id="att">${ico('refresh')} Atualizar</button><button class="mini sec" id="tv">Tela cheia</button></div></div>
     ${d.followups_pendentes && temArea('comercial') ? `<div class="aviso-box">${ico('info')}<span><b>${d.followups_pendentes} orçamento(s)</b> aguardando retorno do comercial. <a href="#orcamentos">Abrir orçamentos</a></span></div>` : ''}
     <div class="grid">
@@ -1101,8 +1101,14 @@ async function aovivo() {
     <div class="card"><h2>Orçamentos de hoje</h2>${d.recentes.length ? `<div class="tbl"><table><tbody>${d.recentes.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td><td class="mut">${esc(o.criado_por_nome || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
   document.getElementById('att').onclick = () => aovivo();
   document.getElementById('tv').onclick = () => { document.body.classList.toggle('modo-tv'); document.documentElement.requestFullscreen?.().catch(() => {}); };
+  // Atualização automática de hora em hora. Confere a cada minuto (sem pedir nada ao servidor) e só busca de novo quando passou 1 hora
+  // desde a última atualização; assim também funciona se a aba ficou escondida ou o computador dormiu.
+  state.vivoEm = Date.now();
   clearInterval(state.timerVivo);
-  state.timerVivo = setInterval(() => { if (location.hash === '#aovivo' && !document.querySelector('.modal-fundo') && !document.hidden) aovivo().catch(() => {}); else if (location.hash !== '#aovivo') clearInterval(state.timerVivo); }, 30000);
+  state.timerVivo = setInterval(() => {
+    if (location.hash !== '#aovivo') return clearInterval(state.timerVivo);
+    if (Date.now() - state.vivoEm >= 60 * 60 * 1000 && !document.querySelector('.modal-fundo') && !document.hidden) aovivo().catch(() => {});
+  }, 60 * 1000);
 }
 
 // =====================================================================
