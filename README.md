@@ -108,3 +108,10 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 - Ficha do funcionário: dados pessoais, documentos, CTPS, endereço, contato de emergência, plano de saúde, tipo sanguíneo, ASO, contrato, jornada, dias de trabalho e dados de pagamento. A ficha aponta o que ainda falta preencher.
 - Faltas e atestados: tipos falta, atestado, férias, licença, folga e atraso; anexo de PDF/JPG/PNG de até 3 MB; só contam os dias em que a pessoa trabalharia; horas fora calculadas pela jornada.
 - Dados pessoais e de saúde são sensíveis (LGPD): só o perfil admin acessa a área.
+
+## Marketing e origem dos orçamentos
+
+- Todo orçamento exige a **origem** (Instagram, Facebook, Google, anúncio na rua, indicação, etc.) e, quando veio de anúncio, pode ser ligado à campanha.
+- A ficha do cliente (nome, telefone com DDD, e-mail e aniversário) e os dados do orçamento são **obrigatórios**: o formulário marca com asterisco e destaca o que falta; o servidor também confere.
+- **Painel de marketing** (admin, sócio e perfil Marketing): investimento, leads, custo por lead, orçamentos e vendas por campanha, semana a semana e origem de todos os orçamentos. Os números diários dos anúncios são lançados à mão; Meta Ads e Google Ads entram numa próxima etapa.
+- Novo perfil **Marketing**: acessa só o painel de marketing.

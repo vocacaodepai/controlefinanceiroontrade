@@ -4,16 +4,17 @@ import { ErroNegocio } from './services.js';
 
 // Perfis. O nível vale para o FINANCEIRO: comercial (0, sem acesso) < leitor/sócio (1, só consulta)
 // < operador (2, lança e fecha o dia) < admin (3, tudo).
-export const PAPEIS = { comercial: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
+export const PAPEIS = { comercial: 0, marketing: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
 const perfilValido = (p) => Object.hasOwn(PAPEIS, p);
 
 // Áreas do site que cada perfil pode abrir. O servidor confere em cada rota; o menu só mostra o que o perfil acessa.
 export const AREAS = {
-  admin: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'societario', 'dp', 'fluxo', 'cadastros', 'roadmap'],
+  admin: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'fluxo', 'cadastros', 'roadmap'],
   operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros', 'roadmap'],
   leitor: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros'],
-  socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'societario', 'fluxo'],
+  socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'marketing', 'societario', 'fluxo'],
   comercial: ['aovivo', 'comercial'],
+  marketing: ['marketing'],
 };
 const COOKIE = 'sid';
 const DURACAO_MS = 7 * 24 * 3600 * 1000;

@@ -5,6 +5,13 @@ import { ErroNegocio, isData, isMes, hoje, addDias, intervaloMes } from './servi
 
 export const PRAZO_FOLLOWUP = 3; // dias após o orçamento
 export const STATUS = { aberto: 'Em aberto', ganho: 'Ganho', perdido: 'Perdido', cancelado: 'Cancelado' };
+// De onde veio o orçamento (obrigatório): base do rastreio de marketing
+export const ORIGENS = {
+  instagram: 'Instagram', facebook: 'Facebook', google_anuncio: 'Google (anúncio)', google_busca: 'Google (busca)', tiktok: 'TikTok', youtube: 'YouTube',
+  whatsapp: 'WhatsApp direto', site: 'Site', indicacao: 'Indicação', cliente_antigo: 'Cliente antigo', anuncio_rua: 'Anúncio na rua / outdoor', feira: 'Feira ou evento', outro: 'Outro',
+};
+// Origens que podem estar ligadas a uma campanha paga cadastrada no Marketing
+export const CANAL_DA_ORIGEM = { instagram: 'instagram', facebook: 'facebook', google_anuncio: 'google', tiktok: 'tiktok', youtube: 'youtube', anuncio_rua: 'outdoor' };
 const AGORA = "(now() AT TIME ZONE 'America/Sao_Paulo')";
 const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
 
@@ -19,20 +26,25 @@ async function produtoPorNome(nome) {
 }
 
 // ---------- clientes ----------
+// Campos obrigatórios da ficha do cliente (o formulário marca com asterisco)
+export const OBRIGATORIOS_CLIENTE = { nome: 'nome', telefone: 'telefone', email: 'e-mail', aniversario: 'aniversário' };
+export const faltasCliente = (c) => Object.entries(OBRIGATORIOS_CLIENTE).filter(([k]) => !txt(c?.[k]) || (k === 'telefone' && String(c[k]).replace(/\D/g, '').length < 10)).map(([, r]) => r);
+
 function lerCliente(b) {
+  const faltas = faltasCliente(b);
+  if (faltas.length) throw new ErroNegocio(`Preencha os campos obrigatórios da ficha do cliente: ${faltas.join(', ')}.`);
   const nome = txt(b.nome);
-  if (!nome) throw new ErroNegocio('Informe o nome do cliente.');
   const aniv = txt(b.aniversario);
-  if (aniv && !isData(aniv)) throw new ErroNegocio('Data de aniversário inválida.');
+  if (!isData(aniv)) throw new ErroNegocio('Data de aniversário inválida.');
   const email = txt(b.email);
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new ErroNegocio('E-mail inválido.');
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new ErroNegocio('E-mail inválido.');
   return { nome, telefone: txt(b.telefone), email, aniversario: aniv, empresa: txt(b.empresa), origem: txt(b.origem), obs: txt(b.obs) };
 }
 
 export async function salvarCliente(id, b, usuario) {
   const c = lerCliente(b);
   if (id) {
-    const r = await one(`UPDATE clientes SET nome=$1,telefone=$2,email=$3,aniversario=$4,empresa=$5,origem=$6,obs=$7 WHERE id=$8 RETURNING *`,
+    const r = await one(`UPDATE clientes SET nome=$1,telefone=$2,email=$3,aniversario=$4,empresa=$5,origem=coalesce($6,origem),obs=$7 WHERE id=$8 RETURNING *`,
       [c.nome, c.telefone, c.email, c.aniversario, c.empresa, c.origem, c.obs, id]);
     if (!r) throw new ErroNegocio('Cliente não encontrado.', 404);
     return r;
@@ -67,10 +79,11 @@ export async function cliente(id) {
 
 // ---------- orçamentos ----------
 const BASE_ORC = `SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
-    coalesce(p.nome, o.produto_desc, 'Sem produto') AS produto, u.nome AS criado_por_nome,
+    coalesce(p.nome, o.produto_desc, 'Sem produto') AS produto, u.nome AS criado_por_nome, cp.nome AS campanha_nome,
     (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = o.id) AS qtd_contatos
   FROM orcamentos o JOIN clientes c ON c.id = o.cliente_id
-  LEFT JOIN produtos_catalogo p ON p.id = o.produto_id LEFT JOIN usuarios u ON u.id = o.criado_por_id`;
+  LEFT JOIN produtos_catalogo p ON p.id = o.produto_id LEFT JOIN usuarios u ON u.id = o.criado_por_id
+  LEFT JOIN campanhas cp ON cp.id = o.campanha_id`;
 
 const centavos = (v) => {
   const n = Math.round(Number(v));
@@ -79,28 +92,53 @@ const centavos = (v) => {
 };
 
 export async function criarOrcamento(b, usuario) {
+  const falta = [];
+  if (!b.produto_id && !txt(b.produto_nome) && !txt(b.produto_desc)) falta.push('tipo de produto');
+  if (b.valor === undefined || b.valor === null || b.valor === '') falta.push('valor');
+  if (!b.origem) falta.push('origem do orçamento');
+  if (b.origem === 'outro' && !txt(b.origem_detalhe)) falta.push('qual a origem (campo "Outro")');
+  if (falta.length) throw new ErroNegocio(`Preencha os campos obrigatórios: ${falta.join(', ')}.`);
+  if (!ORIGENS[b.origem]) throw new ErroNegocio('Origem do orçamento inválida.');
   const valor = centavos(b.valor);
+  if (valor <= 0) throw new ErroNegocio('O valor do orçamento deve ser maior que zero.');
   const data = b.data || hoje();
   if (!isData(data)) throw new ErroNegocio('Data inválida.');
   if (data > hoje()) throw new ErroNegocio('A data do orçamento não pode ser futura.');
   return tx(async () => {
     let cli;
     if (b.cliente_id) {
-      cli = await one('SELECT id FROM clientes WHERE id = $1', [Number(b.cliente_id)]);
+      cli = await one('SELECT * FROM clientes WHERE id = $1', [Number(b.cliente_id)]);
       if (!cli) throw new ErroNegocio('Cliente não encontrado.', 404);
+      if (b.cliente) cli = await salvarCliente(cli.id, b.cliente, usuario); // completa a ficha na hora, se faltava algo
+      const faltas = faltasCliente(cli);
+      if (faltas.length) throw new ErroNegocio(`A ficha deste cliente está incompleta: faltam ${faltas.join(', ')}. Complete a ficha antes de enviar o orçamento.`);
     } else {
       if (!b.cliente) throw new ErroNegocio('Escolha um cliente já cadastrado ou preencha a ficha de um novo.');
       cli = await salvarCliente(null, b.cliente, usuario);
+    }
+    let campanhaId = null;
+    if (b.campanha_id) {
+      const c = await one('SELECT id FROM campanhas WHERE id = $1', [Number(b.campanha_id)]);
+      if (!c) throw new ErroNegocio('Campanha não encontrada.', 404);
+      campanhaId = c.id;
     }
     // novo = primeiro orçamento deste cliente; recorrente = já tinha orçamento antes
     const antes = await one('SELECT count(*)::int AS n FROM orcamentos WHERE cliente_id = $1', [cli.id]);
     const produtoId = b.produto_id ? Number(b.produto_id) : await produtoPorNome(b.produto_nome);
     if (!produtoId && !txt(b.produto_desc)) throw new ErroNegocio('Informe o tipo de produto (ex.: Painel P3.9).');
-    const r = await one(`INSERT INTO orcamentos (numero,cliente_id,produto_id,produto_desc,valor,cliente_tipo,data,followup_em,obs,criado_por_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-      [txt(b.numero), cli.id, produtoId, txt(b.produto_desc), valor, antes.n > 0 ? 'recorrente' : 'novo', data, addDias(data, PRAZO_FOLLOWUP), txt(b.obs), usuario?.id ?? null]);
+    const r = await one(`INSERT INTO orcamentos (numero,cliente_id,produto_id,produto_desc,valor,cliente_tipo,data,followup_em,obs,criado_por_id,origem,origem_detalhe,campanha_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      [txt(b.numero), cli.id, produtoId, txt(b.produto_desc), valor, antes.n > 0 ? 'recorrente' : 'novo', data, addDias(data, PRAZO_FOLLOWUP), txt(b.obs), usuario?.id ?? null,
+        b.origem, b.origem === 'outro' ? txt(b.origem_detalhe) : null, campanhaId]);
+    if (!cli.origem) await query('UPDATE clientes SET origem = $1 WHERE id = $2', [b.origem, cli.id]); // como o cliente chegou até nós
     return one(`${BASE_ORC} WHERE o.id = $1`, [r.id]);
   });
+}
+
+// Tudo o que o formulário de orçamento precisa: produtos, origens e campanhas ativas (para ligar o orçamento ao anúncio)
+export async function opcoes() {
+  const camp = await query(`SELECT id, nome, canal FROM campanhas WHERE ativa = 1 ORDER BY data_inicio DESC`);
+  return { produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp };
 }
 
 export async function listarOrcamentos({ status, de, ate, q, cliente_id } = {}) {
