@@ -689,12 +689,12 @@ function fluxo() {
       <div class="seta">${ico('arrow-right')}</div>
       <div class="col-fluxo">
         <div class="no"><h3>OnTrade</h3>${lista(['Despesas operacionais (papelaria, estacionamento…)', 'Dantas (conta ou dinheiro) — checar registro'])}</div>
-        <div class="no"><h3>LTON paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Dona Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
+        <div class="no"><h3>LTON paga pela OnTrade</h3>${lista(['Pró-labore do Renato', 'Salários: Kátia, Fátima, João, Tayane', 'Comissão do Fabiano', 'Douglas e Andresa', 'Passagem e alimentação (em dinheiro) da Kátia', 'Cartões iFood de todos', 'Recarga de celular, luz, gás, água, combustível', 'Tributos dos funcionários'])}</div>
       </div>
       <div class="seta">${ico('arrow-right')}</div>
       <div class="col-fluxo">
         <div class="no"><h3>Elisa Maria</h3><p style="margin:0;font-size:13px">Todo <b>dia 5</b>: ~R$ 16.800 da LTON para a conta pessoal (pagamento do empréstimo usado na OnTrade).</p></div>
-        <div class="no"><h3>Registros</h3>${lista(['Carla e João → registrados na LTON', 'Dona Kátia → registrada na empresa de Japeri', 'Dantas → a confirmar'])}</div>
+        <div class="no"><h3>Registros</h3>${lista(['Carla e João → registrados na LTON', 'Kátia → registrada na empresa de Japeri', 'Dantas → a confirmar'])}</div>
       </div>
     </div>
     <p class="legenda" style="margin-top:12px"><span class="tag com_nota">com nota</span> entra pelos bancos da OnTrade &nbsp; <span class="tag sem_nota">sem nota</span> entra por DAE, PagVeloz, LTON e dinheiro. No sistema cada conta pertence a uma empresa e tem a modalidade — assim o relatório separa automaticamente “quem pagou” e “com/sem nota”.</p></div>`;
@@ -787,7 +787,7 @@ function roadmap() {
       ${item('Regularização de vínculos', 'lista de quem está ou não registrado (Dantas, Fátima, Tayane…)')}
       ${item('Backup automático', 'cópia diária do banco no Drive')}</ul></div>
     <div class="card"><h2>Perguntas em aberto</h2><ul>
-      <li>Kátia e Dona Kátia são a mesma pessoa?</li><li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>
+      <li>O DAE gera saldo na OnTrade, ou é só um canal de pagamento ao fornecedor?</li>
       <li>O PagVeloz é conta da OnTrade ou da LTON?</li><li>As despesas em dinheiro saem de um caixa físico único ou de vários?</li>
       <li>O empréstimo tem prazo/saldo devedor para acompanhar?</li></ul></div>`;
 }
@@ -982,6 +982,20 @@ async function novoOrcamento(depois, clientePre) {
   };
 }
 
+// ---- novo cliente: só a ficha (o orçamento é feito à parte) ----
+function novoCliente(depois) {
+  const m = modal(`<h2>Novo Cliente</h2><p class="legenda">Campos com ${ast} são obrigatórios.</p>
+    <form class="form" id="fcli" style="margin-top:12px" autocomplete="off" novalidate>${camposFicha({})}
+      <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></form>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Cadastrar Cliente</button></div>`, 560);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('[name=nome]').focus();
+  m.el.querySelector('#ok').onclick = () => {
+    const f = m.el.querySelector('#fcli'); if (!validarObrigatorios(f)) return;
+    acao(async () => { const c = await api('/api/comercial/clientes', { method: 'POST', body: Object.fromEntries(new FormData(f)) }); m.fechar(); await depois(); toast(`Cliente cadastrado: ${c.nome}`); }, '');
+  };
+}
+
 // ---- ficha do cliente ----
 async function fichaCliente(id, depois) {
   const c = await api(`/api/comercial/clientes/${id}`);
@@ -1044,12 +1058,12 @@ async function clientes() {
   const q = state.buscaCli || '';
   const lista = await api('/api/comercial/clientes' + (q ? '?q=' + encodeURIComponent(q) : ''));
   $app.innerHTML = `<h1>Clientes</h1><p class="sub">Ficha de cada cliente com o histórico de orçamentos. Quem já comprou aparece como recorrente nos próximos orçamentos.</p>
-    <div class="row"><button id="novo">Novo orçamento</button><div><label>Buscar cliente</label><input id="fq" value="${esc(q)}" placeholder="Nome, telefone ou e-mail"></div></div>
+    <div class="row"><button id="novo">Novo Cliente</button><div><label>Buscar cliente</label><input id="fq" value="${esc(q)}" placeholder="Nome, telefone ou e-mail"></div></div>
     <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Contato</th><th class="n">Orçamentos</th><th class="n">Comprou</th><th>Último</th></tr></thead><tbody>
       ${lista.map((c) => `<tr class="clicavel" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${c.empresa ? `<br><small class="mut">${esc(c.empresa)}</small>` : ''}</td><td><small>${esc([c.telefone, c.email].filter(Boolean).join(' · ') || '—')}</small></td>
         <td class="n">${c.qtd_orcamentos}</td><td class="n">${brl(c.valor_comprado)}</td><td>${c.ultimo_orcamento ? dataBR(c.ultimo_orcamento) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum cliente encontrado.</p>'}</div>`;
   const recarrega = () => clientes();
-  document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
+  document.getElementById('novo').onclick = () => novoCliente(recarrega);
   let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { state.buscaCli = e.target.value; clientes().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
   $app.querySelectorAll('tr.clicavel').forEach((tr) => (tr.onclick = () => fichaCliente(+tr.dataset.id, recarrega)));
 }
@@ -1128,6 +1142,11 @@ async function dp() {
   const [res, funcs, aus] = await Promise.all([api(`/api/dp/resumo/${mesSel}`), api(`/api/dp/funcionarios${state.dp.todos ? '?todos=1' : ''}`), api(`/api/dp/ausencias/${mesSel}`)]);
   const aba = state.dp.aba, M = state.dp.meta;
   const horario = (f) => (f.jornada_entrada ? `${f.jornada_entrada}–${f.jornada_saida}${f.jornada_horas ? ` · ${String(f.jornada_horas).replace('.', ',')} h/dia` : ''}` : '<span class="mut">não informado</span>');
+  const tabelaPessoas = (lista, gestao) => (lista.length ? `<div class="tbl"><table><thead><tr><th>${gestao ? 'Nome' : 'Funcionário'}</th><th>${gestao ? 'Função' : 'Vínculo'}</th><th>Contato</th>${gestao ? '' : '<th>Horário</th>'}<th>${gestao ? 'Entrada' : 'Admissão'}</th><th>Ficha</th></tr></thead><tbody>
+    ${lista.map((f) => `<tr class="clicavel" data-id="${f.id}"><td><b>${esc(f.nome)}</b>${f.ativo ? '' : ' <span class="tag">desligado</span>'}${gestao ? '' : `<br><small class="mut">${esc(f.cargo || '')}</small>`}</td>
+      <td>${gestao ? `${esc(f.cargo || '')}${f.setor ? `<br><small class="mut">${esc(f.setor)}</small>` : ''}` : `${esc(M.regimes[f.regime])}<br><small class="mut">${esc(M.vinculos[f.vinculo])}</small>`}</td><td><small>${esc([f.telefone, f.email].filter(Boolean).join(' · ') || '—')}</small></td>
+      ${gestao ? '' : `<td><small>${horario(f)}</small></td>`}<td>${f.data_admissao ? dataBR(f.data_admissao) : '<span class="mut">—</span>'}</td>
+      <td>${f.pendencias.length ? `<span class="tag aviso" title="${esc(f.pendencias.join(', '))}">faltam ${f.pendencias.length}</span>` : '<span class="tag ok">completa</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Ninguém cadastrado.</p>');
   $app.innerHTML = `<h1>Funcionários</h1>
     <p class="sub">Ficha de cada funcionário e controle de faltas, atestados e férias. Acesso só do administrador (dados pessoais e de saúde).</p>
     <div class="grid">
@@ -1138,13 +1157,10 @@ async function dp() {
     </div>
     ${res.aso_vencendo.length ? `<div class="aviso-box">${ico('info')}<span>Exame ocupacional (ASO) ${res.aso_vencendo.some((a) => a.vencido) ? 'vencido ou ' : ''}vencendo em até 30 dias: ${esc(res.aso_vencendo.map((a) => `${a.nome} (${dataBR(a.validade)})`).join(', '))}.</span></div>` : ''}
     <div class="abas"><button class="${aba === 'equipe' ? 'on' : 'sec'}" data-aba="equipe">Equipe</button><button class="${aba === 'ausencias' ? 'on' : 'sec'}" data-aba="ausencias">Faltas e atestados</button></div>
-    ${aba === 'equipe' ? `<div class="row"><button id="novo">Novo funcionário</button><label class="chk"><input type="checkbox" id="todos" ${state.dp.todos ? 'checked' : ''}> mostrar desligados</label></div>
-      <div class="card"><div class="tbl"><table><thead><tr><th>Funcionário</th><th>Vínculo</th><th>Contato</th><th>Horário</th><th>Admissão</th><th>Ficha</th></tr></thead><tbody>
-      ${funcs.map((f) => `<tr class="clicavel" data-id="${f.id}"><td><b>${esc(f.nome)}</b>${f.ativo ? '' : ' <span class="tag">desligado</span>'}<br><small class="mut">${esc(f.cargo || '')}</small></td>
-        <td>${esc(M.regimes[f.regime])}<br><small class="mut">${esc(M.vinculos[f.vinculo])}</small></td><td><small>${esc([f.telefone, f.email].filter(Boolean).join(' · ') || '—')}</small></td>
-        <td><small>${horario(f)}</small></td><td>${f.data_admissao ? dataBR(f.data_admissao) : '<span class="mut">—</span>'}</td>
-        <td>${f.pendencias.length ? `<span class="tag aviso" title="${esc(f.pendencias.join(', '))}">faltam ${f.pendencias.length}</span>` : '<span class="tag ok">completa</span>'}</td></tr>`).join('')}</tbody></table></div>
-        <p class="legenda" style="margin-top:10px">Clique em um funcionário para abrir e preencher a ficha. As fichas foram criadas a partir de quem já estava cadastrado; a foto entra depois.</p></div>`
+    ${aba === 'equipe' ? `<div class="row"><button id="novo">Novo Funcionário</button><button class="sec" id="novo-gestao">Novo Membro da Gestão</button><label class="chk"><input type="checkbox" id="todos" ${state.dp.todos ? 'checked' : ''}> mostrar desligados</label></div>
+      <div class="card"><h2>Diretoria e Gerência</h2>${tabelaPessoas(funcs.filter((f) => f.grupo === 'gestao'), true)}</div>
+      <div class="card"><h2>Funcionários</h2>${tabelaPessoas(funcs.filter((f) => f.grupo !== 'gestao'), false)}
+        <p class="legenda" style="margin-top:10px">Clique em uma pessoa para abrir e preencher a ficha. A foto entra depois.</p></div>`
     : `<div class="row">${seletorMes()}<button id="nova-aus">Registrar ausência</button></div>
       <div class="card"><h2>Ausências em ${nomeMes(mesSel)}</h2>${aus.length ? `<div class="tbl"><table><thead><tr><th>Funcionário</th><th>Tipo</th><th>Período</th><th class="n">Dias úteis</th><th>Anexo</th><th></th></tr></thead><tbody>
         ${aus.map((a) => `<tr><td><b>${esc(a.funcionario_nome)}</b>${a.obs ? `<br><small class="mut">${esc(a.obs)}</small>` : ''}</td><td>${tagAus(a.tipo)} ${a.justificada ? '' : '<span class="tag ruim">injustificada</span>'}</td><td>${periodoAus(a)}</td>
@@ -1155,6 +1171,7 @@ async function dp() {
   const recarrega = () => dp();
   $app.querySelectorAll('[data-aba]').forEach((b) => (b.onclick = () => { state.dp.aba = b.dataset.aba; dp(); }));
   document.getElementById('novo')?.addEventListener('click', () => fichaFuncionario(null, recarrega));
+  document.getElementById('novo-gestao')?.addEventListener('click', () => fichaFuncionario(null, recarrega, 'gestao'));
   document.getElementById('todos')?.addEventListener('change', (e) => { state.dp.todos = e.target.checked; dp(); });
   $app.querySelectorAll('tr.clicavel').forEach((tr) => (tr.onclick = () => fichaFuncionario(+tr.dataset.id, recarrega)));
   if (aba === 'ausencias') {
@@ -1185,9 +1202,9 @@ function janelaAusencia(funcs, funcId, depois) {
   }, 'Ausência registrada');
 }
 
-async function fichaFuncionario(id, depois) {
+async function fichaFuncionario(id, depois, grupoNovo) {
   const M = state.dp.meta;
-  const f = id ? await api(`/api/dp/funcionarios/${id}`) : { regime: 'a_verificar', vinculo: 'a_verificar', dias_trabalho: '1,2,3,4,5', ausencias: [], pendencias: [], ativo: 1 };
+  const f = id ? await api(`/api/dp/funcionarios/${id}`) : { regime: grupoNovo === 'gestao' ? 'socio' : 'a_verificar', grupo: grupoNovo || 'funcionario', vinculo: 'a_verificar', dias_trabalho: '1,2,3,4,5', ausencias: [], pendencias: [], ativo: 1 };
   const dias = new Set(String(f.dias_trabalho).split(','));
   const sec = (t, conteudo) => `<fieldset class="ficha-sec"><legend>${t}</legend><div class="form">${conteudo}</div></fieldset>`;
   const m = modal(`<h2>${id ? esc(f.nome) : 'Novo funcionário'}</h2>
@@ -1203,7 +1220,7 @@ async function fichaFuncionario(id, depois) {
     ${sec('Emergência e saúde', `${campo('Contato de emergência', 'emergencia_nome', f.emergencia_nome)}${campo('Parentesco', 'emergencia_parentesco', f.emergencia_parentesco)}${campo('Telefone de emergência', 'emergencia_telefone', f.emergencia_telefone, 'tel')}
       ${campo('Plano de saúde', 'plano_saude', f.plano_saude)}${campo('Nº da carteirinha', 'plano_saude_numero', f.plano_saude_numero)}${seletor('Tipo sanguíneo', 'tipo_sanguineo', { '': '—', ...Object.fromEntries(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((t) => [t, t])) }, f.tipo_sanguineo || '')}
       ${campo('Alergias / observações de saúde', 'alergias', f.alergias, 'text', 'class="cheio"')}${campo('ASO admissional', 'aso_admissional', f.aso_admissional, 'date')}${campo('Validade do ASO', 'aso_validade', f.aso_validade, 'date')}`)}
-    ${sec('Contrato e jornada', `${campo('Cargo / função', 'cargo', f.cargo)}${campo('Setor', 'setor', f.setor)}${seletor('Regime', 'regime', M.regimes, f.regime)}${seletor('Registrado em', 'vinculo', M.vinculos, f.vinculo)}
+    ${sec('Contrato e jornada', `${seletor('Grupo', 'grupo', M.grupos, f.grupo)}${campo('Cargo / função', 'cargo', f.cargo)}${campo('Setor', 'setor', f.setor)}${seletor('Regime', 'regime', M.regimes, f.regime)}${seletor('Registrado em', 'vinculo', M.vinculos, f.vinculo)}
       ${campo('Admissão', 'data_admissao', f.data_admissao, 'date')}${campo('Desligamento', 'data_demissao', f.data_demissao, 'date')}${campo('Salário (R$)', 'salario', f.salario != null ? brlInput(f.salario) : '', 'text')}
       ${campo('Entrada', 'jornada_entrada', f.jornada_entrada, 'time')}${campo('Saída', 'jornada_saida', f.jornada_saida, 'time')}${campo('Intervalo (min)', 'jornada_intervalo_min', f.jornada_intervalo_min, 'number')}
       <div class="cheio"><label>Dias de trabalho</label><div class="dias">${DIAS_SEM.map(([v, n]) => `<label class="chk"><input type="checkbox" name="dia" value="${v}" ${dias.has(v) ? 'checked' : ''}> ${n}</label>`).join('')}</div></div>

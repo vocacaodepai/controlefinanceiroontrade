@@ -12,15 +12,34 @@ await iniciar(seed);
 const hoje = S.hoje();
 const PDF = Buffer.from('%PDF-1.4\n%teste\n').toString('base64');
 
-test('fichas nascem para os funcionários já cadastrados, sem sócios', async () => {
+test('fichas nascem para a equipe e a diretoria/gerência fica em grupo separado', async () => {
   const l = await DP.listar();
-  const nomes = l.map((f) => f.nome);
-  for (const n of ['Kátia', 'Fátima', 'João', 'Tayane', 'Carla', 'Fabiano', 'Douglas', 'Andresa', 'Dantas']) assert.ok(nomes.includes(n), n);
-  for (const n of ['Renato', 'Luiz Túlio', 'Luiz Amaro', 'Elisa Maria']) assert.ok(!nomes.includes(n), n);
+  const equipe = l.filter((f) => f.grupo === 'funcionario').map((f) => f.nome);
+  for (const n of ['Kátia', 'Fátima', 'João', 'Tayane', 'Carla', 'Fabiano', 'Douglas', 'Andresa', 'Dantas']) assert.ok(equipe.includes(n), n);
+  for (const n of ['Renato', 'Renato Sampaio', 'Luiz Túlio', 'Luiz Amaro', 'Elisa Maria', 'Bruno Danello']) assert.ok(!equipe.includes(n), n + ' não é da equipe');
+  const gestao = l.filter((f) => f.grupo === 'gestao');
+  assert.deepEqual(gestao.map((f) => f.nome).sort(), ['Bruno Danello', 'Elisa Maria', 'Luiz Amaro', 'Luiz Túlio', 'Renato Sampaio']);
+  assert.equal(gestao.find((f) => f.nome === 'Elisa Maria').cargo, 'Sócia e Gerente Financeira');
+  assert.equal(gestao.find((f) => f.nome === 'Luiz Amaro').regime, 'socio');
+  assert.equal(gestao.find((f) => f.nome === 'Bruno Danello').cargo, 'Gerente');
+  assert.equal(l[0].grupo, 'gestao', 'a gestão vem primeiro na lista');
   assert.equal(l.find((f) => f.nome === 'Fabiano').regime, 'comissionado');
   assert.equal(l.find((f) => f.nome === 'Douglas').regime, 'prestador');
   assert.equal(l.find((f) => f.nome === 'João').vinculo, 'lt1');
-  assert.ok(l[0].pendencias.length > 0, 'ficha nova aponta o que falta');
+  assert.ok(l.find((f) => f.nome === 'João').pendencias.length > 0, 'ficha nova aponta o que falta');
+  assert.ok(!gestao[0].pendencias.includes('Horário de trabalho') && !gestao[0].pendencias.includes('Carteira de trabalho'), 'gestão não precisa de horário nem de carteira');
+});
+
+test('contagem de funcionários ativos não inclui a gestão; ficha de gestão aceita regime sócio', async () => {
+  const r = await DP.resumo(S.hoje().slice(0, 7));
+  assert.equal(r.ativos, 9);
+  assert.equal(r.gestao, 5);
+  const bruno = (await DP.listar()).find((f) => f.nome === 'Bruno Danello');
+  const salvo = await DP.salvar(bruno.id, { ...bruno, regime: 'socio', grupo: 'gestao', cargo: 'Gerente Comercial' });
+  assert.equal(salvo.regime, 'socio');
+  const novo = await DP.salvar(null, { nome: 'Fulano Teste', grupo: 'gestao', regime: 'a_verificar' });
+  assert.equal(novo.grupo, 'gestao');
+  assert.equal((await DP.salvar(null, { nome: 'Sicrano Teste' })).grupo, 'funcionario');
 });
 
 test('ficha completa: CPF validado, jornada em horas, pendências somem', async () => {
