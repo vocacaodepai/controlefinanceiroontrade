@@ -23,16 +23,16 @@ body{margin:0;font:14.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,
 .ico{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}
 
 /* menu lateral */
-#menu{width:236px;background:var(--card);border-right:1px solid var(--bd);padding:26px 14px 18px;position:sticky;top:0;height:100vh;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto}
-.marca{padding:0 10px 22px}.marca-txt{display:block;font-size:17px;color:var(--navy)}.marca-txt small{display:block;font-size:12px;color:var(--mut)}
+#menu{width:236px;background:var(--card);border-right:1px solid var(--bd);padding:26px 14px 18px;position:sticky;top:0;height:100vh;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden}
+.marca{padding:0 10px 14px}.marca-txt{display:block;font-size:17px;color:var(--navy)}.marca-txt small{display:block;font-size:12px;color:var(--mut)}
 .logo-menu{display:block;width:76px;max-width:100%;height:auto}
 .marca:has(.logo-menu) .marca-txt{display:none}
-#menu nav{flex:0 0 auto}
+#menu nav{flex:1 1 auto;min-height:0;overflow-y:auto}
 #menu nav a{display:flex;align-items:center;gap:11px;color:var(--tx);text-decoration:none;padding:9px 12px;border-radius:8px;margin-bottom:2px}
 #menu nav a .ico{width:18px;height:18px;color:var(--mut)}
 #menu nav a:hover{background:var(--tint)}
 #menu nav a.on{background:var(--tint);color:var(--navy);font-weight:600}#menu nav a.on .ico{color:var(--azul)}
-.usuario{margin-top:auto;padding:16px 10px 0;border-top:1px solid var(--bd);font-size:13px;color:var(--mut)}
+.usuario{margin-top:10px;flex:0 0 auto;padding:14px 10px 0;border-top:1px solid var(--bd);font-size:13px;color:var(--mut)}
 .usuario b{color:var(--tx);font-weight:600}.usuario .mini{margin-top:8px}
 
 main{flex:1;padding:36px 40px;max-width:1240px;min-width:0}
@@ -121,7 +121,7 @@ body.deslogado main{flex:0 1 auto;width:100%;max-width:none;display:flex;align-i
   body{flex-direction:column}
   #menu{width:100%;height:auto;position:static;padding:8px 10px;border-right:0;border-bottom:1px solid var(--bd);flex-direction:column;overflow:visible}
   .marca{display:none}
-  #menu nav{display:flex;overflow-x:auto;gap:2px}#menu nav a{white-space:nowrap;padding:8px 11px}
+  #menu nav{display:flex;overflow-x:auto;overflow-y:hidden;flex:0 0 auto;gap:2px}.tema-menu{padding:0 0 8px}#menu nav a{white-space:nowrap;padding:8px 11px}
   .usuario{margin-top:6px;padding:8px 4px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.usuario #quem{margin-right:auto}.usuario .mini{margin:0}
   main{padding:20px 16px}
   .fluxo{grid-template-columns:1fr}.seta{transform:rotate(90deg);height:30px}
@@ -200,7 +200,7 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 .tema button+button{border-left:1px solid var(--bd2)}
 .tema button.on{background:var(--tint);color:var(--navy)}
 .tema .ico{width:14px;height:14px}
-.usuario .tema{margin-top:8px;display:flex}.usuario .tema button{flex:1;justify-content:center}
+.tema-menu{padding:0 2px 12px;flex:0 0 auto}.tema-menu .tema{display:flex;width:100%}.tema-menu .tema button{flex:1;justify-content:center;padding:5px 4px}
 .tema-flutuante{position:fixed;top:14px;right:16px;z-index:5}
 
 /* extratos: uma linha por conta */

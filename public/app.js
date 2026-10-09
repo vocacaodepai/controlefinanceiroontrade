@@ -201,12 +201,12 @@ document.getElementById('foto').onclick = abrirFoto;
 const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
-  ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o dia'], ['extratos', 'Extratos'], ['mensal', 'Controle mensal'], ['patrimonio', 'Patrimônio']]],
+  ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio']]],
   ['Comercial', [['comercial', 'Painel'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Marketing', [['marketing', 'Painel']]],
-  ['Sociedade', [['societario', 'Quadro societário']]],
+  ['Sociedade', [['societario', 'Quadro Societário']]],
   ['Pessoas', [['dp', 'Funcionários']]],
-  ['Sistema', [['fluxo', 'Mapa do fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
+  ['Sistema', [['fluxo', 'Mapa do Fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
 ];
 const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n === r)?.[2] || r;
 const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , area]) => rotas[n] && temArea(area || n)).map(([n]) => n);
@@ -1355,5 +1355,34 @@ function desenharTema() {
   const alvos = [document.getElementById('tema-menu'), document.getElementById('tema-login')].filter(Boolean);
   alvos.forEach((el) => { el.innerHTML = seletorTema(); el.querySelectorAll('[data-tema]').forEach((b) => (b.onclick = () => aplicarTema(b.dataset.tema))); });
 }
+
+// ---- Títulos com iniciais maiúsculas ("Fechar o Dia", "Controle Mensal", "Patrimônio em Ativos") ----
+// Vale para nomes que chamam a atenção: menu, títulos, abas e botões curtos. Palavras de ligação (de, o, em, e...) ficam minúsculas.
+const LIGACAO = new Set(['a', 'o', 'as', 'os', 'e', 'ou', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas', 'por', 'para', 'com', 'sem', 'um', 'uma', 'ao', 'à', 'às']);
+function iniciaisMaiusculas(txt) {
+  const inicio = txt.length - txt.trimStart().length; // a primeira palavra do texto sempre leva maiúscula
+  return txt.replace(/(^|[\s(\-—/])(\p{Ll})(\p{L}*)/gu, (m, pre, ini, resto, pos) => {
+    const palavra = ini + resto, primeira = pos + pre.length <= inicio;
+    return LIGACAO.has(palavra) && !primeira ? m : pre + ini.toUpperCase() + resto;
+  });
+}
+const SEL_TITULOS = 'h1, h2, h3, #nav a span, .abas button, button, a.zap, a.btn';
+function ajustaTitulos(raiz) {
+  const alvos = raiz.nodeType === 1 ? [...(raiz.matches?.(SEL_TITULOS) ? [raiz] : []), ...raiz.querySelectorAll(SEL_TITULOS)] : [];
+  for (const el of alvos) {
+    if (el.closest('.tema')) continue;
+    const ehBotao = el.matches('button, a.zap, a.btn');
+    for (const n of el.childNodes) {
+      if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;
+      const t = n.nodeValue;
+      // botões: só nomes curtos (até 6 palavras, sem frase); títulos: sempre
+      if (ehBotao && (t.trim().split(/\s+/).length > 6 || /[.,;:?!]/.test(t))) continue;
+      const novo = iniciaisMaiusculas(t);
+      if (novo !== t) n.nodeValue = novo;
+    }
+  }
+}
+new MutationObserver((muts) => { for (const m of muts) m.addedNodes.forEach((n) => ajustaTitulos(n.nodeType === 3 ? n.parentElement : n)); }).observe(document.body, { childList: true, subtree: true });
+ajustaTitulos(document.body);
 
 rota();
