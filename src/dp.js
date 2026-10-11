@@ -86,7 +86,7 @@ export function pendencias(f) {
 const comExtras = (f) => ({ ...f, jornada_horas: jornadaHoras(f), pendencias: pendencias(f) });
 
 export async function listar({ todos } = {}) {
-  const l = await query(`SELECT * FROM funcionarios ${todos ? '' : 'WHERE ativo = 1'} ORDER BY ativo DESC, (grupo = 'gestao') DESC, CASE WHEN grupo = 'gestao' THEN id END, lower(nome)`);
+  const l = await query(`SELECT * FROM funcionarios ${todos ? '' : 'WHERE ativo = 1'} ORDER BY ativo DESC, (grupo = 'gestao') DESC, CASE WHEN grupo = 'gestao' THEN CASE WHEN regime = 'socio' THEN id ELSE 1000000 END END, lower(nome)`);
   return l.map(comExtras);
 }
 

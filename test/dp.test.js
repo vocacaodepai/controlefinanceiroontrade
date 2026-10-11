@@ -18,10 +18,15 @@ test('fichas nascem para a equipe e a diretoria/gerência fica em grupo separado
   for (const n of ['Kátia', 'Fátima', 'João', 'Tayane', 'Carla', 'Fabiano', 'Douglas', 'Andresa', 'Dantas']) assert.ok(equipe.includes(n), n);
   for (const n of ['Renato', 'Renato Sampaio', 'Luiz Túlio', 'Luiz Amaro', 'Elisa Maria', 'Bruno Danello']) assert.ok(!equipe.includes(n), n + ' não é da equipe');
   const gestao = l.filter((f) => f.grupo === 'gestao');
-  assert.deepEqual(gestao.map((f) => f.nome).sort(), ['Bruno Danello', 'Elisa Maria', 'Luiz Amaro', 'Luiz Túlio', 'Renato Sampaio']);
-  assert.equal(gestao.find((f) => f.nome === 'Elisa Maria').cargo, 'Sócia e Gerente Financeira');
+  assert.deepEqual(gestao.map((f) => f.nome), ['Luiz Túlio', 'Luiz Amaro', 'Bruno Danello', 'Elisa Maria', 'Renato Sampaio'], 'sócios no alto; gerentes em ordem alfabética');
+  assert.equal(gestao.find((f) => f.nome === 'Elisa Maria').cargo, 'Gerente Financeira');
+  assert.notEqual(gestao.find((f) => f.nome === 'Elisa Maria').regime, 'socio', 'Elisa não é sócia');
   assert.equal(gestao.find((f) => f.nome === 'Luiz Amaro').regime, 'socio');
-  assert.equal(gestao.find((f) => f.nome === 'Bruno Danello').cargo, 'Gerente');
+  assert.equal(gestao.find((f) => f.nome === 'Luiz Túlio').cargo, 'Sócio-proprietário');
+  assert.equal(gestao.find((f) => f.nome === 'Bruno Danello').cargo, 'Gerente de Marketing');
+  assert.equal(gestao.find((f) => f.nome === 'Renato Sampaio').cargo, 'Gerente de Vendas');
+  assert.match(gestao.find((f) => f.nome === 'Bruno Danello').obs, /paga pelo sócio Luiz Amaro.*Não recebe pela empresa/);
+  assert.match(gestao.find((f) => f.nome === 'Renato Sampaio').obs, /Recebe pela empresa, mas não é CLT/);
   assert.equal(l[0].grupo, 'gestao', 'a gestão vem primeiro na lista');
   assert.equal(l.find((f) => f.nome === 'Fabiano').regime, 'comissionado');
   assert.equal(l.find((f) => f.nome === 'Douglas').regime, 'prestador');
