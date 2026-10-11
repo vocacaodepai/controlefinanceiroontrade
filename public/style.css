@@ -228,3 +228,5 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 @keyframes live-pisca{0%,100%{opacity:1}50%{opacity:.25}}
 @keyframes live-onda{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.6);opacity:0}}
 @media(prefers-reduced-motion:reduce){.live-dot,.live-dot::after{animation:none}}
+
+.obs-remun{color:var(--mut);font-style:italic}

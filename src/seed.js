@@ -56,7 +56,7 @@ export async function seed() {
     const pessoa = (nome, funcao, vinculo, pagador, obs) =>
       ins('INSERT INTO pessoas (nome, funcao, vinculo, pagador_padrao, obs) VALUES ($1,$2,$3,$4,$5)', [nome, funcao, vinculo, pagador, obs ?? null]);
 
-    await pessoa('Renato', 'Gerente', 'socio', 'LTON', 'Pró-labore pago pela LTON.');
+    await pessoa('Renato', 'Gerente de Vendas', 'a_verificar', 'LTON', 'Recebe pela empresa (LTON), mas não é CLT.');
     await pessoa('Kátia', 'Funcionária', 'japeri', 'LTON', 'Registrada na empresa de Japeri (salário lá). Recebe da LTON o complemento, passagem e alimentação em dinheiro.');
     await pessoa('Fátima', 'Funcionária', 'a_verificar', 'LTON');
     await pessoa('João', 'Funcionário', 'lt1', 'LTON', 'Registrado na LTON. Cartão iFood pago pela LTON.');
@@ -66,9 +66,9 @@ export async function seed() {
     await pessoa('Douglas', 'Prestador', 'a_verificar', 'LTON');
     await pessoa('Andresa', 'Prestadora', 'a_verificar', 'LTON');
     await pessoa('Dantas', 'Funcionário', 'a_verificar', 'OnTrade', 'Recebe pela OnTrade ou em dinheiro. CHECAR se está registrado.');
-    await pessoa('Elisa Maria', 'Sócia / credora', 'socio', 'LTON', 'Recebe o pagamento do empréstimo na conta pessoal.');
+    await pessoa('Elisa Maria', 'Gerente Financeira', 'a_verificar', 'LTON', 'Recebe o pagamento do empréstimo na conta pessoal.');
     await pessoa('Luiz Túlio', 'Sócio', 'socio', 'LTON', null);
-    await pessoa('Bruno Danello', 'Gerente', 'a_verificar', null, null);
+    await pessoa('Bruno Danello', 'Gerente de Marketing', 'a_verificar', null, 'Remuneração paga pelo sócio Luiz Amaro. Não recebe pela empresa.');
     await pessoa('Luiz Amaro', 'Sócio', 'socio', 'LTON', 'Entrou na sociedade com 20% (aporte de R$ 2.000.000).');
 
     const idConta = async (n) => (await one('SELECT id FROM contas WHERE nome = $1', [n])).id;
@@ -89,20 +89,18 @@ export async function seed() {
     await query(`INSERT INTO funcionarios (pessoa_id, nome, cargo, vinculo, regime, obs)
       SELECT id, nome, funcao, vinculo,
         CASE WHEN funcao ILIKE 'Comission%' THEN 'comissionado' WHEN funcao ILIKE 'Prestador%' THEN 'prestador' ELSE 'a_verificar' END, obs
-      FROM pessoas WHERE vinculo <> 'socio' AND funcao <> 'Gerente' ORDER BY id`);
+      FROM pessoas WHERE vinculo <> 'socio' AND funcao NOT ILIKE '%Gerente%' ORDER BY id`);
     // Diretoria e gerência: aparecem em Funcionários, mas num bloco acima da equipe
     const gestao = [
-      ['Luiz Túlio', 'Luiz Túlio', 'Sócio-proprietário', 'Diretoria', 'socio'],
-      ['Luiz Amaro', 'Luiz Amaro', 'Sócio-proprietário', 'Diretoria', 'socio'],
-      ['Elisa Maria', 'Elisa Maria', 'Sócia e Gerente Financeira', 'Financeiro', 'socio'],
-      ['Bruno Danello', 'Bruno Danello', 'Gerente', 'Gerência', 'a_verificar'],
-      ['Renato', 'Renato Sampaio', 'Gerente', 'Gerência', 'a_verificar'],
+      ['Luiz Túlio', 'Luiz Túlio', 'Sócio-proprietário', 'Diretoria', 'socio', null],
+      ['Luiz Amaro', 'Luiz Amaro', 'Sócio-proprietário', 'Diretoria', 'socio', null],
+      ['Bruno Danello', 'Bruno Danello', 'Gerente de Marketing', 'Marketing', 'a_verificar', 'Remuneração paga pelo sócio Luiz Amaro. Não recebe pela empresa.'],
+      ['Elisa Maria', 'Elisa Maria', 'Gerente Financeira', 'Financeiro', 'a_verificar', null],
+      ['Renato', 'Renato Sampaio', 'Gerente de Vendas', 'Vendas', 'a_verificar', 'Recebe pela empresa, mas não é CLT.'],
     ];
-    for (const [pessoaNome, nome, cargo, setor, regime] of gestao) {
-      await query(`INSERT INTO funcionarios (pessoa_id, nome, cargo, setor, regime, grupo, vinculo) VALUES ((SELECT id FROM pessoas WHERE nome = $1), $2, $3, $4, $5, 'gestao', 'a_verificar')`, [pessoaNome, nome, cargo, setor, regime]);
+    for (const [pessoaNome, nome, cargo, setor, regime, obs] of gestao) {
+      await query(`INSERT INTO funcionarios (pessoa_id, nome, cargo, setor, regime, grupo, vinculo, obs) VALUES ((SELECT id FROM pessoas WHERE nome = $1), $2, $3, $4, $5, 'gestao', 'a_verificar', $6)`, [pessoaNome, nome, cargo, setor, regime, obs]);
     }
-    // Elisa Maria é sócia junto com o Luiz Túlio (casal); as participações de cada um ficam em branco até serem confirmadas
-    await query(`INSERT INTO socios (nome, participacao_bp, aporte, obs) VALUES ('Elisa Maria', NULL, 0, 'Sócia junto com o Luiz Túlio. Participação a confirmar.')`);
     // Catálogo inicial de produtos do comercial (a equipe acrescenta os demais na própria tela)
     await query(`INSERT INTO produtos_catalogo (nome) VALUES ('Painel P3.9'), ('Painel P5')`);
   });
