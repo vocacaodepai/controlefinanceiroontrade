@@ -291,3 +291,32 @@ test('comercial: com follow-up pendente não lança orçamento novo; depois de e
   const painel = (await chamar('GET', '/api/comercial/followup-painel', null, ck)).json;
   assert.equal(painel.enviados[0].usuario_nome, 'Júlia');
 });
+
+test('perfis financeiro e estoque: cada um só enxerga a sua área; estoque entra no administrativo', async () => {
+  const fin = await chamar('POST', '/api/usuarios', { nome: 'Carla', login: 'financeiro.carla', senha: 'senha-fin-123', papel: 'financeiro' }, admin);
+  const est = await chamar('POST', '/api/usuarios', { nome: 'João', login: 'estoque.joao', senha: 'senha-est-123', papel: 'estoque' }, admin);
+  assert.equal(fin.status, 201); assert.equal(est.status, 201);
+  const f = (await chamar('POST', '/api/auth/login', { email: 'financeiro.carla', senha: 'senha-fin-123' })).cookie;
+  const e = (await chamar('POST', '/api/auth/login', { email: 'estoque.joao', senha: 'senha-est-123' })).cookie;
+  // financeiro: painel, cobrança e lançar; nada de comercial, estoque, cadastros ou acessos
+  assert.equal((await chamar('GET', '/api/meta', null, f)).status, 200);
+  assert.equal((await chamar('GET', '/api/cobranca', null, f)).status, 200);
+  for (const rota of ['/api/estoque', '/api/comercial/painel', '/api/acessos', '/api/usuarios', '/api/dp/meta', '/api/societario/quadro']) assert.equal((await chamar('GET', rota, null, f)).status, 403, rota);
+  // estoque: só o estoque
+  for (const rota of ['/api/meta', '/api/cobranca', '/api/comercial/painel', '/api/acessos', '/api/usuarios']) assert.ok([401, 403].includes((await chamar('GET', rota, null, e)).status), rota);
+  assert.equal((await chamar('GET', '/api/estoque', null, e)).status, 200);
+  // fluxo do estoque
+  const item = await chamar('POST', '/api/estoque/itens', { nome: 'Painel P5 (gabinete)', unidade: 'un', minimo: 2 }, e);
+  assert.equal(item.status, 201);
+  assert.equal((await chamar('POST', '/api/estoque/itens', { nome: 'Painel P5 (gabinete)' }, e)).status, 409);
+  const id = item.json.id;
+  assert.equal((await chamar('POST', '/api/estoque/movimentos', { item_id: id, tipo: 'saida', quantidade: 1, referencia: 'x' }, e)).status, 409, 'saldo insuficiente');
+  assert.equal((await chamar('POST', '/api/estoque/movimentos', { item_id: id, tipo: 'entrada', quantidade: 10, referencia: 'Fornecedor X' }, e)).status, 201);
+  assert.equal((await chamar('POST', '/api/estoque/movimentos', { item_id: id, tipo: 'saida', quantidade: 3 }, e)).status, 400, 'saída exige destino');
+  const s = await chamar('POST', '/api/estoque/movimentos', { item_id: id, tipo: 'saida', quantidade: 9, referencia: 'Cliente Maria', orcamento_numero: '2026-0573' }, e);
+  assert.equal(s.status, 201); assert.equal(s.json.saldo, 1); assert.equal(s.json.abaixo_minimo, true);
+  const lista = (await chamar('GET', '/api/estoque', null, admin)).json; // administração enxerga
+  assert.equal(lista.movimentos.length, 2); assert.equal(lista.movimentos[0].usuario_nome, 'João');
+  assert.equal((await chamar('DELETE', `/api/estoque/movimentos/${lista.movimentos[1].id}`, null, e)).status, 403, 'só admin exclui');
+  assert.equal((await chamar('DELETE', `/api/estoque/movimentos/${lista.movimentos[1].id}`, null, admin)).status, 409, 'excluir a entrada deixaria saldo negativo');
+});

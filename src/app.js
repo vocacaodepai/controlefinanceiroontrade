@@ -11,6 +11,7 @@ import * as P from './patrimonio.js';
 import * as SO from './societario.js';
 import * as CO from './comercial.js';
 import * as CB from './cobranca.js';
+import * as ES from './estoque.js';
 import * as DP from './dp.js';
 import * as MK from './marketing.js';
 import { gerarPdf } from './relatorio.js';
@@ -159,6 +160,15 @@ app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json
 app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias))));
+// ---------- estoque (administração e quem cuida do estoque) ----------
+const estq = A.exigirArea('estoque');
+app.get('/api/estoque', estq, h(async (req, res) => res.json({ itens: await ES.listarItens({ todos: req.query.todos === '1' }), movimentos: await ES.listarMovimentos(req.query) })));
+app.get('/api/estoque/movimentos', estq, h(async (req, res) => res.json(await ES.listarMovimentos(req.query))));
+app.post('/api/estoque/itens', estq, h(async (req, res) => res.status(201).json({ id: await ES.salvarItem(null, req.body) })));
+app.put('/api/estoque/itens/:id', estq, h(async (req, res) => res.json({ id: await ES.salvarItem(idNum(req.params.id), req.body) })));
+app.post('/api/estoque/movimentos', estq, h(async (req, res) => res.status(201).json(await ES.registrarMovimento(req.body, req.usuario))));
+app.delete('/api/estoque/movimentos/:id', admin, h(async (req, res) => { await ES.excluirMovimento(idNum(req.params.id)); res.status(204).end(); }));
+
 // ---------- cobrança dos orçamentos aprovados (financeiro) ----------
 const cobr = A.exigirArea('cobranca');
 app.get('/api/cobranca', cobr, h(async (req, res) => res.json({ resumo: await CB.resumo(), lista: await CB.listar(req.query), cadencia: CB.CADENCIA_COBRANCA, resultados: CB.RESULTADOS_COBRANCA })));
