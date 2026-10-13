@@ -467,6 +467,9 @@ ALTER TABLE orcamentos ALTER COLUMN numero SET NOT NULL;
 -- ---------- Controle de acessos: última atividade de cada usuário ----------
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultima_atividade timestamp;
 
+-- ---------- Follow-up: mensagem enviada (guardada para o controle) ----------
+ALTER TABLE contatos ADD COLUMN IF NOT EXISTS mensagem text;
+
 -- ---------- Follow-up em cadência (comercial) e cobrança do orçamento aprovado (financeiro) ----------
 ALTER TABLE contatos ADD COLUMN IF NOT EXISTS canal text;
 ALTER TABLE contatos ADD COLUMN IF NOT EXISTS resultado text;

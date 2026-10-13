@@ -178,11 +178,35 @@ test('número do orçamento: automático, sequencial no ano, obrigatório e imut
   assert.equal(editado.valor, 250000);
   // todo orçamento criado tem número
   assert.ok((await CO.listarOrcamentos({ lancado_em: hoje })).every((o) => /^\d{4}-\d{4}$/.test(o.numero)));
-  // virada de ano: a sequência reinicia em 0572
-  assert.equal(await CO.proximoNumero('2031-03-10'), '2031-0572');
+  // virada de ano: a sequência reinicia em 0001
+  assert.equal(await CO.proximoNumero('2031-03-10'), '2031-0001');
 });
 
 test('criação simultânea não repete número', async () => {
   const novos = await Promise.all([1, 2, 3, 4].map((i) => CO.criarOrcamento({ ...O, cliente: fic('Paralelo ' + i), produto_nome: 'Painel P5', valor: 100000 })));
   assert.equal(new Set(novos.map((o) => o.numero)).size, 4);
+});
+
+test('follow-up: envio exige responsabilidade, grava a mensagem, avança a régua e aparece no painel de controle', async () => {
+  const u = { id: null, nome: 'Júlia', papel: 'comercial' };
+  const o = await CO.criarOrcamento({ ...O, cliente: fic('Cliente Follow'), produto_nome: 'Painel P5', valor: 700000, data: S.addDias(hoje, -3) });
+  await assert.rejects(CO.followupEnviado(o.id, { mensagem: 'Oi' }, u), /responsabil/i);
+  await assert.rejects(CO.followupEnviado(o.id, { mensagem: ' ', responsabilidade: true }, u), /vazia/);
+  const r = await CO.followupEnviado(o.id, { mensagem: 'Oi, Cliente! Aqui é a Júlia.', responsabilidade: true }, u);
+  assert.equal(r.qtd_contatos, 1);
+  assert.equal(r.followup_em, S.addDias(hoje, 4));
+  const p = await CO.painelFollowup({});
+  const env = p.enviados.find((e) => e.orcamento_id === o.id);
+  assert.equal(env.etapa, 1);
+  assert.equal(env.mensagem, 'Oi, Cliente! Aqui é a Júlia.');
+  assert.equal(env.usuario_nome, null); // sem usuário real neste teste
+  assert.ok(p.resumo.enviados_hoje >= 1);
+  assert.ok(p.agenda.some((a) => a.id === o.id));
+  assert.ok(p.resumo.agenda.ate_3 + p.resumo.agenda.de_4_a_7 + p.resumo.agenda.de_8_a_14 + p.resumo.agenda.acima_14 === p.agenda.length);
+  await assert.rejects(CO.painelFollowup({ de: 'x' }), /Período/);
+});
+
+test('numeração: 2026 continua de 0572; qualquer outro ano recomeça em 0001', async () => {
+  assert.ok(Number((await CO.proximoNumero('2026-06-01')).slice(-4)) >= 572);
+  assert.equal(await CO.proximoNumero('2027-01-02'), '2027-0001');
 });
