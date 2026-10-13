@@ -159,7 +159,7 @@ function telaLogin(e) {
   const primeiro = e?.precisaCriarAdmin;
   $app.innerHTML = `<form class="card login" id="lg">
     <img src="logo.png" alt="OnTrade" class="logo-login" onerror="this.remove()">
-    <h1>Caixa OnTrade</h1>
+    <h1>Dashboard OnTrade</h1>
     <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Elisa Maria ou responsável).' : 'Entre com seu e-mail ou ID e a senha.'}</p>
     ${primeiro ? '<div><label>Nome</label><input name="nome" required autocomplete="name"></div>' : ''}
     <div><label>${primeiro ? 'E-mail' : 'E-mail ou ID'}</label><input name="email" type="${primeiro ? 'email' : 'text'}" required autocomplete="username" autocapitalize="none" spellcheck="false"></div>
@@ -199,7 +199,7 @@ function renderMenu() {
 async function rota() {
   if (!state.usuario) {
     let e;
-    try { e = await api('/api/auth/estado'); } catch (err) { $app.innerHTML = `<div class="card login"><h1>Caixa OnTrade</h1><p class="neg">${esc(err.message)}</p></div>`; document.body.classList.add('deslogado'); return; }
+    try { e = await api('/api/auth/estado'); } catch (err) { $app.innerHTML = `<div class="card login"><h1>Dashboard OnTrade</h1><p class="neg">${esc(err.message)}</p></div>`; document.body.classList.add('deslogado'); return; }
     if (!e.usuario) return telaLogin(e);
     state.usuario = e.usuario;
   }
@@ -920,7 +920,32 @@ const faltasFicha = (c) => CAMPOS_FICHA.filter(([k, , t]) => !String(c?.[k] ?? '
 const camposFicha = (c = {}, pre = '') => CAMPOS_FICHA.map(([k, r, t]) => campoObr(r, pre + k, c[k], t, k === 'nome' ? 'class="larg"' : '')).join('') + `<div><label>Empresa</label><input name="${pre}empresa" value="${esc(c.empresa || '')}"></div>`;
 
 // ---- novo orçamento: "cliente já cadastrado?" -> ficha -> orçamento ----
-async function novoOrcamento(depois, clientePre) {
+// ---- roteiros de atendimento: mensagem pronta para copiar e mandar ao cliente antes de registrar ----
+function roteiroOrcamento() {
+  const eu = primeiroNome(state.usuario?.nome) || 'a equipe';
+  return `Olá! Aqui é ${eu}, da OnTrade. Que bom ter você por aqui!\n\nPara eu montar a melhor proposta para você, me conta rapidinho:\n\n• Qual o seu nome (e o da empresa, se for o caso)?\n• Onde você viu a gente? (Instagram, Google, indicação, anúncio na rua, feira...)\n• O que você está buscando e onde pretende usar?\n• Para quando você precisa?\n• Qual o melhor WhatsApp e e-mail para eu te enviar a proposta?\n\nAssim que você me responder, já preparo tudo com carinho.`;
+}
+function roteiroCliente() {
+  const eu = primeiroNome(state.usuario?.nome) || 'a equipe';
+  return `Olá! Aqui é ${eu}, da OnTrade. Vou fazer o seu cadastro para ficar tudo registrado e agilizar os próximos atendimentos. Pode me passar:\n\n• Nome completo\n• Telefone com WhatsApp\n• E-mail\n• Data de aniversário (queremos te parabenizar!)\n• Nome da empresa, se for o caso\n\nObrigado! Já deixo tudo anotado por aqui.`;
+}
+function janelaRoteiro(titulo, intro, texto, seguir) {
+  const m = modal(`<h2>${titulo}</h2><p class="legenda">${intro}</p>
+    <textarea id="rot" rows="12" readonly style="margin-top:12px;width:100%;white-space:pre-wrap">${esc(texto)}</textarea>
+    <div class="modal-acoes"><button class="sec" id="x">Cancelar</button><span style="flex:1"></span><button class="sec" id="cp">Copiar mensagem</button><button id="ok">Já tenho as respostas</button></div>`, 560);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#cp').onclick = async () => {
+    const t = m.el.querySelector('#rot');
+    try { await navigator.clipboard.writeText(texto); } catch { t.select(); document.execCommand('copy'); }
+    toast('Mensagem copiada: é só colar na conversa');
+  };
+  m.el.querySelector('#ok').onclick = () => { m.fechar(); seguir(); };
+}
+function novoOrcamento(depois, clientePre) {
+  if (clientePre) return novoOrcamentoForm(depois, clientePre);
+  janelaRoteiro('Antes do Orçamento', 'Envie estas perguntas ao cliente. Com as respostas em mãos, o cadastro e o orçamento ficam rápidos.', roteiroOrcamento(), () => novoOrcamentoForm(depois));
+}
+async function novoOrcamentoForm(depois, clientePre) {
   const op = await api('/api/comercial/opcoes');
   const m = modal(`<h2>Novo orçamento</h2>
     <p class="legenda">Campos com ${ast} são obrigatórios. O orçamento só é registrado com tudo preenchido.</p>
@@ -966,7 +991,7 @@ async function novoOrcamento(depois, clientePre) {
       : '<p class="mut" style="margin:8px 0">Nenhum cliente encontrado. Cadastre um novo abaixo.</p>';
     res.querySelectorAll('.busca-item').forEach((b) => (b.onclick = () => { escolhido = l.find((c) => c.id === +b.dataset.id); mostraEscolhido(); }));
   }, 250); };
-  m.el.querySelector('#novo-cli').onclick = () => { novo = true; abrirFicha({ nome: q.value.trim() }); m.el.querySelector('#cli-busca').hidden = true; ficha.querySelector('[name=nome]').focus(); };
+  m.el.querySelector('#novo-cli').onclick = () => janelaRoteiro('Antes do Cadastro', 'Envie estas perguntas ao cliente para preencher a ficha.', roteiroCliente(), () => { novo = true; abrirFicha({ nome: q.value.trim() }); m.el.querySelector('#cli-busca').hidden = true; ficha.querySelector('[name=nome]').focus(); });;
   const prod = f.produto_id, orig = f.origem, camp = f.campanha_id;
   prod.onchange = () => { m.el.querySelector('#outro').hidden = prod.value !== 'outro'; };
   orig.onchange = () => {
@@ -1020,7 +1045,10 @@ function janelaChecklist({ titulo, resumo, itens, confirmar }, aoConfirmar) {
 }
 
 // ---- novo cliente: só a ficha (o orçamento é feito à parte) ----
-async function novoCliente(depois) {
+function novoCliente(depois) {
+  janelaRoteiro('Antes do Cadastro', 'Envie estas perguntas ao cliente para preencher a ficha.', roteiroCliente(), () => novoClienteForm(depois));
+}
+async function novoClienteForm(depois) {
   const op = await api('/api/comercial/opcoes');
   const m = modal(`<h2>Novo Cliente</h2><p class="legenda">Campos com ${ast} são obrigatórios.</p>
     <form class="form" id="fcli" style="margin-top:12px" autocomplete="off" novalidate>${camposFicha({})}

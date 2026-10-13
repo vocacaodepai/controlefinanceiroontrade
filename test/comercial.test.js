@@ -178,8 +178,8 @@ test('número do orçamento: automático, sequencial no ano, obrigatório e imut
   assert.equal(editado.valor, 250000);
   // todo orçamento criado tem número
   assert.ok((await CO.listarOrcamentos({ lancado_em: hoje })).every((o) => /^\d{4}-\d{4}$/.test(o.numero)));
-  // virada de ano: a sequência reinicia
-  assert.equal(await CO.proximoNumero('2031-03-10'), '2031-0001');
+  // virada de ano: a sequência reinicia em 0572
+  assert.equal(await CO.proximoNumero('2031-03-10'), '2031-0572');
 });
 
 test('criação simultânea não repete número', async () => {

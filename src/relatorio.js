@@ -230,7 +230,7 @@ export function gerarPdf(d, saida) {
   else paragrafo(doc, 'Nenhum ponto de atenção automático neste período.', { cor: CIN });
   if (d.nota) { doc.moveDown(0.4); paragrafo(doc, 'Comentário da administração', { negrito: true, cor: AZ, tam: 9 }); paragrafo(doc, d.nota, { tam: 9.5 }); }
   doc.moveDown(0.6);
-  paragrafo(doc, 'Metodologia: relatório gerencial em regime de caixa, montado a partir dos lançamentos do sistema Caixa OnTrade e dos valores de ativos informados pela administração. Não substitui as demonstrações contábeis nem o parecer do contador.', { cor: CIN, tam: 7.5 });
+  paragrafo(doc, 'Metodologia: relatório gerencial em regime de caixa, montado a partir dos lançamentos do sistema Dashboard OnTrade e dos valores de ativos informados pela administração. Não substitui as demonstrações contábeis nem o parecer do contador.', { cor: CIN, tam: 7.5 });
 
   // ---- rodapé em todas as páginas ----
   const n = doc.bufferedPageRange().count;
