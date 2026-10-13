@@ -964,12 +964,41 @@ async function novoOrcamento(depois, clientePre) {
     if (v.produto_id === 'outro') corpo.produto_nome = v.produto_nome; else corpo.produto_id = v.produto_id;
     const dadosFicha = !ficha.hidden ? { nome: v.nome, telefone: v.telefone, email: v.email, aniversario: v.aniversario, empresa: v.empresa } : null;
     if (escolhido) { corpo.cliente_id = escolhido.id; if (dadosFicha) corpo.cliente = dadosFicha; } else corpo.cliente = dadosFicha;
-    acao(async () => { await api('/api/comercial/orcamentos', { method: 'POST', body: corpo }); m.fechar(); await depois(); }, 'Orçamento registrado — aviso em 3 dias');
+    const nomeProduto = v.produto_id === 'outro' ? v.produto_nome : f.produto_id.selectedOptions[0].textContent;
+    const cli = escolhido ? { ...escolhido, ...(dadosFicha || {}) } : dadosFicha;
+    const campNome = corpo.campanha_id ? camp.selectedOptions[0]?.textContent : '';
+    janelaChecklist({ titulo: 'Checklist do Orçamento', confirmar: 'Confirmar e Registrar', itens: op.checklist_orcamento,
+      resumo: [['Cliente', cli.nome], ['Telefone', cli.telefone], ['E-mail', cli.email], ['Produto', nomeProduto], ['Valor', brl(valor)],
+        ['Origem', op.origens[v.origem] + (v.origem === 'outro' ? ` — ${v.origem_detalhe}` : '') + (campNome ? ` · ${campNome}` : '')]] },
+    async (marcado, fecharCheck) => {
+      await api('/api/comercial/orcamentos', { method: 'POST', body: { ...corpo, checklist: marcado } });
+      fecharCheck(); m.fechar(); await depois(); toast('Orçamento registrado — aviso em 3 dias');
+    });
+  };
+}
+
+// ---- checklist de conferência: só confirma depois de marcar todos os itens ----
+function janelaChecklist({ titulo, resumo, itens, confirmar }, aoConfirmar) {
+  const chaves = Object.keys(itens);
+  const m = modal(`<h2>${titulo}</h2>
+    <div class="resumo-check">${resumo.map(([r, v]) => `<div><span class="mut">${r}</span><b>${esc(v || '—')}</b></div>`).join('')}</div>
+    <p class="legenda" style="margin:14px 0 8px">Marque cada item depois de conferir. O botão só libera com todos marcados.</p>
+    <div class="check-lista">${chaves.map((k) => `<label class="check-item"><input type="checkbox" data-k="${k}"><span>${esc(itens[k])}</span></label>`).join('')}</div>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="volta">Voltar e Corrigir</button><button id="ok" disabled>${confirmar}</button></div>`, 560);
+  const caixas = [...m.el.querySelectorAll('input[type=checkbox]')], ok = m.el.querySelector('#ok');
+  const atualiza = () => { ok.disabled = !caixas.every((c) => c.checked); };
+  caixas.forEach((c) => (c.onchange = atualiza));
+  m.el.querySelector('#volta').onclick = m.fechar;
+  ok.onclick = async () => {
+    ok.disabled = true;
+    try { await aoConfirmar(Object.fromEntries(caixas.map((c) => [c.dataset.k, true])), m.fechar); }
+    catch (e) { toast(e.message, true); atualiza(); }
   };
 }
 
 // ---- novo cliente: só a ficha (o orçamento é feito à parte) ----
-function novoCliente(depois) {
+async function novoCliente(depois) {
+  const op = await api('/api/comercial/opcoes');
   const m = modal(`<h2>Novo Cliente</h2><p class="legenda">Campos com ${ast} são obrigatórios.</p>
     <form class="form" id="fcli" style="margin-top:12px" autocomplete="off" novalidate>${camposFicha({})}
       <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></form>
@@ -978,7 +1007,13 @@ function novoCliente(depois) {
   m.el.querySelector('[name=nome]').focus();
   m.el.querySelector('#ok').onclick = () => {
     const f = m.el.querySelector('#fcli'); if (!validarObrigatorios(f)) return;
-    acao(async () => { const c = await api('/api/comercial/clientes', { method: 'POST', body: Object.fromEntries(new FormData(f)) }); m.fechar(); await depois(); toast(`Cliente cadastrado: ${c.nome}`); }, '');
+    const v = Object.fromEntries(new FormData(f));
+    janelaChecklist({ titulo: 'Checklist do Cliente', confirmar: 'Confirmar e Cadastrar', itens: op.checklist_cliente,
+      resumo: [['Nome', v.nome], ['Telefone', v.telefone], ['E-mail', v.email], ['Aniversário', v.aniversario ? dataBR(v.aniversario) : ''], ['Empresa', v.empresa]] },
+    async (marcado, fecharCheck) => {
+      const c = await api('/api/comercial/clientes', { method: 'POST', body: { ...v, checklist: marcado } });
+      fecharCheck(); m.fechar(); await depois(); toast(`Cliente cadastrado: ${c.nome}`);
+    });
   };
 }
 
@@ -1004,26 +1039,42 @@ async function fichaCliente(id, depois) {
 }
 
 // ---- páginas ----
+// ---- histórico: quem lançou e quando ----
+const equipeCom = () => (state.meta?.equipe || []).filter((u) => ['comercial', 'admin'].includes(u.papel));
+const quandoLancou = (criadoEm) => { const dia = String(criadoEm || '').slice(0, 10); return `${dia === hojeISO() ? 'hoje' : dataBR(dia)} ${String(criadoEm || '').slice(11, 16)}`; };
+function resumoPorPessoa(lista, titulo, quem, valor, rotulo, fmt) {
+  const por = new Map();
+  for (const x of lista) { const k = quem(x) || '—'; const a = por.get(k) || { qtd: 0, soma: 0 }; a.qtd++; a.soma += valor ? valor(x) : 0; por.set(k, a); }
+  return `<div class="card"><h2>${titulo}</h2>${lista.length ? `<div class="mk-grade">${[...por].map(([nome, a]) => `<div><div class="mut">${esc(nome)}</div><div class="grande">${a.qtd}</div><small class="mut">${rotulo}${valor ? ` · ${fmt(a.soma)}` : ''}</small></div>`).join('')}</div>` : '<p class="mut">Nada lançado neste filtro.</p>'}</div>`;
+}
 async function orcamentos() {
-  const f = state.filtroOrc || (state.filtroOrc = { status: 'aberto', q: '' });
+  const f = state.filtroOrc || (state.filtroOrc = { status: 'aberto', q: '', lancado_em: '', por: '' });
   const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
   const lista = await api('/api/comercial/orcamentos?' + qs);
   const soma = lista.reduce((a, o) => a + o.valor, 0);
   $app.innerHTML = `<h1>Orçamentos</h1><p class="sub">Registre cada orçamento enviado. O sistema avisa para retomar o contato 3 dias depois.</p>
     <div class="row"><button id="novo">Novo orçamento</button>
       <div><label>Situação</label><select id="fs"><option value="">Todas</option>${Object.entries(STATUS_ORC).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div><label>Buscar</label><input id="fq" value="${esc(f.q)}" placeholder="Cliente ou nº"></div></div>
-    <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th class="n">Valor</th><th>Situação</th><th>Próximo aviso</th><th></th></tr></thead><tbody>
+      <div><label>Buscar</label><input id="fq" value="${esc(f.q)}" placeholder="Cliente ou nº"></div>
+      <div><label>Lançados no dia</label><input type="date" id="fd" value="${esc(f.lancado_em)}"></div>
+      <button class="sec" id="hoje-orc" title="Ver tudo o que foi lançado hoje, de todas as situações">Lançados Hoje</button>
+      <div><label>Lançado por</label><select id="fp"><option value="">Todos</option>${equipeCom().map((u) => `<option value="${u.id}" ${String(f.por) === String(u.id) ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></div></div>
+    ${f.lancado_em || f.por ? resumoPorPessoa(lista, 'Resumo do Histórico', (o) => o.criado_por_nome, (o) => o.valor, 'orçamento(s)', brl) : ''}
+    <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th class="n">Valor</th><th>Situação</th><th>Próximo aviso</th><th>Lançado por</th><th></th></tr></thead><tbody>
       ${lista.map((o) => `<tr><td>${dataBR(o.data)}</td><td><b>${esc(o.cliente_nome)}</b> ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : ''}<br><small>${contatoCli(o)}</small></td>
         <td>${esc(o.produto)}${o.numero ? `<br><small class="mut">nº ${esc(o.numero)}</small>` : ''}<br><small class="mut">${esc(o.origem ? (o.origem === 'outro' ? o.origem_detalhe : ORIGENS_ROT[o.origem]) : 'origem não informada')}${o.campanha_nome ? ' · ' + esc(o.campanha_nome) : ''}</small></td><td class="n">${brl(o.valor)}</td>
         <td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
         <td>${o.status === 'aberto' ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span>${o.qtd_contatos ? `<br><small class="mut">${o.qtd_contatos} contato(s)</small>` : ''}` : '<span class="mut">—</span>'}</td>
+        <td><small>${esc(o.criado_por_nome || '—')}<br><span class="mut">${quandoLancou(o.criado_em)}</span></small></td>
         <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `${botaoZap(o.cliente_telefone, msgOrc(o), '')}<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
           <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="3">${lista.length} orçamento(s)</td><td class="n">${brl(soma)}</td><td colspan="3"></td></tr></tfoot></table></div>` : '<p class="mut">Nenhum orçamento com este filtro.</p>'}</div>`;
   const recarrega = async () => { await orcamentos(); verificarFollowups(); };
   document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
   document.getElementById('fs').onchange = (e) => { f.status = e.target.value; orcamentos(); };
+  document.getElementById('fd').onchange = (e) => { f.lancado_em = e.target.value; if (f.lancado_em) f.status = ''; orcamentos(); };
+  document.getElementById('fp').onchange = (e) => { f.por = e.target.value; if (f.por) f.status = ''; orcamentos(); };
+  document.getElementById('hoje-orc').onclick = () => { f.lancado_em = hojeISO(); f.status = ''; f.por = ''; orcamentos(); };
   let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; orcamentos().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
   const achar = (id) => lista.find((o) => o.id === +id);
   $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaContato(achar(b.dataset.c), recarrega)));
@@ -1041,16 +1092,25 @@ async function orcamentos() {
 }
 
 async function clientes() {
-  const q = state.buscaCli || '';
-  const lista = await api('/api/comercial/clientes' + (q ? '?q=' + encodeURIComponent(q) : ''));
+  const f = state.filtroCli || (state.filtroCli = { q: '', cadastrado_em: '', por: '' });
+  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+  const lista = await api('/api/comercial/clientes' + (qs.toString() ? '?' + qs : ''));
   $app.innerHTML = `<h1>Clientes</h1><p class="sub">Ficha de cada cliente com o histórico de orçamentos. Quem já comprou aparece como recorrente nos próximos orçamentos.</p>
-    <div class="row"><button id="novo">Novo Cliente</button><div><label>Buscar cliente</label><input id="fq" value="${esc(q)}" placeholder="Nome, telefone ou e-mail"></div></div>
-    <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Contato</th><th class="n">Orçamentos</th><th class="n">Comprou</th><th>Último</th></tr></thead><tbody>
+    <div class="row"><button id="novo">Novo Cliente</button><div><label>Buscar cliente</label><input id="fq" value="${esc(f.q)}" placeholder="Nome, telefone ou e-mail"></div>
+      <div><label>Cadastrados no dia</label><input type="date" id="fd" value="${esc(f.cadastrado_em)}"></div>
+      <button class="sec" id="hoje-cli" title="Ver os clientes cadastrados hoje">Cadastrados Hoje</button>
+      <div><label>Cadastrado por</label><select id="fp"><option value="">Todos</option>${equipeCom().map((u) => `<option value="${u.id}" ${String(f.por) === String(u.id) ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></div></div>
+    ${f.cadastrado_em || f.por ? resumoPorPessoa(lista, 'Resumo do Histórico', (c) => c.criado_por_nome, null, 'cliente(s) cadastrado(s)') : ''}
+    <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Contato</th><th class="n">Orçamentos</th><th class="n">Comprou</th><th>Último</th><th>Cadastrado por</th></tr></thead><tbody>
       ${lista.map((c) => `<tr class="clicavel" data-id="${c.id}"><td><b>${esc(c.nome)}</b>${c.empresa ? `<br><small class="mut">${esc(c.empresa)}</small>` : ''}</td><td><small>${esc([c.telefone, c.email].filter(Boolean).join(' · ') || '—')}</small></td>
-        <td class="n">${c.qtd_orcamentos}</td><td class="n">${brl(c.valor_comprado)}</td><td>${c.ultimo_orcamento ? dataBR(c.ultimo_orcamento) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum cliente encontrado.</p>'}</div>`;
+        <td class="n">${c.qtd_orcamentos}</td><td class="n">${brl(c.valor_comprado)}</td><td>${c.ultimo_orcamento ? dataBR(c.ultimo_orcamento) : '—'}</td>
+        <td><small>${esc(c.criado_por_nome || '—')}<br><span class="mut">${quandoLancou(c.criado_em)}</span></small></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum cliente encontrado.</p>'}</div>`;
+  document.getElementById('fd').onchange = (e) => { f.cadastrado_em = e.target.value; clientes(); };
+  document.getElementById('fp').onchange = (e) => { f.por = e.target.value; clientes(); };
+  document.getElementById('hoje-cli').onclick = () => { f.cadastrado_em = hojeISO(); f.por = ''; clientes(); };
   const recarrega = () => clientes();
   document.getElementById('novo').onclick = () => novoCliente(recarrega);
-  let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { state.buscaCli = e.target.value; clientes().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
+  let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; clientes().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
   $app.querySelectorAll('tr.clicavel').forEach((tr) => (tr.onclick = () => fichaCliente(+tr.dataset.id, recarrega)));
 }
 
@@ -1236,7 +1296,7 @@ async function comercial() {
     <small class="mut">Orçamento de ${dataBR(o.data)} · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
     ${acoes ? `<div class="fu-acoes">${botaoZap(o.cliente_telefone, msgOrc(o))}<button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>` : ''}</div>`;
   $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)}</p></div>
-      <div class="row" style="margin:0"><button id="novo">Novo orçamento</button><a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a></div></div>
+      <div class="row" style="margin:0"><button id="novo">Novo orçamento</button>${temArea('aovivo') ? '<a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a>' : ''}</div></div>
     <div class="grid">
       <div class="card kpi"><div class="l">Retornos pendentes</div><div class="v">${d.retornos.length}</div><small class="mut">orçamentos esperando contato</small></div>
       <div class="card kpi"><div class="l">Hoje — orçamentos</div><div class="v">${h.qtd}</div><small class="mut">${brl(h.valor)} orçados</small></div>
@@ -1397,13 +1457,13 @@ async function perfil() {
       <div class="perfil-dados"><h2 style="margin:0">${esc(u.nome)}</h2><p class="mut" style="margin:2px 0 0">${esc(u.email || ('ID: ' + u.login))}</p>
         <p style="margin:8px 0 0"><span class="tag">${PAPEL_NOME[u.papel]}</span>${u.ultimo_acesso ? ` <small class="mut">último acesso em ${esc(u.ultimo_acesso.slice(0, 16).replace(/(\d{4})-(\d\d)-(\d\d)/, '$3/$2/$1'))}</small>` : ''}</p>
         <p style="margin:14px 0 0"><button class="sec" id="alt-foto">${u.tem_foto ? 'Alterar Foto' : 'Adicionar Foto'}</button></p></div></div>
-    <div class="card" style="max-width:520px"><h2>Alterar Senha</h2><p class="legenda">Campos com ${ast} são obrigatórios. A nova senha deve ter pelo menos 8 caracteres.</p>
+    ${u.papel === 'comercial' ? '<div class="card" style="max-width:520px"><h2>Senha</h2><p class="legenda">A senha deste acesso é gerenciada pela administração. Se precisar trocar, peça ao administrador.</p></div>' : `<div class="card" style="max-width:520px"><h2>Alterar Senha</h2><p class="legenda">Campos com ${ast} são obrigatórios. A nova senha deve ter pelo menos 8 caracteres.</p>
       <form class="form" id="f-senha" novalidate style="margin-top:12px;grid-template-columns:1fr">
         ${campoObr('Senha atual', 'atual', '', 'password')}${campoObr('Nova senha', 'nova', '', 'password')}${campoObr('Repita a nova senha', 'repete', '', 'password')}
-        <div><button>Salvar Nova Senha</button></div></form></div>`;
+        <div><button>Salvar Nova Senha</button></div></form></div>`}`;
   document.getElementById('alt-foto').onclick = abrirFoto;
   document.querySelectorAll('#f-senha input').forEach((i) => i.setAttribute('autocomplete', i.name === 'atual' ? 'current-password' : 'new-password'));
-  document.getElementById('f-senha').onsubmit = (e) => {
+  if (document.getElementById('f-senha')) document.getElementById('f-senha').onsubmit = (e) => {
     e.preventDefault();
     const f = e.target;
     if (!validarObrigatorios(f)) return;

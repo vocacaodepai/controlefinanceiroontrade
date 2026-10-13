@@ -159,7 +159,7 @@ test('perfis sócio e comercial: cada um só acessa o que é da sua área', asyn
   const eu = (await chamar('GET', '/api/auth/estado', null, socio)).json.usuario;
   assert.ok(eu.areas.includes('societario') && eu.areas.includes('painel') && !eu.areas.includes('lancar'));
   const ev = (await chamar('GET', '/api/auth/estado', null, vend)).json.usuario;
-  assert.deepEqual(ev.areas, ['aovivo', 'comercial']);
+  assert.deepEqual(ev.areas, ['comercial'], 'o comercial não vê o Ao Vivo');
 
   // sócio: consulta o financeiro, mas não lança nem configura
   assert.equal((await chamar('GET', '/api/painel/2026-05', null, socio)).status, 200);
@@ -176,7 +176,7 @@ test('perfis sócio e comercial: cada um só acessa o que é da sua área', asyn
   const eq = await chamar('GET', '/api/equipe', null, vend);
   assert.equal(eq.status, 200);
   assert.ok(eq.json.equipe.length >= 3 && eq.json.hoje);
-  assert.equal((await chamar('POST', '/api/auth/senha', { atual: 'senha-forte-5', nova: 'senha-forte-6' }, vend)).status, 204);
+  assert.equal((await chamar('POST', '/api/auth/senha', { atual: 'senha-forte-5', nova: 'senha-forte-6' }, vend)).status, 403, 'o comercial não troca a própria senha');
   assert.equal((await chamar('POST', '/api/auth/foto', { imagem: JPEG }, vend)).status, 204);
 
   assert.equal((await chamar('POST', '/api/usuarios', { nome: 'X', email: 'x@x.com', senha: 'senha-forte-5', papel: 'inventado' }, admin)).status, 400);
@@ -190,7 +190,7 @@ test('acesso por ID (sem e-mail): operadora comercial só enxerga a área comerc
   assert.equal(criado.status, 201);
   assert.equal(criado.json.login, 'comercial.julia', 'o ID é guardado em minúsculas');
   assert.equal(criado.json.email, null);
-  assert.deepEqual(criado.json.areas, ['aovivo', 'comercial']);
+  assert.deepEqual(criado.json.areas, ['comercial']);
   assert.equal((await chamar('POST', '/api/usuarios', { nome: 'Outra', login: 'comercial.julia', senha: 'senha-forte-7', papel: 'comercial' }, admin)).status, 409, 'ID repetido');
 
   assert.equal((await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'errada-errada' })).status, 401);
@@ -201,9 +201,57 @@ test('acesso por ID (sem e-mail): operadora comercial só enxerga a área comerc
 
   // só o comercial: painel, orçamentos e clientes; nada de financeiro, marketing, pessoas ou sócios
   assert.equal((await chamar('GET', '/api/comercial/painel', null, julia)).status, 200);
-  assert.equal((await chamar('GET', '/api/aovivo', null, julia)).status, 200);
+  assert.equal((await chamar('GET', '/api/aovivo', null, julia)).status, 403, 'Ao Vivo não é do comercial');
   assert.equal((await chamar('GET', '/api/comercial/clientes', null, julia)).status, 200);
   for (const url of ['/api/meta', '/api/painel/2026-05', '/api/lancamentos', '/api/extratos', '/api/marketing/campanhas', '/api/dp/funcionarios', '/api/societario/quadro', '/api/patrimonio/2026-05', '/api/usuarios']) {
     assert.equal((await chamar('GET', url, null, julia)).status, 403, url);
   }
+});
+
+test('comercial: checklist obrigatório no cliente e no orçamento, sem trocar a senha, e histórico do dia para o admin', async () => {
+  const julia = (await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'senha-forte-7' })).cookie;
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const eu = (await chamar('GET', '/api/auth/estado', null, julia)).json.usuario;
+
+  // não troca a senha (nem sabendo a atual)
+  const troca = await chamar('POST', '/api/auth/senha', { atual: 'senha-forte-7', nova: 'outra-senha-9' }, julia);
+  assert.equal(troca.status, 403);
+  assert.match(troca.json.erro, /administração/);
+  assert.equal((await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'senha-forte-7' })).status, 200, 'a senha continua a mesma');
+
+  // cliente: sem checklist -> recusa; com checklist incompleto -> recusa; completo -> cria
+  const ficha = { nome: 'Marcos Andrade', telefone: '(21) 98877-6655', email: 'marcos@x.com', aniversario: '1985-11-23' };
+  const CLI = { busca: true, contato: true, email_aniversario: true };
+  assert.equal((await chamar('POST', '/api/comercial/clientes', ficha, julia)).status, 400);
+  assert.equal((await chamar('POST', '/api/comercial/clientes', { ...ficha, checklist: { ...CLI, contato: false } }, julia)).status, 400);
+  const cli = await chamar('POST', '/api/comercial/clientes', { ...ficha, checklist: CLI }, julia);
+  assert.equal(cli.status, 201);
+
+  // orçamento: mesma regra
+  const orc = { cliente_id: cli.json.id, produto_nome: 'Painel P3.9', valor: 4500000, origem: 'instagram' };
+  const ORC = { cliente: true, produto_valor: true, origem: true, enviado: true };
+  const sem = await chamar('POST', '/api/comercial/orcamentos', orc, julia);
+  assert.equal(sem.status, 400);
+  assert.match(sem.json.erro, /checklist do orçamento/i);
+  assert.equal((await chamar('POST', '/api/comercial/orcamentos', { ...orc, checklist: { ...ORC, enviado: false } }, julia)).status, 400);
+  assert.equal((await chamar('POST', '/api/comercial/orcamentos', { ...orc, checklist: ORC }, julia)).status, 201);
+
+  // histórico do dia, visto pelo admin: quem lançou e quando
+  const hist = await chamar('GET', `/api/comercial/orcamentos?lancado_em=${hoje}&por=${eu.id}`, null, admin);
+  assert.equal(hist.status, 200);
+  assert.equal(hist.json.length, 1);
+  assert.equal(hist.json[0].criado_por_nome, 'Júlia');
+  assert.ok(hist.json[0].criado_em.startsWith(hoje));
+  assert.equal((await chamar('GET', `/api/comercial/orcamentos?lancado_em=2000-01-01`, null, admin)).json.length, 0);
+  assert.equal((await chamar('GET', `/api/comercial/orcamentos?lancado_em=data-ruim`, null, admin)).status, 400);
+
+  const cadastrados = await chamar('GET', `/api/comercial/clientes?cadastrado_em=${hoje}&por=${eu.id}`, null, admin);
+  assert.equal(cadastrados.json.length, 1);
+  assert.equal(cadastrados.json[0].nome, 'Marcos Andrade');
+  assert.equal(cadastrados.json[0].criado_por_nome, 'Júlia');
+  assert.equal((await chamar('GET', `/api/comercial/clientes?cadastrado_em=2000-01-01`, null, admin)).json.length, 0);
+
+  // o admin continua podendo redefinir a senha dela (nova senha em Cadastros)
+  assert.equal((await chamar('PUT', `/api/usuarios/${eu.id}`, { senha: 'senha-nova-8' }, admin)).status, 200);
+  assert.equal((await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'senha-nova-8' })).status, 200);
 });

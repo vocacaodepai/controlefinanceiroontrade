@@ -13,6 +13,23 @@ export const ORIGENS = {
 };
 // Origens que podem estar ligadas a uma campanha paga cadastrada no Marketing
 export const CANAL_DA_ORIGEM = { instagram: 'instagram', facebook: 'facebook', google_anuncio: 'google', tiktok: 'tiktok', youtube: 'youtube', anuncio_rua: 'outdoor' };
+// Checklists de conferência: o formulário só envia depois que a pessoa marca todos os itens (o servidor confere de novo)
+export const CHECKLIST_ORCAMENTO = {
+  cliente: 'Conferi o nome do cliente, o telefone com DDD e o e-mail',
+  produto_valor: 'Conferi o tipo de produto e o valor do orçamento',
+  origem: 'Marquei de onde veio o orçamento (e a campanha, se veio de anúncio)',
+  enviado: 'O orçamento já foi enviado ao cliente (WhatsApp ou e-mail)',
+};
+export const CHECKLIST_CLIENTE = {
+  busca: 'Busquei antes e este cliente ainda não estava cadastrado',
+  contato: 'Conferi o nome e o telefone com DDD',
+  email_aniversario: 'Conferi o e-mail e a data de aniversário',
+};
+export function exigirChecklist(marcado, definicao, rotulo) {
+  const falta = Object.keys(definicao).filter((k) => marcado?.[k] !== true);
+  if (falta.length) throw new ErroNegocio(`Confirme o checklist ${rotulo} antes de registrar: marque todos os itens.`);
+  return true;
+}
 const AGORA = "(now() AT TIME ZONE 'America/Sao_Paulo')";
 const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
 
@@ -59,22 +76,35 @@ export async function salvarCliente(id, b, usuario) {
 }
 
 
-// "Cliente já cadastrado?": procura por nome, telefone ou e-mail
-export async function buscarClientes(q) {
-  const t = txt(q);
-  if (!t) return listarClientes();
-  const dig = soDigitos(t);
-  return query(`${BASE_CLIENTES} WHERE lower(c.nome) LIKE $1 OR lower(coalesce(c.email,'')) LIKE $1 OR lower(coalesce(c.empresa,'')) LIKE $1
-      ${dig.length >= 4 ? "OR regexp_replace(coalesce(c.telefone,''), '\\D', '', 'g') LIKE $2" : ''}
-    GROUP BY c.id ORDER BY lower(c.nome) LIMIT 30`, dig.length >= 4 ? [`%${t.toLowerCase()}%`, `%${dig}%`] : [`%${t.toLowerCase()}%`]);
+// Filtros do histórico: dia em que foi cadastrado (cadastrado_em) e quem cadastrou (por)
+function filtrosCliente({ cadastrado_em, por } = {}, p = []) {
+  const w = [];
+  if (cadastrado_em) { if (!isData(cadastrado_em)) throw new ErroNegocio('Data inválida.'); p.push(cadastrado_em); w.push(`c.criado_em::date = $${p.length}`); }
+  if (por) { p.push(Number(por)); w.push(`c.criado_por_id = $${p.length}`); }
+  return w;
 }
-const BASE_CLIENTES = `SELECT c.*, count(o.id)::int AS qtd_orcamentos, coalesce(sum(o.valor),0)::bigint AS valor_orcado,
+
+// "Cliente já cadastrado?": procura por nome, telefone ou e-mail
+export async function buscarClientes(q, filtros = {}) {
+  const t = txt(q);
+  const p = [], w = [];
+  if (t) {
+    const dig = soDigitos(t);
+    p.push(`%${t.toLowerCase()}%`);
+    let busca = `lower(c.nome) LIKE $1 OR lower(coalesce(c.email,'')) LIKE $1 OR lower(coalesce(c.empresa,'')) LIKE $1`;
+    if (dig.length >= 4) { p.push(`%${dig}%`); busca += ` OR regexp_replace(coalesce(c.telefone,''), '\\D', '', 'g') LIKE $2`; }
+    w.push(`(${busca})`);
+  }
+  w.push(...filtrosCliente(filtros, p));
+  return query(`${BASE_CLIENTES} ${w.length ? 'WHERE ' + w.join(' AND ') : ''} GROUP BY c.id, uc.nome ORDER BY ${filtros.cadastrado_em || filtros.por ? 'c.criado_em DESC' : 'lower(c.nome)'} LIMIT ${t ? 30 : 500}`, p);
+}
+const BASE_CLIENTES = `SELECT c.*, uc.nome AS criado_por_nome, count(o.id)::int AS qtd_orcamentos, coalesce(sum(o.valor),0)::bigint AS valor_orcado,
     coalesce(sum(CASE WHEN o.status='ganho' THEN o.valor END),0)::bigint AS valor_comprado, max(o.data) AS ultimo_orcamento
-  FROM clientes c LEFT JOIN orcamentos o ON o.cliente_id = c.id`;
-export const listarClientes = () => query(`${BASE_CLIENTES} GROUP BY c.id ORDER BY lower(c.nome) LIMIT 500`);
+  FROM clientes c LEFT JOIN orcamentos o ON o.cliente_id = c.id LEFT JOIN usuarios uc ON uc.id = c.criado_por_id`;
+export const listarClientes = (filtros) => buscarClientes('', filtros);
 
 export async function cliente(id) {
-  const c = await one(`${BASE_CLIENTES} WHERE c.id = $1 GROUP BY c.id`, [id]);
+  const c = await one(`${BASE_CLIENTES} WHERE c.id = $1 GROUP BY c.id, uc.nome`, [id]);
   if (!c) throw new ErroNegocio('Cliente não encontrado.', 404);
   const orcamentos = await query(`${BASE_ORC} WHERE o.cliente_id = $1 ORDER BY o.data DESC, o.id DESC`, [id]);
   const contatos = await query(`SELECT t.*, u.nome AS usuario_nome FROM contatos t LEFT JOIN usuarios u ON u.id = t.usuario_id WHERE t.cliente_id = $1 ORDER BY t.criado_em DESC LIMIT 50`, [id]);
@@ -142,18 +172,20 @@ export async function criarOrcamento(b, usuario) {
 // Tudo o que o formulário de orçamento precisa: produtos, origens e campanhas ativas (para ligar o orçamento ao anúncio)
 export async function opcoes() {
   const camp = await query(`SELECT id, nome, canal FROM campanhas WHERE ativa = 1 ORDER BY data_inicio DESC`);
-  return { produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp };
+  return { produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp, checklist_orcamento: CHECKLIST_ORCAMENTO, checklist_cliente: CHECKLIST_CLIENTE };
 }
 
-export async function listarOrcamentos({ status, de, ate, q, cliente_id } = {}) {
+export async function listarOrcamentos({ status, de, ate, q, cliente_id, lancado_em, por } = {}) {
   const w = [], p = [];
   const add = (sql, v) => { p.push(v); w.push(sql.replace('?', '$' + p.length)); };
   if (status) { if (!STATUS[status]) throw new ErroNegocio('Situação inválida.'); add('o.status = ?', status); }
   if (de) { if (!isData(de)) throw new ErroNegocio('Data inicial inválida.'); add('o.data >= ?', de); }
   if (ate) { if (!isData(ate)) throw new ErroNegocio('Data final inválida.'); add('o.data <= ?', ate); }
   if (cliente_id) add('o.cliente_id = ?', Number(cliente_id));
+  if (lancado_em) { if (!isData(lancado_em)) throw new ErroNegocio('Data inválida.'); add('o.criado_em::date = ?', lancado_em); } // histórico: lançados neste dia
+  if (por) add('o.criado_por_id = ?', Number(por));          // histórico: lançados por esta pessoa
   if (txt(q)) { p.push(`%${txt(q).toLowerCase()}%`); w.push(`(lower(c.nome) LIKE $${p.length} OR lower(coalesce(o.numero,'')) LIKE $${p.length})`); }
-  return query(`${BASE_ORC} ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY o.data DESC, o.id DESC LIMIT 500`, p);
+  return query(`${BASE_ORC} ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY ${lancado_em || por ? 'o.criado_em DESC' : 'o.data DESC, o.id DESC'} LIMIT 500`, p);
 }
 
 export async function editarOrcamento(id, b) {

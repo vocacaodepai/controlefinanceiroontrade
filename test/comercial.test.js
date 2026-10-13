@@ -97,7 +97,7 @@ test('painel ao vivo: dia, mês, produtos, motivos, novos x recorrentes e compar
 });
 
 test('perfis: comercial vê o ao vivo e trabalha orçamentos; sócio só vê; financeiro continua fechado ao comercial', () => {
-  assert.ok(AREAS.comercial.includes('comercial') && AREAS.comercial.includes('aovivo'));
+  assert.deepEqual(AREAS.comercial, ['comercial'], 'comercial: só Painel, Orçamentos e Clientes (sem Ao Vivo)');
   assert.ok(AREAS.socio.includes('aovivo') && !AREAS.socio.includes('comercial'));
   assert.ok(!AREAS.comercial.includes('painel') && !AREAS.comercial.includes('lancar'));
   assert.ok(!AREAS.operador.includes('comercial'));
