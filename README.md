@@ -121,5 +121,5 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 - Na tela de entrada vale **e-mail ou ID**. O ID é um nome curto em minúsculas (ex.: `comercial.julia`); quem tem ID não precisa de e-mail.
 - Em Cadastros > Novo usuário, informe e-mail, ID ou os dois.
 - Perfil **Comercial**: vê só Painel, Orçamentos e Clientes (o servidor bloqueia o resto, inclusive o Ao Vivo). Não troca a própria senha: o administrador redefine em Cadastros.
-- O **número do orçamento** é automático e obrigatório (`2026-0001`, `2026-0002`...; reinicia a cada ano); ninguém digita nem altera.
+- O **número do orçamento** é automático e obrigatório (`2026-0572`, `2026-0573`...; reinicia em 0572 a cada ano, para não parecer o primeiro orçamento da casa); ninguém digita nem altera.
 - Cada orçamento e cada cliente novo passam por um **checklist de conferência** (o servidor também exige). O administrador vê o histórico do dia, com quem lançou e a hora, em Orçamentos e em Clientes.

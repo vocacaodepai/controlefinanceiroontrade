@@ -128,10 +128,12 @@ export async function cliente(id) {
 }
 
 // ---------- orçamentos ----------
-// Número automático e obrigatório: ANO-0001, ANO-0002... (a sequência reinicia a cada ano). Quem digita não escolhe o número.
+// Número automático e obrigatório: ANO-0572, ANO-0573... (começa em 0572 em cada ano, para não parecer o primeiro orçamento da casa).
+// Quem digita não escolhe o número.
+export const NUMERO_INICIAL = 572;
 export async function proximoNumero(data = hoje()) {
   const ano = String(data).slice(0, 4);
-  const r = await one(`SELECT coalesce(max(substring(numero from '[0-9]+$')::int), 0) + 1 AS n FROM orcamentos WHERE numero ~ $1`, [`^${ano}-[0-9]+$`]);
+  const r = await one(`SELECT coalesce(max(substring(numero from '[0-9]+$')::int), $2) + 1 AS n FROM orcamentos WHERE numero ~ $1`, [`^${ano}-[0-9]+$`, NUMERO_INICIAL - 1]);
   return `${ano}-${String(r.n).padStart(4, '0')}`;
 }
 
