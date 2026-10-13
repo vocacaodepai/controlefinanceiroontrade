@@ -255,3 +255,18 @@ test('comercial: checklist obrigatório no cliente e no orçamento, sem trocar a
   assert.equal((await chamar('PUT', `/api/usuarios/${eu.id}`, { senha: 'senha-nova-8' }, admin)).status, 200);
   assert.equal((await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'senha-nova-8' })).status, 200);
 });
+
+test('acessos: admin vê quem está online, último login e última atividade; os demais não', async () => {
+  const op = (await chamar('POST', '/api/auth/login', { email: 'op2@x.com', senha: 'senha-forte-4' })).cookie;
+  assert.equal((await chamar('GET', '/api/acessos', null, op)).status, 403);
+  // consulta automática não conta como atividade; ação real conta
+  const antes = (await chamar('GET', '/api/acessos', null, admin)).json.find((u) => u.email === 'op2@x.com');
+  assert.equal(antes.online, true, 'acabou de logar');
+  assert.ok(antes.ultimo_login && antes.ultima_atividade);
+  const r = await chamar('GET', '/api/acessos', null, admin);
+  assert.equal(r.status, 200);
+  const eu = r.json.find((u) => u.email === 'e@x.com');
+  assert.equal(eu.online, true);
+  assert.equal(eu.sessoes >= 1, true);
+  assert.ok(r.json.every((u) => typeof u.ultimo_login !== 'undefined' && !('senha_hash' in u)));
+});
