@@ -208,6 +208,41 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Perfis financeiro (só a área financeira, sem cadastros) e estoque (só o estoque)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_papel_check' AND pg_get_constraintdef(oid) LIKE '%estoque%') THEN
+    ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_papel_check;
+    ALTER TABLE usuarios ADD CONSTRAINT usuarios_papel_check CHECK (papel IN ('admin','operador','leitor','socio','comercial','marketing','financeiro','estoque'));
+  END IF;
+END $$;
+
+-- ---------- Estoque: itens e movimentos (entrada e saída) ----------
+CREATE TABLE IF NOT EXISTS estoque_itens (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nome text NOT NULL UNIQUE,
+  unidade text NOT NULL DEFAULT 'un',
+  minimo numeric(12,2) NOT NULL DEFAULT 0 CHECK (minimo >= 0),
+  obs text,
+  ativo integer NOT NULL DEFAULT 1,
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE TABLE IF NOT EXISTS estoque_movimentos (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  item_id bigint NOT NULL REFERENCES estoque_itens(id),
+  tipo text NOT NULL CHECK (tipo IN ('entrada','saida')),
+  quantidade numeric(12,2) NOT NULL CHECK (quantidade > 0),
+  data date NOT NULL,
+  referencia text,        -- entrada: fornecedor / nota; saída: cliente, obra ou motivo
+  orcamento_numero text,
+  obs text,
+  usuario_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_estmov_item ON estoque_movimentos (item_id, data);
+CREATE INDEX IF NOT EXISTS idx_estmov_usuario ON estoque_movimentos (usuario_id);
+ALTER TABLE estoque_itens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE estoque_movimentos ENABLE ROW LEVEL SECURITY;
+
 -- ---------- Quadro societário e patrimônio em ativos ----------
 CREATE TABLE IF NOT EXISTS socios (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

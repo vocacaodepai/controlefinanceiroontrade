@@ -27,6 +27,7 @@ Object.assign(ICONES, {
   cobranca: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   acessos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   followup: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m9 10 2 2 4-4"/>',
+  estoque: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   dp: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
@@ -105,7 +106,7 @@ function abrirFoto() {
   m.el.querySelector('#fr').onclick = () => acao(async () => { await api('/api/auth/foto', { method: 'DELETE' }); await atualizar(); }, 'Foto removida');
 }
 const NIVEL = { comercial: 0, marketing: 0, leitor: 1, socio: 1, operador: 2, admin: 3 };
-const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura', socio: 'Sócio', comercial: 'Comercial', marketing: 'Marketing' };
+const PAPEL_NOME = { admin: 'Administrador', operador: 'Operador', leitor: 'Somente leitura', socio: 'Sócio', comercial: 'Comercial', marketing: 'Marketing', financeiro: 'Financeiro', estoque: 'Estoque' };
 const temArea = (a) => !!state.usuario?.areas?.includes(a);
 const pode = (papel) => !!state.usuario && NIVEL[state.usuario.papel] >= NIVEL[papel];
 
@@ -179,12 +180,13 @@ async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state
 document.getElementById('sair').onclick = sair;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, followup, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, followup, estoque, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio'], ['cobranca', 'Orçamentos Aprovados']]],
   ['Comercial', [['comercial', 'Painel'], ['followup', 'Follow-up', 'comercial'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Marketing', [['marketing', 'Painel']]],
+  ['Estoque', [['estoque', 'Estoque']]],
   ['Sociedade', [['societario', 'Quadro Societário']]],
   ['Pessoas', [['dp', 'Funcionários']]],
   ['Sistema', [['acessos', 'Acessos'], ['fluxo', 'Mapa do Fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
@@ -1412,6 +1414,66 @@ async function comercial() {
     el.querySelector('[data-a=contato]').onclick = () => janelaContato(o, recarrega);
     el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
   });
+}
+
+// =====================================================================
+// ESTOQUE: itens, entradas e saídas
+// =====================================================================
+const qtdFmt = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+async function estoque() {
+  const f = state.filtroEst || (state.filtroEst = { item_id: '', tipo: '', de: '', ate: '' });
+  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+  const d = await api('/api/estoque?' + qs);
+  const adm = state.usuario.papel === 'admin';
+  const baixos = d.itens.filter((i) => i.abaixo_minimo);
+  $app.innerHTML = `<h1>Estoque</h1><p class="sub">Controle de entrada e saída dos produtos. Toda saída precisa dizer para onde foi.</p>
+    ${baixos.length ? `<div class="aviso-box">${ico('info')}<span>Estoque baixo: ${baixos.map((i) => `<b>${esc(i.nome)}</b> (${qtdFmt(i.saldo)} ${esc(i.unidade)})`).join(', ')}</span></div>` : ''}
+    <div class="row"><button id="entrada">Registrar Entrada</button><button id="saida" class="sec">Registrar Saída</button><button id="novo-item" class="sec">Novo Item</button></div>
+    <div class="card"><h2>Saldo Atual</h2>${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th class="n">Saldo</th><th class="n">Mínimo</th><th>Última movimentação</th><th></th></tr></thead><tbody>
+      ${d.itens.map((i) => `<tr><td><b>${esc(i.nome)}</b>${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td class="n ${i.abaixo_minimo ? 'neg' : ''}"><b>${qtdFmt(i.saldo)}</b> ${esc(i.unidade)}</td><td class="n">${i.minimo ? qtdFmt(i.minimo) : '—'}</td>
+        <td>${i.ultima_movimentacao ? quandoAcesso(i.ultima_movimentacao) : '<span class="mut">sem movimento</span>'}</td><td class="n"><button class="mini sec" data-ed="${i.id}">Editar</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum item cadastrado. Clique em Novo Item para começar.</p>'}</div>
+    <div class="row"><div><label>Item</label><select id="fi"><option value="">Todos</option>${d.itens.map((i) => `<option value="${i.id}" ${String(f.item_id) === String(i.id) ? 'selected' : ''}>${esc(i.nome)}</option>`).join('')}</select></div>
+      <div><label>Tipo</label><select id="ft"><option value="">Todos</option><option value="entrada" ${f.tipo === 'entrada' ? 'selected' : ''}>Entradas</option><option value="saida" ${f.tipo === 'saida' ? 'selected' : ''}>Saídas</option></select></div>
+      <div><label>De</label><input type="date" id="fde" value="${esc(f.de)}"></div><div><label>Até</label><input type="date" id="fate" value="${esc(f.ate)}"></div></div>
+    <div class="card"><h2>Movimentações</h2>${d.movimentos.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Tipo</th><th>Item</th><th class="n">Quantidade</th><th>Origem / Destino</th><th>Registrado por</th>${adm ? '<th></th>' : ''}</tr></thead><tbody>
+      ${d.movimentos.map((m) => `<tr><td>${dataBR(String(m.data).slice(0, 10))}</td><td><span class="tag ${m.tipo === 'entrada' ? 'ok' : 'aviso'}">${m.tipo === 'entrada' ? 'Entrada' : 'Saída'}</span></td><td>${esc(m.item_nome)}</td><td class="n">${m.tipo === 'entrada' ? '+' : '−'}${qtdFmt(m.quantidade)} ${esc(m.unidade)}</td>
+        <td>${esc(m.referencia || '—')}${m.orcamento_numero ? `<br><small class="mut">orçamento ${esc(m.orcamento_numero)}</small>` : ''}${m.obs ? `<br><small class="mut">${esc(m.obs)}</small>` : ''}</td><td><small>${esc(m.usuario_nome || '—')}<br><span class="mut">${quandoLancou(m.criado_em)}</span></small></td>
+        ${adm ? `<td class="n"><button class="mini sec" data-del="${m.id}">Excluir</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhuma movimentação neste filtro.</p>'}</div>`;
+  const recarrega = () => estoque();
+  const filtro = (id, k) => { document.getElementById(id).onchange = (e) => { f[k] = e.target.value; estoque(); }; };
+  filtro('fi', 'item_id'); filtro('ft', 'tipo'); filtro('fde', 'de'); filtro('fate', 'ate');
+  const janelaMov = (tipo) => {
+    const ativos = d.itens;
+    if (!ativos.length) return toast('Cadastre um item primeiro (Novo Item)', true);
+    const m = modal(`<h2>${tipo === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}</h2>
+      <form class="form" id="fm" style="margin-top:12px" autocomplete="off" novalidate>
+        <div class="cheio"><label>Item ${ast}</label><select name="item_id" required><option value="">Escolha o item</option>${ativos.map((i) => `<option value="${i.id}">${esc(i.nome)} (saldo ${qtdFmt(i.saldo)} ${esc(i.unidade)})</option>`).join('')}</select></div>
+        <div><label>Quantidade ${ast}</label><input name="quantidade" inputmode="decimal" required></div>
+        <div><label>Data ${ast}</label><input name="data" type="date" value="${hojeISO()}" max="${hojeISO()}" required></div>
+        <div class="cheio"><label>${tipo === 'entrada' ? 'Fornecedor ou nota (opcional)' : `Para onde foi: cliente, obra ou motivo ${ast}`}</label><input name="referencia" ${tipo === 'saida' ? 'required' : ''} placeholder="${tipo === 'entrada' ? 'Ex.: Fornecedor X, NF 1234' : 'Ex.: Cliente Maria, instalação em Niterói'}"></div>
+        ${tipo === 'saida' ? '<div><label>Nº do orçamento (opcional)</label><input name="orcamento_numero" placeholder="Ex.: 2026-0573"></div>' : ''}
+        <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></form>
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Confirmar</button></div>`, 520);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#ok').onclick = () => { const fm = m.el.querySelector('#fm'); if (!validarObrigatorios(fm)) return; acao(async () => { await api('/api/estoque/movimentos', { method: 'POST', body: { ...Object.fromEntries(new FormData(fm)), tipo } }); m.fechar(); await recarrega(); }, tipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada'); };
+  };
+  document.getElementById('entrada').onclick = () => janelaMov('entrada');
+  document.getElementById('saida').onclick = () => janelaMov('saida');
+  const janelaItem = (it) => {
+    const m = modal(`<h2>${it ? 'Editar Item' : 'Novo Item'}</h2>
+      <form class="form" id="fi2" style="margin-top:12px" autocomplete="off" novalidate>
+        <div class="cheio"><label>Nome ${ast}</label><input name="nome" value="${esc(it?.nome || '')}" required></div>
+        <div><label>Unidade</label><input name="unidade" value="${esc(it?.unidade || 'un')}" placeholder="un, m, kg, caixa"></div>
+        <div><label>Estoque mínimo</label><input name="minimo" inputmode="decimal" value="${it ? it.minimo : 0}"></div>
+        <div class="cheio"><label>Observação</label><input name="obs" value="${esc(it?.obs || '')}"></div>
+        ${it ? `<div><label>Situação</label><select name="ativo"><option value="1" ${it.ativo ? 'selected' : ''}>Ativo</option><option value="0" ${it.ativo ? '' : 'selected'}>Desativado</option></select></div>` : ''}</form>
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 480);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#ok').onclick = () => { const fm = m.el.querySelector('#fi2'); if (!validarObrigatorios(fm)) return; const v = Object.fromEntries(new FormData(fm)); if (v.ativo != null) v.ativo = Number(v.ativo); acao(async () => { await api(it ? `/api/estoque/itens/${it.id}` : '/api/estoque/itens', { method: it ? 'PUT' : 'POST', body: v }); m.fechar(); await recarrega(); }, 'Item salvo'); };
+  };
+  document.getElementById('novo-item').onclick = () => janelaItem(null);
+  $app.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => janelaItem(d.itens.find((i) => i.id === +b.dataset.ed))));
+  $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir este movimento? O saldo será recalculado.') && acao(async () => { await api(`/api/estoque/movimentos/${b.dataset.del}`, { method: 'DELETE' }); await recarrega(); }, 'Movimento excluído')));
 }
 
 // =====================================================================
