@@ -98,7 +98,8 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 ## Comercial (CRM, orçamentos e painel ao vivo)
 
 - **Orçamentos**: o comercial registra cada orçamento (cliente, produto, valor). Pergunta "cliente já cadastrado?" antes de criar a ficha; cliente com orçamento anterior entra como *recorrente*.
-- **Follow-up**: 3 dias depois do orçamento aparece um pop-up (e um contador no menu) para registrar contato, adiar ou encerrar (ganho, perdido ou cancelado, com motivo).
+- **Follow-up em cadência**: o comercial segue a régua de mercado, com toques 3, 7, 14 e 21 dias após o orçamento (canal e resultado de cada contato são registrados, e a mensagem de WhatsApp muda a cada etapa). Depois do 4º toque sem resposta o orçamento entra em "Cadência Concluída" para decidir entre encerrar ou retomar. O orçamento só sai do follow-up quando é encerrado (ganho, perdido ou cancelado).
+- **Cobrança (financeiro)**: ao marcar um orçamento como ganho ele sai do follow-up e vira "Orçamento Aprovado" na área do financeiro (admin e operador, menu Financeiro). Régua de cobrança nos dias 1, 3, 7 e 14 após a aprovação; depois disso, "Levar à gestão". O recebimento (total ou parcial) lança a entrada no caixa e quita o orçamento. O comercial não cobra, apenas acompanha a situação.
 - **Ao vivo** (admin e sócio): dia, mês, produtos, novos x recorrentes, revisitados, perdidos/cancelados com motivo, comparativos com o mês anterior, mesmo mês do ano passado, semestre e ano; atualiza sozinho de hora em hora (e tem botão Atualizar) e tem modo tela cheia.
 - O resumo comercial do mês entra no PDF dos sócios.
 

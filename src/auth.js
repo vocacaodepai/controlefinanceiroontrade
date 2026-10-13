@@ -9,8 +9,8 @@ const perfilValido = (p) => Object.hasOwn(PAPEIS, p);
 
 // Áreas do site que cada perfil pode abrir. O servidor confere em cada rota; o menu só mostra o que o perfil acessa.
 export const AREAS = {
-  admin: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'fluxo', 'cadastros', 'roadmap'],
-  operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros', 'roadmap'],
+  admin: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'cobranca', 'fluxo', 'cadastros', 'roadmap'],
+  operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'cobranca', 'fluxo', 'cadastros', 'roadmap'],
   leitor: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros'],
   socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'marketing', 'societario', 'fluxo'],
   comercial: ['comercial'],

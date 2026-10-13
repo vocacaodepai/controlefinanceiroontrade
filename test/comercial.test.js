@@ -50,14 +50,14 @@ test('validações: valor, data futura, cliente ausente, produto ausente, e-mail
   await assert.rejects(CO.criarOrcamento({ ...O, cliente: fic('X', { email: 'errado' }), produto_nome: 'P', valor: 1 }), /E-mail/);
 });
 
-test('aviso de follow-up só aparece 3 dias depois, e some ao registrar contato (adia mais 3 dias)', async () => {
+test('aviso de follow-up só aparece 3 dias depois, e some ao registrar contato (próximo aos 7 dias)', async () => {
   const antigo = await CO.criarOrcamento({ ...O, cliente: fic('Cliente Antigo'), produto_nome: 'Painel P5', valor: 800000, data: S.addDias(hoje, -3) });
   assert.equal(antigo.followup_em, hoje);
   let pend = await CO.followupsPendentes();
   assert.ok(pend.some((p) => p.id === antigo.id), 'orçamento de 3 dias atrás deve avisar hoje');
   assert.ok(!pend.some((p) => p.cliente_nome === 'Maria Silva'), 'orçamentos de hoje ainda não avisam');
   const r = await CO.registrarContato(antigo.id, { nota: 'Liguei, pediu mais prazo' }, null);
-  assert.equal(r.followup_em, S.addDias(hoje, 3));
+  assert.equal(r.followup_em, S.addDias(hoje, 4)); // régua: 2º follow-up aos 7 dias do orçamento
   assert.equal(r.qtd_contatos, 1);
   pend = await CO.followupsPendentes();
   assert.ok(!pend.some((p) => p.id === antigo.id));
