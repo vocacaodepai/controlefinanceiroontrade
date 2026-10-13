@@ -25,6 +25,7 @@ Object.assign(ICONES, {
   comercial: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   cobranca: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  acessos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   dp: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
@@ -178,7 +179,7 @@ async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state
 document.getElementById('sair').onclick = sair;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio'], ['cobranca', 'Orçamentos Aprovados']]],
@@ -186,7 +187,7 @@ const MENU = [
   ['Marketing', [['marketing', 'Painel']]],
   ['Sociedade', [['societario', 'Quadro Societário']]],
   ['Pessoas', [['dp', 'Funcionários']]],
-  ['Sistema', [['fluxo', 'Mapa do Fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
+  ['Sistema', [['acessos', 'Acessos'], ['fluxo', 'Mapa do Fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
 ];
 const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n === r)?.[2] || r;
 const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , area]) => rotas[n] && temArea(area || n)).map(([n]) => n);
@@ -1375,6 +1376,28 @@ async function comercial() {
     el.querySelector('[data-a=contato]').onclick = () => janelaContato(o, recarrega);
     el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
   });
+}
+
+// =====================================================================
+// ACESSOS: quem está online, último login e última atividade (só administrador)
+// =====================================================================
+const quandoAcesso = (ts) => {
+  if (!ts) return '<span class="mut">nunca</span>';
+  const t = String(ts), dia = t.slice(0, 10), hora = t.slice(11, 16);
+  const ontem = (() => { const d = new Date(hojeISO() + 'T12:00:00'); d.setDate(d.getDate() - 1); return d.toLocaleDateString('sv-SE'); })();
+  return `${dia === hojeISO() ? 'hoje' : dia === ontem ? 'ontem' : dataBR(dia)} às ${hora}`;
+};
+async function acessos() {
+  const l = await api('/api/acessos');
+  const on = l.filter((u) => u.online);
+  $app.innerHTML = `<h1>Acessos</h1><p class="sub">Quem está usando o sistema. Online significa atividade nos últimos 5 minutos. Atualiza sozinho a cada 30 segundos.</p>
+    <div class="grid"><div class="card kpi"><div class="l">Online agora</div><div class="v">${on.length}</div><small class="mut">${on.map((u) => esc(primeiroNome(u.nome))).join(', ') || 'ninguém'}</small></div></div>
+    <div class="card"><div class="tbl"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Situação</th><th>Último login</th><th>Última atividade</th></tr></thead><tbody>
+    ${l.map((u) => `<tr><td><div class="quem">${avatar(u, 30)}<span><b>${esc(u.nome)}</b><br><small class="mut">${esc(u.email || u.login || '')}</small></span></div></td><td>${esc(PAPEL_NOME[u.papel] || u.papel)}</td>
+      <td>${u.online ? '<span class="tag ok">Online</span>' : u.sessoes ? '<span class="tag aviso">Logado, parado</span>' : '<span class="tag">Offline</span>'}</td>
+      <td>${quandoAcesso(u.ultimo_login)}</td><td>${quandoAcesso(u.ultima_atividade)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  clearTimeout(state.timerAcessos);
+  state.timerAcessos = setTimeout(() => { if (location.hash === '#acessos') acessos(); }, 30000);
 }
 
 // =====================================================================

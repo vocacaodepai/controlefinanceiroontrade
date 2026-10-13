@@ -71,6 +71,7 @@ app.get('/api/usuarios/:id/foto', A.logado, h(async (req, res) => {
   res.setHeader('Cache-Control', 'private, max-age=86400'); // a URL muda (?v=) quando a foto é trocada
   res.end(foto);
 }));
+app.get('/api/acessos', A.exigirArea('acessos'), h(async (_, res) => res.json(await A.acessos())));
 app.get('/api/usuarios', admin, h(async (_, res) => res.json(await A.listarUsuarios())));
 app.post('/api/usuarios', admin, h(async (req, res) => res.status(201).json(await A.criarUsuario(req.body))));
 app.put('/api/usuarios/:id', admin, h(async (req, res) => res.json(await A.atualizarUsuario(Number(req.params.id), req.body))));

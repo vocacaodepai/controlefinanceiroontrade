@@ -9,7 +9,7 @@ const perfilValido = (p) => Object.hasOwn(PAPEIS, p);
 
 // Áreas do site que cada perfil pode abrir. O servidor confere em cada rota; o menu só mostra o que o perfil acessa.
 export const AREAS = {
-  admin: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'cobranca', 'fluxo', 'cadastros', 'roadmap'],
+  admin: ['acessos', 'painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'cobranca', 'fluxo', 'cadastros', 'roadmap'],
   operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'cobranca', 'fluxo', 'cadastros', 'roadmap'],
   leitor: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros'],
   socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'marketing', 'societario', 'fluxo'],
@@ -59,6 +59,14 @@ export async function criarUsuario({ nome, email, login, senha, papel }) {
   }
 }
 const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, login: u.login, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso, areas: AREAS[u.papel] || [], tem_foto: !!u.tem_foto, foto_v: u.foto_em ? String(u.foto_em).replace(/\D/g, '') : '0' };
+// Quem está acessando: último login, última atividade e se está online (atividade nos últimos 5 minutos)
+export const acessos = async () => (await query(`SELECT u.id, u.nome, u.email, u.login, u.papel, u.ativo, u.ultimo_acesso AS ultimo_login, u.ultima_atividade,
+    (u.foto IS NOT NULL) AS tem_foto, u.foto_em,
+    (u.ultima_atividade IS NOT NULL AND (now() AT TIME ZONE 'America/Sao_Paulo') - u.ultima_atividade < interval '5 minutes' AND EXISTS (SELECT 1 FROM sessoes s WHERE s.usuario_id = u.id AND s.expira_em > $1)) AS online,
+    (SELECT count(*)::int FROM sessoes s WHERE s.usuario_id = u.id AND s.expira_em > $1) AS sessoes
+  FROM usuarios u WHERE u.ativo = 1 ORDER BY online DESC, u.ultima_atividade DESC NULLS LAST, u.nome`, [Date.now()]))
+  .map((u) => ({ ...publico({ ...u, ultimo_acesso: u.ultimo_login }), ultimo_login: u.ultimo_login, ultima_atividade: u.ultima_atividade, online: !!u.online, sessoes: u.sessoes, areas: undefined }));
+
 export const listarUsuarios = async () => (await query(`SELECT ${COLS} FROM usuarios ORDER BY nome`)).map(publico);
 
 // Impede deixar o sistema sem nenhum administrador ativo.
@@ -111,7 +119,7 @@ export async function login(email, senha, ip) {
   const token = randomBytes(32).toString('hex');
   await query('DELETE FROM sessoes WHERE expira_em < $1', [agora]);
   await query('INSERT INTO sessoes (token_hash,usuario_id,expira_em) VALUES ($1,$2,$3)', [sha(token), u.id, agora + DURACAO_MS]);
-  await query("UPDATE usuarios SET ultimo_acesso=(now() AT TIME ZONE 'America/Sao_Paulo') WHERE id=$1", [u.id]);
+  await query("UPDATE usuarios SET ultimo_acesso=(now() AT TIME ZONE 'America/Sao_Paulo'), ultima_atividade=(now() AT TIME ZONE 'America/Sao_Paulo') WHERE id=$1", [u.id]);
   return { token, usuario: publico(u) };
 }
 
@@ -119,7 +127,7 @@ export const logout = async (token) => { if (token) await query('DELETE FROM ses
 
 export async function usuarioDoToken(token) {
   if (!token) return null;
-  const u = await one(`SELECT u.id,u.nome,u.email,u.login,u.papel,u.ativo,u.criado_em,u.ultimo_acesso,(u.foto IS NOT NULL) AS tem_foto,u.foto_em FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
+  const u = await one(`SELECT u.id,u.nome,u.email,u.login,u.papel,u.ativo,u.criado_em,u.ultimo_acesso,u.ultima_atividade,(u.foto IS NOT NULL) AS tem_foto,u.foto_em FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
     WHERE s.token_hash=$1 AND s.expira_em>$2 AND u.ativo=1`, [sha(token), Date.now()]);
   return publico(u) || null;
 }
@@ -141,8 +149,20 @@ export function gravarCookie(req, res, token) {
   res.setHeader('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${token ? DURACAO_MS / 1000 : 0}${seguro ? '; Secure' : ''}`);
 }
 
+// Consultas automáticas (avisos, ao vivo) não contam como atividade: só o que a pessoa faz de fato
+const PASSIVAS = ['/api/auth/estado', '/api/comercial/followups', '/api/cobranca/pendentes', '/api/aovivo', '/api/acessos'];
 export const autenticar = async (req, _res, next) => {
-  try { req.usuario = await usuarioDoToken(lerCookie(req)); next(); } catch (e) { next(e); }
+  try {
+    req.usuario = await usuarioDoToken(lerCookie(req));
+    const u = req.usuario;
+    if (u && !PASSIVAS.some((p) => req.originalUrl.startsWith(p))) {
+      // grava no máximo a cada minuto por usuário
+      const ult = u.ultima_atividade ? new Date(String(u.ultima_atividade).replace(' ', 'T') + 'Z').getTime() : 0;
+      const agoraSP = new Date(new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T') + 'Z').getTime();
+      if (agoraSP - ult > 60_000) await query("UPDATE usuarios SET ultima_atividade=(now() AT TIME ZONE 'America/Sao_Paulo') WHERE id=$1", [u.id]);
+    }
+    next();
+  } catch (e) { next(e); }
 };
 
 // Qualquer pessoa logada (trocar a própria senha/foto, ver fotos da equipe).
