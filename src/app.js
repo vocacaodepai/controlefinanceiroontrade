@@ -147,6 +147,11 @@ app.post('/api/comercial/clientes', trabCom, h(async (req, res) => {
 app.put('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.salvarCliente(idNum(req.params.id), req.body, req.usuario))));
 app.get('/api/comercial/orcamentos', trabCom, h(async (req, res) => res.json(await CO.listarOrcamentos(req.query))));
 app.post('/api/comercial/orcamentos', trabCom, h(async (req, res) => {
+  // primeiro compromisso do dia do comercial: enviar todos os follow-ups pendentes antes de lançar orçamento novo
+  if (req.usuario.papel === 'comercial') {
+    const pend = await CO.followupsPendentes(req.usuario);
+    if (pend.length) throw new S.ErroNegocio(`Antes de lançar um orçamento novo, envie os follow-ups pendentes (${pend.length}).`, 409);
+  }
   CO.exigirChecklist(req.body.checklist, CO.CHECKLIST_ORCAMENTO, 'do orçamento');
   res.status(201).json(await CO.criarOrcamento(req.body, req.usuario));
 }));
@@ -162,7 +167,9 @@ app.get('/api/cobranca/:id', cobr, h(async (req, res) => res.json(await CB.detal
 app.post('/api/cobranca/:id/contato', cobr, h(async (req, res) => res.json(await CB.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/cobranca/:id/pagamento', cobr, h(async (req, res) => res.json(await CB.registrarPagamento(idNum(req.params.id), req.body, req.usuario))));
 
-app.get('/api/comercial/followups', trabCom, h(async (_, res) => res.json(await CO.followupsPendentes())));
+app.get('/api/comercial/followups', trabCom, h(async (req, res) => res.json(await CO.followupsPendentes(req.usuario))));
+app.get('/api/comercial/followup-painel', trabCom, h(async (req, res) => res.json(await CO.painelFollowup(req.query))));
+app.post('/api/comercial/orcamentos/:id/followup-enviado', trabCom, h(async (req, res) => res.json(await CO.followupEnviado(idNum(req.params.id), req.body, req.usuario))));
 
 // ---------- Departamento de Pessoas (só administrador: dados pessoais e de saúde) ----------
 const verDP = A.exigirArea('dp');

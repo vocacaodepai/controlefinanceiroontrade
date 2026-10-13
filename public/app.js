@@ -26,6 +26,7 @@ Object.assign(ICONES, {
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   cobranca: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   acessos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  followup: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m9 10 2 2 4-4"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   dp: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
@@ -52,15 +53,14 @@ function quemLancou(l) {
 }
 
 // Janela (pop-up) genérica
-function modal(conteudo, largura = 480) {
+function modal(conteudo, largura = 480, fixo = false) {
   const fundo = document.createElement('div');
   fundo.className = 'modal-fundo';
   fundo.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:${largura}px">${conteudo}</div>`;
   document.body.appendChild(fundo);
   const fechar = () => { fundo.remove(); document.removeEventListener('keydown', aoTeclar); };
   const aoTeclar = (e) => { if (e.key === 'Escape') fechar(); };
-  document.addEventListener('keydown', aoTeclar);
-  fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(); });
+  if (!fixo) { document.addEventListener('keydown', aoTeclar); fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(); }); }
   return { el: fundo.querySelector('.modal'), fechar };
 }
 
@@ -179,11 +179,11 @@ async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state
 document.getElementById('sair').onclick = sair;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, followup, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio'], ['cobranca', 'Orçamentos Aprovados']]],
-  ['Comercial', [['comercial', 'Painel'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
+  ['Comercial', [['comercial', 'Painel'], ['followup', 'Follow-up', 'comercial'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Marketing', [['marketing', 'Painel']]],
   ['Sociedade', [['societario', 'Quadro Societário']]],
   ['Pessoas', [['dp', 'Funcionários']]],
@@ -803,12 +803,12 @@ const ETAPAS_FU = [
   { dia: 21, objetivo: 'Último contato: encerrar com educação', canal: 'WhatsApp' },
 ];
 const msgOrc = (o) => {
-  const n = primeiroNome(o.cliente_nome), item = `${o.produto} (${brl(o.valor)})`, e = Math.min(o.qtd_contatos || 0, 3);
+  const n = primeiroNome(o.cliente_nome), eu = primeiroNome(state.usuario?.nome) || 'a equipe', item = `${o.produto}${o.numero ? ` (orçamento ${o.numero})` : ''}`, e = Math.min(o.qtd_contatos || 0, 3);
   return [
-    `Olá, ${n}! Aqui é da OnTrade. Conseguiu receber o orçamento de ${item}? Posso tirar alguma dúvida?`,
-    `Olá, ${n}! Passando para ajudar na sua decisão sobre o orçamento de ${item}. Posso detalhar condições de pagamento e prazo de entrega?`,
-    `Olá, ${n}! O orçamento de ${item} tem prazo de validade e a agenda de produção está se fechando. Quer que eu reserve para você?`,
-    `Olá, ${n}! Para não te incomodar, vou encerrar por aqui o orçamento de ${item}. Se ainda fizer sentido, é só me chamar.`,
+    `Oi, ${n}, tudo bem? Aqui é ${eu}, da OnTrade. Faz alguns dias que te enviei o orçamento de ${item}. Conseguiu dar uma olhada? Se tiver qualquer dúvida sobre valores, prazo ou instalação, me chama por aqui que eu te ajudo.`,
+    `Oi, ${n}! ${eu} da OnTrade de novo. Pensando no seu projeto, posso te enviar as condições de pagamento, o prazo de entrega e exemplos de instalações parecidas com a sua. Também consigo ajustar o orçamento de ${item} se algo não ficou do jeito que você imaginava. Quer que eu te mande?`,
+    `Oi, ${n}, tudo bem? Passando para avisar que a validade do orçamento de ${item} está chegando ao fim e a nossa agenda de produção costuma lotar. Se ainda faz sentido para você, consigo reservar a data. Posso segurar para você?`,
+    `Oi, ${n}, ${eu} aqui da OnTrade. Não quero te incomodar, então vou deixar o orçamento de ${item} em espera por aqui. Se o projeto voltar a ser prioridade ou você quiser rever algum ponto, é só me chamar que eu retomo na hora. Agradeço a atenção!`,
   ][e];
 };
 // Botão que abre a conversa do WhatsApp direto com o cliente (já com uma mensagem pronta, que dá para editar)
@@ -834,6 +834,38 @@ function janelaContato(o, depois) {
     await api(`/api/comercial/orcamentos/${o.id}/contato`, { method: 'POST', body: Object.fromEntries(new FormData(m.el.querySelector('#fc'))) });
     m.fechar(); await depois();
   }, 'Contato registrado');
+}
+// Pop-up com a mensagem pronta do follow-up: copiar, abrir o WhatsApp e confirmar o envio (a pessoa assume a responsabilidade)
+function janelaFollowup(o, { pos = 0, total = 1, obrigatorio = false, aoConcluir }) {
+  const et = Math.min(o.qtd_contatos || 0, 3), E = ETAPAS_FU[et], restam = total - pos - 1;
+  const m = modal(`<h2>${obrigatorio ? `Follow-up ${pos + 1} de ${total}` : 'Enviar Mensagem'}</h2>
+    <p class="legenda"><b>${esc(o.cliente_nome)}</b> · orçamento ${esc(o.numero || '—')} · ${esc(o.produto)} · ${brl(o.valor)}<br>${contatoCli(o)}</p>
+    <p class="legenda" style="margin-top:8px">Mensagem ${et + 1} de ${ETAPAS_FU.length} · ${esc(E.objetivo)} · ${o.qtd_contatos ? `${o.qtd_contatos} contato(s) até agora` : 'primeiro follow-up'}</p>
+    <label style="margin-top:12px">Mensagem (pode ajustar antes de enviar)</label>
+    <textarea id="msg" rows="7" style="width:100%">${esc(msgOrc(o))}</textarea>
+    <div class="row" style="margin:10px 0 0"><button class="sec" id="cp">Copiar mensagem</button>${zap(o.cliente_telefone) ? '<button class="sec" id="zap">Abrir WhatsApp</button>' : '<small class="mut">Cliente sem WhatsApp cadastrado: ligue ou envie por e-mail.</small>'}
+      <div><label>Canal</label><select id="canal"><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option></select></div></div>
+    <label class="check-resp" style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;text-transform:none;font-size:13.5px"><input type="checkbox" id="resp" style="margin-top:3px"><span>Enviei esta mensagem ao cliente e me responsabilizo pelo envio deste follow-up.</span></label>
+    <div class="modal-acoes">${obrigatorio ? '' : '<button class="sec" id="x">Fechar</button>'}<button class="sec" id="enc">Encerrar Orçamento</button><span style="flex:1"></span><button id="ok" disabled>${obrigatorio ? (restam > 0 ? `Confirmar e Ir para a Próxima (${restam})` : 'Confirmar e Concluir') : 'Confirmar Envio'}</button></div>`, 600, obrigatorio);
+  const msg = m.el.querySelector('#msg'), resp = m.el.querySelector('#resp'), ok = m.el.querySelector('#ok');
+  resp.onchange = () => { ok.disabled = !resp.checked; };
+  m.el.querySelector('#cp').onclick = async () => { try { await navigator.clipboard.writeText(msg.value); } catch { msg.select(); document.execCommand('copy'); } toast('Mensagem copiada: é só colar na conversa'); };
+  const z = m.el.querySelector('#zap'); if (z) z.onclick = () => window.open(`${zap(o.cliente_telefone)}?text=${encodeURIComponent(msg.value)}`, '_blank', 'noopener');
+  m.el.querySelector('#x')?.addEventListener('click', m.fechar);
+  m.el.querySelector('#enc').onclick = () => janelaEncerrar(o, async () => { m.fechar(); await aoConcluir(); });
+  ok.onclick = () => acao(async () => {
+    await api(`/api/comercial/orcamentos/${o.id}/followup-enviado`, { method: 'POST', body: { canal: m.el.querySelector('#canal').value, mensagem: msg.value, responsabilidade: true } });
+    m.fechar(); await aoConcluir();
+  }, 'Follow-up registrado');
+}
+// Fila obrigatória do comercial: um follow-up de cada vez, sem sair antes de terminar todos
+function filaFollowups(lista) {
+  state.filaAtiva = true;
+  const passo = (i) => {
+    if (i >= lista.length) { state.filaAtiva = false; toast('Follow-ups do dia concluídos'); atualizarBadge(0); return rota(); }
+    janelaFollowup(lista[i], { pos: i, total: lista.length, obrigatorio: true, aoConcluir: () => passo(i + 1) });
+  };
+  passo(0);
 }
 function janelaEncerrar(o, depois) {
   const m = modal(`<h2>Encerrar orçamento</h2>
@@ -864,6 +896,7 @@ async function verificarFollowups(forcar = false) {
   if (!lista) return;
   state.followups = lista; atualizarBadge(lista.length);
   const silencio = Number(sessionStorage.getItem('fu_ate') || 0);
+  if (state.usuario?.papel === 'comercial') { if (lista.length) filaFollowups(lista); return; } // obrigatório: sem "lembrar mais tarde"
   if (lista.length && (forcar || Date.now() > silencio)) abrirFollowups(lista);
 }
 function abrirFollowups(lista) {
@@ -872,12 +905,13 @@ function abrirFollowups(lista) {
     <div class="fu-lista">${lista.map((o) => `<div class="fu-item" data-id="${o.id}">
       <div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
         <small class="mut">Orçamento de ${dataBR(o.data)} · aviso desde ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
-      <div class="fu-acoes">${botaoZap(o.cliente_telefone, msgOrc(o))}<button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button><button class="mini sec" data-a="adiar">Adiar 1 dia</button></div></div>`).join('')}</div>
+      <div class="fu-acoes"><button class="mini" data-a="msg">Enviar Mensagem</button><button class="mini sec" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button><button class="mini sec" data-a="adiar">Adiar 1 dia</button></div></div>`).join('')}</div>
     <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="depois">Lembrar mais tarde</button></div>`, 640);
   const refaz = async () => { m.fechar(); await verificarFollowups(true); if (location.hash === '#orcamentos') rota(); };
   m.el.querySelector('#depois').onclick = () => { sessionStorage.setItem('fu_ate', String(Date.now() + 30 * 60 * 1000)); m.fechar(); };
   m.el.querySelectorAll('.fu-item').forEach((el) => {
     const o = lista.find((x) => x.id === +el.dataset.id);
+    el.querySelector('[data-a=msg]').onclick = () => { m.fechar(); janelaFollowup(o, { aoConcluir: refaz }); };
     el.querySelector('[data-a=contato]').onclick = () => { m.fechar(); janelaContato(o, refaz); };
     el.querySelector('[data-a=encerrar]').onclick = () => { m.fechar(); janelaEncerrar(o, refaz); };
     el.querySelector('[data-a=adiar]').onclick = () => acao(async () => { await api(`/api/comercial/orcamentos/${o.id}/adiar`, { method: 'POST', body: { dias: 1 } }); await refaz(); }, 'Aviso adiado para amanhã');
@@ -1118,7 +1152,7 @@ async function orcamentos() {
         <td>${tagOrc(o.status)}${o.status === 'ganho' && o.cobranca_status ? `<br><small class="mut">${tagCobranca(o)}</small>` : ''}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
         <td>${o.status === 'aberto' ? (o.followup_em ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span><br><small class="mut">follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4</small>` : '<span class="neg">Cadência concluída</span><br><small class="mut">decidir: encerrar ou retomar</small>') : '<span class="mut">—</span>'}</td>
         <td><small>${esc(o.criado_por_nome || '—')}<br><span class="mut">${quandoLancou(o.criado_em)}</span></small></td>
-        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `${botaoZap(o.cliente_telefone, msgOrc(o), '')}<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
+        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
           <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="3">${lista.length} orçamento(s)</td><td class="n">${brl(soma)}</td><td colspan="3"></td></tr></tfoot></table></div>` : '<p class="mut">Nenhum orçamento com este filtro.</p>'}</div>`;
   const recarrega = async () => { await orcamentos(); verificarFollowups(); };
@@ -1129,6 +1163,7 @@ async function orcamentos() {
   document.getElementById('hoje-orc').onclick = () => { f.lancado_em = hojeISO(); f.status = ''; f.por = ''; orcamentos(); };
   let t; document.getElementById('fq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; orcamentos().then(() => { const i = document.getElementById('fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
   const achar = (id) => lista.find((o) => o.id === +id);
+  $app.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => janelaFollowup(achar(b.dataset.m), { aoConcluir: recarrega })));
   $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaContato(achar(b.dataset.c), recarrega)));
   $app.querySelectorAll('[data-e]').forEach((b) => (b.onclick = () => janelaEncerrar(achar(b.dataset.e), recarrega)));
   $app.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => confirm('Reabrir este orçamento? O aviso volta em 3 dias.') && acao(async () => { await api(`/api/comercial/orcamentos/${b.dataset.r}/status`, { method: 'POST', body: { status: 'aberto' } }); await recarrega(); }, 'Orçamento reaberto')));
@@ -1347,7 +1382,7 @@ async function comercial() {
   const conv = m.qtd ? Math.round((m.qtd_ganho / m.qtd) * 100) + '%' : '—';
   const linhaOrc = (o, acoes) => `<div class="fu-item" data-id="${o.id}"><div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
     <small class="mut">Orçamento de ${dataBR(o.data)} · follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4 · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}</small><br><small>${contatoCli(o)}</small></div>
-    ${acoes ? `<div class="fu-acoes">${botaoZap(o.cliente_telefone, msgOrc(o))}<button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>` : ''}</div>`;
+    ${acoes ? `<div class="fu-acoes"><button class="mini" data-a="msg">Enviar Mensagem</button><button class="mini sec" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>` : ''}</div>`;
   $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)}</p></div>
       <div class="row" style="margin:0"><button id="novo">Novo orçamento</button>${temArea('aovivo') ? '<a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a>' : ''}</div></div>
     <div class="grid">
@@ -1373,9 +1408,39 @@ async function comercial() {
   });
   $app.querySelectorAll('.fu-item[data-id]').forEach((el) => {
     const o = d.retornos.find((x) => x.id === +el.dataset.id); if (!o) return;
+    el.querySelector('[data-a=msg]').onclick = () => janelaFollowup(o, { aoConcluir: recarrega });
     el.querySelector('[data-a=contato]').onclick = () => janelaContato(o, recarrega);
     el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
   });
+}
+
+// =====================================================================
+// FOLLOW-UP: controle do que foi enviado, por quem, e do que vem pela frente
+// =====================================================================
+async function followup() {
+  const f = state.filtroFu || (state.filtroFu = { de: '', ate: '', por: '' });
+  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+  const d = await api('/api/comercial/followup-painel?' + qs);
+  const r = d.resumo, ag = r.agenda;
+  const hora = (t) => `${dataBR(String(t).slice(0, 10))} ${String(t).slice(11, 16)}`;
+  $app.innerHTML = `<h1>Follow-up</h1><p class="sub">Controle das mensagens de acompanhamento: o que foi enviado, por quem, e o que vem pela frente.</p>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Enviados hoje</div><div class="v">${r.enviados_hoje}</div></div>
+      <div class="card kpi"><div class="l">Pendentes hoje</div><div class="v ${r.para_hoje ? 'neg' : ''}">${r.para_hoje}</div><small class="mut">ainda sem envio</small></div>
+      <div class="card kpi"><div class="l">Próximos 3 dias</div><div class="v">${ag.ate_3}</div></div>
+      <div class="card kpi"><div class="l">Em 4 a 7 dias</div><div class="v">${ag.de_4_a_7}</div></div>
+      <div class="card kpi"><div class="l">Em 8 a 14 dias</div><div class="v">${ag.de_8_a_14}</div></div>
+      <div class="card kpi"><div class="l">Cadência concluída</div><div class="v">${r.cadencia_concluida}</div><small class="mut">aguardando decisão</small></div>
+    </div>
+    <div class="row"><div><label>De</label><input type="date" id="fde" value="${d.de}"></div><div><label>Até</label><input type="date" id="fate" value="${d.ate}"></div>
+      <div><label>Enviado por</label><select id="fpor"><option value="">Todos</option>${equipeCom().map((u) => `<option value="${u.id}" ${String(f.por) === String(u.id) ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></div></div>
+    ${d.por_pessoa.length ? `<p class="legenda">No período: ${d.por_pessoa.map((p) => `<b>${esc(p.nome)}</b> ${p.qtd}`).join(' · ')}</p>` : ''}
+    <div class="card"><h2>Mensagens Enviadas (${r.enviados_periodo})</h2>${d.enviados.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Orçamento</th><th>Cliente</th><th>Follow-up</th><th>Enviado por</th><th>Canal</th></tr></thead><tbody>
+      ${d.enviados.map((e) => `<tr><td>${hora(e.criado_em)}</td><td>${esc(e.numero || '—')}<br><small class="mut">${esc(e.produto)} · ${brl(e.valor)}</small></td><td>${esc(e.cliente_nome)}</td><td>${e.etapa}º de ${ETAPAS_FU.length}<br><small class="mut">${ETAPAS_FU[Math.min(e.etapa - 1, 3)].dia} dias</small></td><td>${esc(e.usuario_nome || '—')}</td><td>${esc(({ whatsapp: 'WhatsApp', ligacao: 'Ligação', email: 'E-mail', presencial: 'Presencial' })[e.canal] || '—')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum follow-up enviado neste período.</p>'}</div>
+    <div class="card"><h2>Agendados (${d.agenda.length})</h2>${d.agenda.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Orçamento</th><th>Cliente</th><th>Próximo</th><th>Responsável</th></tr></thead><tbody>
+      ${d.agenda.map((o) => `<tr><td>${dataBR(String(o.followup_em).slice(0, 10))}</td><td>${esc(o.numero || '—')}<br><small class="mut">${esc(o.produto)} · ${brl(o.valor)}</small></td><td>${esc(o.cliente_nome)}</td><td>${Math.min(o.qtd_contatos + 1, 4)}º de ${ETAPAS_FU.length}</td><td>${esc(o.criado_por_nome || '—')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nada agendado além de hoje.</p>'}</div>`;
+  const muda = (k) => (e) => { f[k] = e.target.value; followup(); };
+  document.getElementById('fde').onchange = muda('de'); document.getElementById('fate').onchange = muda('ate'); document.getElementById('fpor').onchange = muda('por');
 }
 
 // =====================================================================

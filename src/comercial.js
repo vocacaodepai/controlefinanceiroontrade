@@ -128,12 +128,12 @@ export async function cliente(id) {
 }
 
 // ---------- orçamentos ----------
-// Número automático e obrigatório: ANO-0572, ANO-0573... (começa em 0572 em cada ano, para não parecer o primeiro orçamento da casa).
-// Quem digita não escolhe o número.
-export const NUMERO_INICIAL = 572;
+// Número automático e obrigatório: ANO-0001, ANO-0002... (recomeça do zero a cada ano). Quem digita não escolhe o número.
+// Só em 2026, como o ano já estava adiantado e houve orçamentos antes do sistema, a contagem continua a partir de 0572.
+export const NUMERO_INICIAL_2026 = 572;
 export async function proximoNumero(data = hoje()) {
   const ano = String(data).slice(0, 4);
-  const r = await one(`SELECT coalesce(max(substring(numero from '[0-9]+$')::int), $2) + 1 AS n FROM orcamentos WHERE numero ~ $1`, [`^${ano}-[0-9]+$`, NUMERO_INICIAL - 1]);
+  const r = await one(`SELECT coalesce(max(substring(numero from '[0-9]+$')::int), $2) + 1 AS n FROM orcamentos WHERE numero ~ $1`, [`^${ano}-[0-9]+$`, ano === '2026' ? NUMERO_INICIAL_2026 - 1 : 0]);
   return `${ano}-${String(r.n).padStart(4, '0')}`;
 }
 
@@ -249,10 +249,13 @@ export async function mudarStatus(id, { status, motivo }, usuario) {
 
 // ---------- follow-up ----------
 // Orçamentos em aberto cujo aviso já venceu (3 dias depois do envio, ou o prazo escolhido ao adiar)
-export const followupsPendentes = () => query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em <= $1 ORDER BY o.followup_em, o.id`, [hoje()]);
+// Pendentes de hoje. A pessoa do comercial responde pelos orçamentos que ela mesma lançou; administração vê todos.
+export const followupsPendentes = (usuario) => usuario?.papel === 'comercial'
+  ? query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em <= $1 AND o.criado_por_id = $2 ORDER BY o.followup_em, o.id`, [hoje(), usuario.id])
+  : query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em <= $1 ORDER BY o.followup_em, o.id`, [hoje()]);
 
 // Registra o contato feito e agenda o próximo aviso (padrão: mais 3 dias)
-export async function registrarContato(id, { nota, adiar_dias, canal, resultado }, usuario) {
+export async function registrarContato(id, { nota, adiar_dias, canal, resultado, mensagem }, usuario) {
   const o = await one('SELECT id, cliente_id, status, data, (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = orcamentos.id AND t.tipo = \'follow-up\') AS feitos FROM orcamentos WHERE id = $1', [id]);
   if (!o) throw new ErroNegocio('Orçamento não encontrado.', 404);
   if (o.status !== 'aberto') throw new ErroNegocio('Este orçamento já foi encerrado.');
@@ -263,7 +266,7 @@ export async function registrarContato(id, { nota, adiar_dias, canal, resultado 
   if (resultado === 'pediu_prazo' && adiar == null) adiar = 7; // pediu mais prazo: volta em uma semana, se ninguém escolher outro
   const proximo = proximoAviso(o.data, o.feitos + 1, resultado, adiar);
   await tx(async () => {
-    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota, canal, resultado) VALUES ($1,$2,$3,'follow-up',$4,$5,$6)`, [id, o.cliente_id, usuario?.id ?? null, txt(nota), canal || null, resultado || null]);
+    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota, canal, resultado, mensagem) VALUES ($1,$2,$3,'follow-up',$4,$5,$6,$7)`, [id, o.cliente_id, usuario?.id ?? null, txt(nota), canal || null, resultado || null, txt(mensagem)]);
     await query('UPDATE orcamentos SET followup_em = $2 WHERE id = $1', [id, proximo]);
   });
   return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
@@ -392,5 +395,44 @@ export async function painelComercial() {
   return {
     atualizado_em: new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }), hoje: h, mes,
     dia: hojeP, mes_atual: mesP, em_aberto: abertos, retornos, cadencia_concluida: concluidos, aprovados_recentes: aprovados, cadencia: CADENCIA_FOLLOWUP, proximos_retornos: proximos, orcamentos_hoje: deHoje, aniversarios,
+  };
+}
+
+// Mensagem de follow-up enviada: a pessoa confirma o envio e assume a responsabilidade (o sistema não tem como ler o WhatsApp)
+export async function followupEnviado(id, { canal = 'whatsapp', mensagem, responsabilidade }, usuario) {
+  if (responsabilidade !== true) throw new ErroNegocio('Confirme que enviou a mensagem e que se responsabiliza pelo envio.');
+  if (!txt(mensagem)) throw new ErroNegocio('A mensagem enviada não pode ficar vazia.');
+  return registrarContato(id, { canal, mensagem, nota: `Mensagem enviada. ${usuario?.nome || 'Usuário'} confirmou o envio e assumiu a responsabilidade.` }, usuario);
+}
+
+// Controle de follow-up: o que foi enviado (quem, quando, qual orçamento) e o que vem pela frente
+export async function painelFollowup({ de, ate, por } = {}) {
+  const h = hoje();
+  const ini = de || addDias(h, -6), fim = ate || h;
+  if (!isData(ini) || !isData(fim)) throw new ErroNegocio('Período inválido.');
+  const p = [ini, fim];
+  let filtroPor = '';
+  if (por) { p.push(Number(por)); filtroPor = ` AND x.usuario_id = $${p.length}`; }
+  const enviados = await query(`SELECT * FROM (
+      SELECT t.id, t.criado_em, t.canal, t.resultado, t.nota, t.mensagem, t.usuario_id, u.nome AS usuario_nome,
+        o.id AS orcamento_id, o.numero, o.valor, c.nome AS cliente_nome, coalesce(pc.nome, o.produto_desc, 'Sem produto') AS produto,
+        row_number() OVER (PARTITION BY t.orcamento_id ORDER BY t.id)::int AS etapa
+      FROM contatos t JOIN orcamentos o ON o.id = t.orcamento_id JOIN clientes c ON c.id = o.cliente_id
+      LEFT JOIN produtos_catalogo pc ON pc.id = o.produto_id LEFT JOIN usuarios u ON u.id = t.usuario_id WHERE t.tipo = 'follow-up') x
+    WHERE x.criado_em::date BETWEEN $1 AND $2${filtroPor} ORDER BY x.criado_em DESC, x.id DESC LIMIT 500`, p);
+  const agenda = await query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em > $1 ORDER BY o.followup_em, o.id LIMIT 300`, [h]);
+  const dias = (d) => Math.round((new Date(d + 'T12:00:00') - new Date(h + 'T12:00:00')) / 86400000);
+  const bucket = { ate_3: 0, de_4_a_7: 0, de_8_a_14: 0, acima_14: 0 };
+  for (const o of agenda) { const n = dias(String(o.followup_em).slice(0, 10)); if (n <= 3) bucket.ate_3++; else if (n <= 7) bucket.de_4_a_7++; else if (n <= 14) bucket.de_8_a_14++; else bucket.acima_14++; }
+  const r = await one(`SELECT count(*) FILTER (WHERE status = 'aberto' AND followup_em <= $1)::int AS para_hoje,
+      count(*) FILTER (WHERE status = 'aberto' AND followup_em IS NULL)::int AS cadencia_concluida FROM orcamentos`, [h]);
+  const hojeEnv = await one(`SELECT count(*)::int AS n FROM contatos WHERE tipo = 'follow-up' AND criado_em::date = $1`, [h]);
+  const porPessoa = {};
+  for (const e of enviados) porPessoa[e.usuario_nome || 'Sem usuário'] = (porPessoa[e.usuario_nome || 'Sem usuário'] || 0) + 1;
+  return {
+    hoje: h, de: ini, ate: fim,
+    resumo: { enviados_hoje: hojeEnv.n, enviados_periodo: enviados.length, para_hoje: r.para_hoje, cadencia_concluida: r.cadencia_concluida, agenda: bucket },
+    por_pessoa: Object.entries(porPessoa).map(([nome, qtd]) => ({ nome, qtd })).sort((a, b) => b.qtd - a.qtd),
+    enviados, agenda,
   };
 }

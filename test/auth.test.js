@@ -270,3 +270,24 @@ test('acessos: admin vê quem está online, último login e última atividade; o
   assert.equal(eu.sessoes >= 1, true);
   assert.ok(r.json.every((u) => typeof u.ultimo_login !== 'undefined' && !('senha_hash' in u)));
 });
+
+test('comercial: com follow-up pendente não lança orçamento novo; depois de enviar, libera', async () => {
+  const ck = (await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'senha-nova-8' })).cookie;
+  const op = (await chamar('GET', '/api/comercial/opcoes', null, ck)).json;
+  const checklist = Object.fromEntries(Object.keys(op.checklist_orcamento).map((k) => [k, true]));
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const d3 = new Date(Date.now() - 3 * 86400000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const corpo = (nome, data) => ({ origem: 'instagram', cliente: { nome, telefone: '(21) 97777-' + (1000 + Math.floor(Math.random() * 8999)), email: nome.replace(/\W/g, '') + '@x.com', aniversario: '1990-01-01' }, produto_nome: 'Painel P5', valor: 100000, checklist, data });
+  const antigo = await chamar('POST', '/api/comercial/orcamentos', corpo('Cliente Antigo Fu', d3), ck);
+  assert.equal(antigo.status, 201); // nada pendente ainda: o orçamento tem 0 dias de espera quando criado agora
+  const pend = (await chamar('GET', '/api/comercial/followups', null, ck)).json;
+  assert.ok(pend.some((o) => o.id === antigo.json.id), 'o orçamento de 3 dias atrás está pendente');
+  const bloq = await chamar('POST', '/api/comercial/orcamentos', corpo('Cliente Novo Fu', hoje), ck);
+  assert.equal(bloq.status, 409);
+  assert.match(bloq.json.erro, /follow-ups pendentes/);
+  assert.equal((await chamar('POST', `/api/comercial/orcamentos/${antigo.json.id}/followup-enviado`, { mensagem: 'Oi' }, ck)).status, 400);
+  assert.equal((await chamar('POST', `/api/comercial/orcamentos/${antigo.json.id}/followup-enviado`, { mensagem: 'Oi', responsabilidade: true }, ck)).status, 200);
+  assert.equal((await chamar('POST', '/api/comercial/orcamentos', corpo('Cliente Novo Fu', hoje), ck)).status, 201);
+  const painel = (await chamar('GET', '/api/comercial/followup-painel', null, ck)).json;
+  assert.equal(painel.enviados[0].usuario_nome, 'Júlia');
+});
