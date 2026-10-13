@@ -53,7 +53,10 @@ app.post('/api/auth/login', h(async (req, res) => {
   res.json({ usuario });
 }));
 app.post('/api/auth/logout', h(async (req, res) => { await A.logout(A.lerCookie(req)); A.gravarCookie(req, res, ''); res.status(204).end(); }));
-app.post('/api/auth/senha', A.logado, h(async (req, res) => { await A.trocarSenha(req.usuario, req.body.atual, req.body.nova); res.status(204).end(); }));
+app.post('/api/auth/senha', A.logado, h(async (req, res) => {
+  // a senha do acesso comercial é gerida pela administração (o admin redefine em Cadastros); assim o histórico do que cada um fez continua acessível
+  if (req.usuario.papel === 'comercial') throw new S.ErroNegocio('A senha deste acesso é gerenciada pela administração. Peça a troca ao administrador.', 403);
+  await A.trocarSenha(req.usuario, req.body.atual, req.body.nova); res.status(204).end(); }));
 
 app.post('/api/auth/foto', A.logado, h(async (req, res) => { await A.salvarFoto(req.usuario.id, req.body.imagem); res.status(204).end(); }));
 app.delete('/api/auth/foto', A.logado, h(async (req, res) => { await A.removerFoto(req.usuario.id); res.status(204).end(); }));
@@ -132,12 +135,18 @@ app.get('/api/aovivo', verVivo, h(async (_, res) => res.json(await CO.aoVivo()))
 app.get('/api/comercial/painel', trabCom, h(async (_, res) => res.json(await CO.painelComercial())));
 app.get('/api/comercial/opcoes', trabCom, h(async (_, res) => res.json(await CO.opcoes())));
 app.get('/api/comercial/produtos', trabCom, h(async (_, res) => res.json(await CO.produtos())));
-app.get('/api/comercial/clientes', trabCom, h(async (req, res) => res.json(await CO.buscarClientes(req.query.q))));
+app.get('/api/comercial/clientes', trabCom, h(async (req, res) => res.json(await CO.buscarClientes(req.query.q, req.query))));
 app.get('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.cliente(idNum(req.params.id)))));
-app.post('/api/comercial/clientes', trabCom, h(async (req, res) => res.status(201).json(await CO.salvarCliente(null, req.body, req.usuario))));
+app.post('/api/comercial/clientes', trabCom, h(async (req, res) => {
+  CO.exigirChecklist(req.body.checklist, CO.CHECKLIST_CLIENTE, 'do cliente');
+  res.status(201).json(await CO.salvarCliente(null, req.body, req.usuario));
+}));
 app.put('/api/comercial/clientes/:id', trabCom, h(async (req, res) => res.json(await CO.salvarCliente(idNum(req.params.id), req.body, req.usuario))));
 app.get('/api/comercial/orcamentos', trabCom, h(async (req, res) => res.json(await CO.listarOrcamentos(req.query))));
-app.post('/api/comercial/orcamentos', trabCom, h(async (req, res) => res.status(201).json(await CO.criarOrcamento(req.body, req.usuario))));
+app.post('/api/comercial/orcamentos', trabCom, h(async (req, res) => {
+  CO.exigirChecklist(req.body.checklist, CO.CHECKLIST_ORCAMENTO, 'do orçamento');
+  res.status(201).json(await CO.criarOrcamento(req.body, req.usuario));
+}));
 app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json(await CO.editarOrcamento(idNum(req.params.id), req.body))));
 app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));

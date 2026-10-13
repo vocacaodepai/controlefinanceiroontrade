@@ -13,7 +13,7 @@ export const AREAS = {
   operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros', 'roadmap'],
   leitor: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros'],
   socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'marketing', 'societario', 'fluxo'],
-  comercial: ['aovivo', 'comercial'],
+  comercial: ['comercial'],
   marketing: ['marketing'],
 };
 const COOKIE = 'sid';
