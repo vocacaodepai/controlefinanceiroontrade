@@ -446,3 +446,13 @@ DO $$ BEGIN
     ALTER TABLE funcionarios ADD CONSTRAINT funcionarios_regime_check CHECK (regime IN ('clt','pj','comissionado','prestador','informal','socio','a_verificar'));
   END IF;
 END $$;
+
+-- Acesso por e-mail ou por ID (ex.: comercial.julia). O e-mail passa a ser opcional quando a pessoa tem ID.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS login text;
+ALTER TABLE usuarios ALTER COLUMN email DROP NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_login_unico ON usuarios (lower(login));
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_acesso_check') THEN
+    ALTER TABLE usuarios ADD CONSTRAINT usuarios_acesso_check CHECK (email IS NOT NULL OR login IS NOT NULL);
+  END IF;
+END $$;

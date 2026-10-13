@@ -159,9 +159,9 @@ function telaLogin(e) {
   $app.innerHTML = `<form class="card login" id="lg">
     <img src="logo.png" alt="OnTrade" class="logo-login" onerror="this.remove()">
     <h1>Caixa OnTrade</h1>
-    <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Elisa Maria ou responsável).' : 'Entre com seu e-mail e senha.'}</p>
+    <p class="sub">${primeiro ? 'Primeiro acesso: crie o administrador (Elisa Maria ou responsável).' : 'Entre com seu e-mail ou ID e a senha.'}</p>
     ${primeiro ? '<div><label>Nome</label><input name="nome" required autocomplete="name"></div>' : ''}
-    <div><label>E-mail</label><input name="email" type="email" required autocomplete="username"></div>
+    <div><label>${primeiro ? 'E-mail' : 'E-mail ou ID'}</label><input name="email" type="${primeiro ? 'email' : 'text'}" required autocomplete="username" autocapitalize="none" spellcheck="false"></div>
     <div><label>Senha${primeiro ? ' (mínimo 8 caracteres)' : ''}</label><input name="senha" type="password" required minlength="${primeiro ? 8 : 1}" autocomplete="${primeiro ? 'new-password' : 'current-password'}"></div>
     ${primeiro && e.exigeCodigo ? '<div><label>Código de instalação</label><input name="codigo" required></div>' : ''}
     <button style="width:100%;margin-top:6px">${primeiro ? 'Criar administrador e entrar' : 'Entrar'}</button></form>`;
@@ -719,12 +719,12 @@ async function cadastros() {
     ${adm ? `<div class="card"><h2>Usuários e permissões</h2>
       <p class="legenda"><b>Administrador:</b> tudo, inclusive cadastros, usuários, quadro societário e reabrir dia. <b>Operador:</b> lança, exclui lançamentos e fecha o dia. <b>Somente leitura:</b> consulta o financeiro e baixa Excel (ideal para o contador). <b>Sócio:</b> consulta painel, controle mensal, patrimônio, quadro societário e o painel ao vivo, sem lançar nada. <b>Comercial:</b> só clientes, orçamentos e o painel ao vivo, sem acesso ao financeiro.</p>
       <div class="tbl"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Último acesso</th><th></th></tr></thead><tbody>
-      ${usuarios.map((u) => `<tr style="${u.ativo ? '' : 'opacity:.5'}"><td><div class="quem">${avatar(u, 30)}<span>${esc(u.nome)}</span></div></td><td>${esc(u.email)}</td>
+      ${usuarios.map((u) => `<tr style="${u.ativo ? '' : 'opacity:.5'}"><td><div class="quem">${avatar(u, 30)}<span>${esc(u.nome)}</span></div></td><td>${esc(u.email || u.login)}${u.email && u.login ? `<br><small class="mut">ID: ${esc(u.login)}</small>` : ''}</td>
         <td><select data-papel="${u.id}">${Object.entries(PAPEL_NOME).map(([k, v]) => `<option value="${k}" ${u.papel === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${esc(u.ultimo_acesso || 'nunca')}</td>
         <td class="n"><button class="mini sec" data-resetsenha="${u.id}">nova senha</button> <button class="mini sec" data-ativo="${u.id}" data-val="${u.ativo ? 0 : 1}">${u.ativo ? 'desativar' : 'reativar'}</button></td></tr>`).join('')}</tbody></table></div>
       <details style="margin-top:12px"><summary>+ Novo usuário</summary><form class="form" id="novo-usuario" style="margin-top:10px">
-        <div><label>Nome</label><input name="nome" required></div><div><label>E-mail</label><input name="email" type="email" required></div>
+        <div><label>Nome</label><input name="nome" required></div><div><label>E-mail</label><input name="email" type="email" placeholder="Opcional se tiver ID"></div><div><label>ID de acesso</label><input name="login" placeholder="Ex.: comercial.julia" autocapitalize="none" spellcheck="false"></div>
         <div><label>Senha inicial (mín. 8)</label><input name="senha" type="password" minlength="8" required autocomplete="new-password"></div>
         <div><label>Perfil</label><select name="papel">${Object.entries(PAPEL_NOME).map(([k, v]) => `<option value="${k}" ${k === 'operador' ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
         <div style="align-self:end"><button>Criar usuário</button></div></form></details></div>` : ''}`;
@@ -1394,7 +1394,7 @@ async function perfil() {
   state.usuario = u;
   $app.innerHTML = `<h1>Meu Perfil</h1><p class="sub">Seus dados de acesso, sua foto e a troca de senha.</p>
     <div class="card perfil-topo">${avatar(u, 110)}
-      <div class="perfil-dados"><h2 style="margin:0">${esc(u.nome)}</h2><p class="mut" style="margin:2px 0 0">${esc(u.email)}</p>
+      <div class="perfil-dados"><h2 style="margin:0">${esc(u.nome)}</h2><p class="mut" style="margin:2px 0 0">${esc(u.email || ('ID: ' + u.login))}</p>
         <p style="margin:8px 0 0"><span class="tag">${PAPEL_NOME[u.papel]}</span>${u.ultimo_acesso ? ` <small class="mut">último acesso em ${esc(u.ultimo_acesso.slice(0, 16).replace(/(\d{4})-(\d\d)-(\d\d)/, '$3/$2/$1'))}</small>` : ''}</p>
         <p style="margin:14px 0 0"><button class="sec" id="alt-foto">${u.tem_foto ? 'Alterar Foto' : 'Adicionar Foto'}</button></p></div></div>
     <div class="card" style="max-width:520px"><h2>Alterar Senha</h2><p class="legenda">Campos com ${ast} são obrigatórios. A nova senha deve ter pelo menos 8 caracteres.</p>
