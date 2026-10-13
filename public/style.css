@@ -237,3 +237,5 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 .check-lista{display:flex;flex-direction:column;gap:8px}
 .check-item{display:flex;align-items:flex-start;gap:11px;border:1px solid var(--bd);border-radius:9px;padding:10px 13px;cursor:pointer;font-size:14px;text-transform:none;letter-spacing:0;color:var(--tx)}
 .check-item:hover{background:var(--tint)}.check-item input{width:18px;height:18px;margin-top:1px;flex:none;accent-color:var(--azul)}
+
+input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;letter-spacing:.02em;cursor:default}
