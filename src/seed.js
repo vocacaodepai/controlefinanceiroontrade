@@ -83,7 +83,7 @@ export async function seed() {
       'Pagamento do empréstimo usado na OnTrade, enviado da LTON para a conta pessoal da Elisa Maria. Valor aproximado.']);
     // Quadro societário. A participação do Luiz Túlio fica em branco até ser confirmada (não presumimos 80%).
     await query(`INSERT INTO socios (nome, participacao_bp, aporte, obs) VALUES ($1,$2,$3,$4),($5,$6,$7,$8)`, [
-      'Luiz Túlio', null, 0, 'Participação a confirmar.',
+      'Luiz Túlio', 8000, 0, 'Participação: o restante da sociedade (80%), além dos 20% do Luiz Amaro.',
       'Luiz Amaro', 2000, 200000000, 'Entrou na sociedade com 20%, mediante aporte de R$ 2.000.000.']);
     // Fichas do Departamento de Pessoas para quem já está cadastrado como funcionário, comissionado ou prestador
     await query(`INSERT INTO funcionarios (pessoa_id, nome, cargo, vinculo, regime, obs)

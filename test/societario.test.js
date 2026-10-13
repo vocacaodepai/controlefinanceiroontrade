@@ -17,16 +17,16 @@ for (const c of await query('SELECT id, nome FROM categorias')) ids['k:' + c.nom
 for (const c of await query('SELECT id, nome FROM pessoas')) ids['p:' + c.nome] = c.id;
 const lanc = (data, tipo, valor, conta, cat, extra = {}) => S.criarLancamento({ data, tipo, valor, conta_id: ids['c:' + conta], categoria_id: ids['k:' + cat], ...extra });
 
-test('quadro societário nasce com Luiz Amaro 20% e sem presumir a parte do Luiz Túlio', async () => {
+test('quadro societário nasce com Luiz Amaro 20% e Luiz Túlio com o restante (80%)', async () => {
   const q = await SO.quadro();
   const amaro = q.socios.find((s) => s.nome === 'Luiz Amaro'), tulio = q.socios.find((s) => s.nome === 'Luiz Túlio');
   assert.equal(amaro.participacao_bp, 2000);
   assert.equal(amaro.aporte, 200000000);
   assert.equal(amaro.valor_implicito, 1000000000, 'R$ 2 mi por 20% => R$ 10 mi para 100%');
-  assert.equal(tulio.participacao_bp, null);
-  assert.deepEqual(q.sem_participacao, ['Luiz Túlio']);
+  assert.equal(tulio.participacao_bp, 8000);
+  assert.deepEqual(q.sem_participacao, []);
+  assert.equal(q.soma_bp, 10000);
   assert.ok(!q.socios.some((s) => s.nome === 'Elisa Maria'), 'Elisa Maria não é sócia');
-  assert.equal(q.soma_bp, 2000);
 });
 
 test('não deixa as participações passarem de 100% nem repetir sócio', async () => {

@@ -114,3 +114,9 @@ Coloque o arquivo da logo em `public/logo.png`: ela aparece no menu, no login e 
 - A ficha do cliente (nome, telefone com DDD, e-mail e aniversário) e os dados do orçamento são **obrigatórios**: o formulário marca com asterisco e destaca o que falta; o servidor também confere.
 - **Marketing > Painel** (admin, sócio e perfil Marketing): investimento, leads, custo por lead, orçamentos e vendas por campanha, semana a semana e origem de todos os orçamentos. Os números diários dos anúncios são lançados à mão; Meta Ads e Google Ads entram numa próxima etapa.
 - Novo perfil **Marketing**: acessa só o painel de marketing.
+
+## Acesso por e-mail ou ID
+
+- Na tela de entrada vale **e-mail ou ID**. O ID é um nome curto em minúsculas (ex.: `comercial.julia`); quem tem ID não precisa de e-mail.
+- Em Cadastros > Novo usuário, informe e-mail, ID ou os dois.
+- Perfil **Comercial**: vê só Painel, Ao Vivo, Orçamentos e Clientes (o servidor bloqueia o resto).

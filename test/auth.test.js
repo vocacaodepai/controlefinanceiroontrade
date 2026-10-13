@@ -181,3 +181,29 @@ test('perfis sócio e comercial: cada um só acessa o que é da sua área', asyn
 
   assert.equal((await chamar('POST', '/api/usuarios', { nome: 'X', email: 'x@x.com', senha: 'senha-forte-5', papel: 'inventado' }, admin)).status, 400);
 });
+
+test('acesso por ID (sem e-mail): operadora comercial só enxerga a área comercial', async () => {
+  // ID inválido, e sem e-mail nem ID
+  assert.equal((await chamar('POST', '/api/usuarios', { nome: 'Júlia', login: 'Júlia Com', senha: 'senha-forte-7', papel: 'comercial' }, admin)).status, 400);
+  assert.equal((await chamar('POST', '/api/usuarios', { nome: 'Júlia', senha: 'senha-forte-7', papel: 'comercial' }, admin)).status, 400);
+  const criado = await chamar('POST', '/api/usuarios', { nome: 'Júlia', login: 'Comercial.Julia', senha: 'senha-forte-7', papel: 'comercial' }, admin);
+  assert.equal(criado.status, 201);
+  assert.equal(criado.json.login, 'comercial.julia', 'o ID é guardado em minúsculas');
+  assert.equal(criado.json.email, null);
+  assert.deepEqual(criado.json.areas, ['aovivo', 'comercial']);
+  assert.equal((await chamar('POST', '/api/usuarios', { nome: 'Outra', login: 'comercial.julia', senha: 'senha-forte-7', papel: 'comercial' }, admin)).status, 409, 'ID repetido');
+
+  assert.equal((await chamar('POST', '/api/auth/login', { email: 'comercial.julia', senha: 'errada-errada' })).status, 401);
+  const entrou = await chamar('POST', '/api/auth/login', { email: ' Comercial.Julia ', senha: 'senha-forte-7' });
+  assert.equal(entrou.status, 200, 'entra com o ID, sem importar maiúsculas');
+  const julia = entrou.cookie;
+  assert.equal(entrou.json.usuario.nome, 'Júlia');
+
+  // só o comercial: painel, orçamentos e clientes; nada de financeiro, marketing, pessoas ou sócios
+  assert.equal((await chamar('GET', '/api/comercial/painel', null, julia)).status, 200);
+  assert.equal((await chamar('GET', '/api/aovivo', null, julia)).status, 200);
+  assert.equal((await chamar('GET', '/api/comercial/clientes', null, julia)).status, 200);
+  for (const url of ['/api/meta', '/api/painel/2026-05', '/api/lancamentos', '/api/extratos', '/api/marketing/campanhas', '/api/dp/funcionarios', '/api/societario/quadro', '/api/patrimonio/2026-05', '/api/usuarios']) {
+    assert.equal((await chamar('GET', url, null, julia)).status, 403, url);
+  }
+});

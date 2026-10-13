@@ -36,24 +36,29 @@ export function validarSenha(s) {
   if (typeof s !== 'string' || s.length < 8) throw new ErroNegocio('A senha precisa ter pelo menos 8 caracteres.');
 }
 const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
+const loginOk = (l) => /^[a-z0-9][a-z0-9._-]{2,39}$/.test(l || ''); // ID de acesso: minúsculas, números, ponto, hífen e sublinhado
 
-const COLS = 'id,nome,email,senha_hash,papel,ativo,criado_em,ultimo_acesso,(foto IS NOT NULL) AS tem_foto,foto_em';
+const COLS = 'id,nome,email,login,senha_hash,papel,ativo,criado_em,ultimo_acesso,(foto IS NOT NULL) AS tem_foto,foto_em';
 export const totalUsuarios = async () => (await one('SELECT COUNT(*) AS n FROM usuarios')).n;
 
-export async function criarUsuario({ nome, email, senha, papel }) {
+export async function criarUsuario({ nome, email, login, senha, papel }) {
   if (!nome?.trim()) throw new ErroNegocio('Informe o nome.');
-  if (!emailOk(email)) throw new ErroNegocio('E-mail inválido.');
+  const em = String(email || '').trim().toLowerCase() || null;
+  const id = String(login || '').trim().toLowerCase() || null;
+  if (!em && !id) throw new ErroNegocio('Informe o e-mail ou o ID de acesso.');
+  if (em && !emailOk(em)) throw new ErroNegocio('E-mail inválido.');
+  if (id && !loginOk(id)) throw new ErroNegocio('ID de acesso inválido: use de 3 a 40 letras minúsculas, números, ponto, hífen ou sublinhado (ex.: comercial.julia).');
   if (!perfilValido(papel)) throw new ErroNegocio('Perfil inválido.');
   validarSenha(senha);
   try {
-    return publico(await one('INSERT INTO usuarios (nome,email,senha_hash,papel) VALUES ($1,$2,$3,$4) RETURNING ' + COLS + '',
-      [nome.trim(), email.trim().toLowerCase(), hashSenha(senha), papel]));
+    return publico(await one('INSERT INTO usuarios (nome,email,login,senha_hash,papel) VALUES ($1,$2,$3,$4,$5) RETURNING ' + COLS + '',
+      [nome.trim(), em, id, hashSenha(senha), papel]));
   } catch (e) {
-    if (e.code === '23505') throw new ErroNegocio('Já existe um usuário com este e-mail.', 409);
+    if (e.code === '23505') throw new ErroNegocio('Já existe um usuário com este e-mail ou ID.', 409);
     throw e;
   }
 }
-const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso, areas: AREAS[u.papel] || [], tem_foto: !!u.tem_foto, foto_v: u.foto_em ? String(u.foto_em).replace(/\D/g, '') : '0' };
+const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, login: u.login, papel: u.papel, ativo: !!u.ativo, ultimo_acesso: u.ultimo_acesso, areas: AREAS[u.papel] || [], tem_foto: !!u.tem_foto, foto_v: u.foto_em ? String(u.foto_em).replace(/\D/g, '') : '0' };
 export const listarUsuarios = async () => (await query(`SELECT ${COLS} FROM usuarios ORDER BY nome`)).map(publico);
 
 // Impede deixar o sistema sem nenhum administrador ativo.
@@ -95,12 +100,12 @@ export async function login(email, senha, ip) {
   await query('DELETE FROM tentativas_login WHERE em < $1', [agora - JANELA]);
   const { n } = await one('SELECT COUNT(*) AS n FROM tentativas_login WHERE chave=$1 AND em>=$2', [chave, agora - JANELA]);
   if (n >= MAX) throw new ErroNegocio('Muitas tentativas. Aguarde alguns minutos.', 429);
-  const u = await one(`SELECT ${COLS} FROM usuarios WHERE email=$1`, [String(email || '').trim().toLowerCase()]);
+  const u = await one(`SELECT ${COLS} FROM usuarios WHERE email=$1 OR lower(login)=$1`, [String(email || '').trim().toLowerCase()]);
   // Faz o hash mesmo se o usuário não existir, para não revelar quais e-mails existem.
   const ok = u ? confere(String(senha || ''), u.senha_hash) : (confere('x', hashSenha('y')), false);
   if (!ok || !u.ativo) {
     await query('INSERT INTO tentativas_login (chave, em) VALUES ($1,$2)', [chave, agora]);
-    throw new ErroNegocio('E-mail ou senha incorretos.', 401);
+    throw new ErroNegocio('E-mail/ID ou senha incorretos.', 401);
   }
   await query('DELETE FROM tentativas_login WHERE chave=$1', [chave]);
   const token = randomBytes(32).toString('hex');
@@ -114,7 +119,7 @@ export const logout = async (token) => { if (token) await query('DELETE FROM ses
 
 export async function usuarioDoToken(token) {
   if (!token) return null;
-  const u = await one(`SELECT u.id,u.nome,u.email,u.papel,u.ativo,u.criado_em,u.ultimo_acesso,(u.foto IS NOT NULL) AS tem_foto,u.foto_em FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
+  const u = await one(`SELECT u.id,u.nome,u.email,u.login,u.papel,u.ativo,u.criado_em,u.ultimo_acesso,(u.foto IS NOT NULL) AS tem_foto,u.foto_em FROM sessoes s JOIN usuarios u ON u.id=s.usuario_id
     WHERE s.token_hash=$1 AND s.expira_em>$2 AND u.ativo=1`, [sha(token), Date.now()]);
   return publico(u) || null;
 }
