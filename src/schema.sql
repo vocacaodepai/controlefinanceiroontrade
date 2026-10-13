@@ -456,3 +456,10 @@ DO $$ BEGIN
     ALTER TABLE usuarios ADD CONSTRAINT usuarios_acesso_check CHECK (email IS NOT NULL OR login IS NOT NULL);
   END IF;
 END $$;
+
+-- Número do orçamento: automático (ANO-0001...) e obrigatório. Dá número aos orçamentos antigos que não tinham e passa a exigir.
+UPDATE orcamentos o SET numero = sub.num
+FROM (SELECT id, to_char(data, 'YYYY') || '-' || lpad((row_number() OVER (PARTITION BY to_char(data, 'YYYY') ORDER BY id))::text, 4, '0') AS num
+      FROM orcamentos WHERE numero IS NULL OR btrim(numero) = '') sub
+WHERE o.id = sub.id;
+ALTER TABLE orcamentos ALTER COLUMN numero SET NOT NULL;

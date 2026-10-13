@@ -112,6 +112,13 @@ export async function cliente(id) {
 }
 
 // ---------- orçamentos ----------
+// Número automático e obrigatório: ANO-0001, ANO-0002... (a sequência reinicia a cada ano). Quem digita não escolhe o número.
+export async function proximoNumero(data = hoje()) {
+  const ano = String(data).slice(0, 4);
+  const r = await one(`SELECT coalesce(max(substring(numero from '[0-9]+$')::int), 0) + 1 AS n FROM orcamentos WHERE numero ~ $1`, [`^${ano}-[0-9]+$`]);
+  return `${ano}-${String(r.n).padStart(4, '0')}`;
+}
+
 const BASE_ORC = `SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
     coalesce(p.nome, o.produto_desc, 'Sem produto') AS produto, u.nome AS criado_por_nome, cp.nome AS campanha_nome,
     (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = o.id) AS qtd_contatos
@@ -139,6 +146,8 @@ export async function criarOrcamento(b, usuario) {
   if (!isData(data)) throw new ErroNegocio('Data inválida.');
   if (data > hoje()) throw new ErroNegocio('A data do orçamento não pode ser futura.');
   return tx(async () => {
+    await query('SELECT pg_advisory_xact_lock(7101)'); // dois lançamentos ao mesmo tempo não repetem o número
+    const numero = await proximoNumero(data);
     let cli;
     if (b.cliente_id) {
       cli = await one('SELECT * FROM clientes WHERE id = $1', [Number(b.cliente_id)]);
@@ -162,7 +171,7 @@ export async function criarOrcamento(b, usuario) {
     if (!produtoId && !txt(b.produto_desc)) throw new ErroNegocio('Informe o tipo de produto (ex.: Painel P3.9).');
     const r = await one(`INSERT INTO orcamentos (numero,cliente_id,produto_id,produto_desc,valor,cliente_tipo,data,followup_em,obs,criado_por_id,origem,origem_detalhe,campanha_id)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-      [txt(b.numero), cli.id, produtoId, txt(b.produto_desc), valor, antes.n > 0 ? 'recorrente' : 'novo', data, addDias(data, PRAZO_FOLLOWUP), txt(b.obs), usuario?.id ?? null,
+      [numero, cli.id, produtoId, txt(b.produto_desc), valor, antes.n > 0 ? 'recorrente' : 'novo', data, addDias(data, PRAZO_FOLLOWUP), txt(b.obs), usuario?.id ?? null,
         b.origem, b.origem === 'outro' ? txt(b.origem_detalhe) : null, campanhaId]);
     if (!cli.origem) await query('UPDATE clientes SET origem = $1 WHERE id = $2', [b.origem, cli.id]); // como o cliente chegou até nós
     return one(`${BASE_ORC} WHERE o.id = $1`, [r.id]);
@@ -172,7 +181,7 @@ export async function criarOrcamento(b, usuario) {
 // Tudo o que o formulário de orçamento precisa: produtos, origens e campanhas ativas (para ligar o orçamento ao anúncio)
 export async function opcoes() {
   const camp = await query(`SELECT id, nome, canal FROM campanhas WHERE ativa = 1 ORDER BY data_inicio DESC`);
-  return { produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp, checklist_orcamento: CHECKLIST_ORCAMENTO, checklist_cliente: CHECKLIST_CLIENTE };
+  return { proximo_numero: await proximoNumero(), produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp, checklist_orcamento: CHECKLIST_ORCAMENTO, checklist_cliente: CHECKLIST_CLIENTE };
 }
 
 export async function listarOrcamentos({ status, de, ate, q, cliente_id, lancado_em, por } = {}) {
@@ -193,8 +202,8 @@ export async function editarOrcamento(id, b) {
   if (!atual) throw new ErroNegocio('Orçamento não encontrado.', 404);
   const valor = b.valor !== undefined ? centavos(b.valor) : atual.valor;
   const produtoId = b.produto_id ? Number(b.produto_id) : b.produto_nome ? await produtoPorNome(b.produto_nome) : atual.produto_id;
-  await query('UPDATE orcamentos SET valor=$1, produto_id=$2, numero=$3, obs=$4 WHERE id=$5',
-    [valor, produtoId, b.numero !== undefined ? txt(b.numero) : atual.numero, b.obs !== undefined ? txt(b.obs) : atual.obs, id]);
+  await query('UPDATE orcamentos SET valor=$1, produto_id=$2, obs=$3 WHERE id=$4', // o número é automático e não muda
+    [valor, produtoId, b.obs !== undefined ? txt(b.obs) : atual.obs, id]);
   return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
 }
 

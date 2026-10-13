@@ -914,7 +914,7 @@ async function novoOrcamento(depois, clientePre) {
         ${seletorObr('Tipo de produto', 'produto_id', `<option value="">Selecione</option>${op.produtos.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}<option value="outro">Outro (digitar)</option>`)}
         <div id="outro" hidden><label>Qual produto? ${ast}</label><input name="produto_nome" data-obrig="text" placeholder="Ex.: Painel P2.5"></div>
         ${campoObr('Valor do orçamento (R$)', 'valor', '', 'text')}
-        <div><label>Nº do orçamento</label><input name="numero" placeholder="Opcional"></div>
+        <div><label>Nº do orçamento ${ast}</label><input name="numero" value="${esc(op.proximo_numero)}" readonly class="numero-auto" title="Gerado automaticamente"><small class="mut">gerado automaticamente</small></div>
         ${seletorObr('De onde veio este orçamento?', 'origem', `<option value="">Selecione</option>${Object.entries(op.origens).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}`, 'class="larg"')}
         <div id="origem-outro" hidden class="larg"><label>Qual origem? ${ast}</label><input name="origem_detalhe" data-obrig="text" placeholder="Ex.: panfleto no shopping"></div>
         <div id="camp" hidden class="larg"><label>Veio de qual campanha de anúncio? (se souber)</label><select name="campanha_id"></select></div>
@@ -960,7 +960,7 @@ async function novoOrcamento(depois, clientePre) {
     if (!validarObrigatorios(f)) return;
     const v = Object.fromEntries(new FormData(f)); const valor = paraCentavos(v.valor);
     if (!(valor > 0)) { const el = f.valor; el.classList.add('invalido'); el.insertAdjacentHTML('afterend', '<small class="erro-campo">Informe um valor maior que zero.</small>'); el.addEventListener('input', () => limpaErro(el), { once: true }); return toast('Informe o valor do orçamento.', true); }
-    const corpo = { valor, numero: v.numero, obs: v.obs, origem: v.origem, origem_detalhe: v.origem_detalhe, campanha_id: v.campanha_id || null };
+    const corpo = { valor, obs: v.obs, origem: v.origem, origem_detalhe: v.origem_detalhe, campanha_id: v.campanha_id || null };
     if (v.produto_id === 'outro') corpo.produto_nome = v.produto_nome; else corpo.produto_id = v.produto_id;
     const dadosFicha = !ficha.hidden ? { nome: v.nome, telefone: v.telefone, email: v.email, aniversario: v.aniversario, empresa: v.empresa } : null;
     if (escolhido) { corpo.cliente_id = escolhido.id; if (dadosFicha) corpo.cliente = dadosFicha; } else corpo.cliente = dadosFicha;
@@ -968,11 +968,11 @@ async function novoOrcamento(depois, clientePre) {
     const cli = escolhido ? { ...escolhido, ...(dadosFicha || {}) } : dadosFicha;
     const campNome = corpo.campanha_id ? camp.selectedOptions[0]?.textContent : '';
     janelaChecklist({ titulo: 'Checklist do Orçamento', confirmar: 'Confirmar e Registrar', itens: op.checklist_orcamento,
-      resumo: [['Cliente', cli.nome], ['Telefone', cli.telefone], ['E-mail', cli.email], ['Produto', nomeProduto], ['Valor', brl(valor)],
+      resumo: [['Nº do Orçamento', op.proximo_numero], ['Cliente', cli.nome], ['Telefone', cli.telefone], ['E-mail', cli.email], ['Produto', nomeProduto], ['Valor', brl(valor)],
         ['Origem', op.origens[v.origem] + (v.origem === 'outro' ? ` — ${v.origem_detalhe}` : '') + (campNome ? ` · ${campNome}` : '')]] },
     async (marcado, fecharCheck) => {
-      await api('/api/comercial/orcamentos', { method: 'POST', body: { ...corpo, checklist: marcado } });
-      fecharCheck(); m.fechar(); await depois(); toast('Orçamento registrado — aviso em 3 dias');
+      const criado = await api('/api/comercial/orcamentos', { method: 'POST', body: { ...corpo, checklist: marcado } });
+      fecharCheck(); m.fechar(); await depois(); toast(`Orçamento nº ${criado.numero} registrado — aviso em 3 dias`);
     });
   };
 }
@@ -1083,7 +1083,7 @@ async function orcamentos() {
   $app.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => {
     const o = achar(b.dataset.ed);
     const m = modal(`<h2>Editar orçamento</h2><p class="legenda">${esc(o.cliente_nome)}</p><form class="form" id="fe" style="margin-top:14px">
-      <div><label>Valor (R$)</label><input name="valor" value="${brlInput(o.valor)}" inputmode="decimal" required></div><div><label>Nº do orçamento</label><input name="numero" value="${esc(o.numero || '')}"></div>
+      <div><label>Valor (R$)</label><input name="valor" value="${brlInput(o.valor)}" inputmode="decimal" required></div><div><label>Nº do orçamento</label><input value="${esc(o.numero || '—')}" readonly class="numero-auto" title="Gerado automaticamente; não muda"></div>
       <div class="cheio"><label>Observação</label><input name="obs" value="${esc(o.obs || '')}"></div></form>
       <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 520);
     m.el.querySelector('#x').onclick = m.fechar;

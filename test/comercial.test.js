@@ -162,3 +162,27 @@ test('novo cliente sozinho (sem orçamento): só a ficha, e já aparece na busca
   assert.equal((await CO.cliente(c.id)).orcamentos.length, 0);
   await assert.rejects(CO.salvarCliente(null, { nome: 'Incompleto' }, null), /obrigatórios da ficha do cliente/);
 });
+
+test('número do orçamento: automático, sequencial no ano, obrigatório e imutável', async () => {
+  const ano = hoje.slice(0, 4);
+  const antes = await CO.proximoNumero();
+  assert.match(antes, new RegExp(`^${ano}-\\d{4}$`));
+  const a = await CO.criarOrcamento({ ...O, cliente: fic('Numero A'), produto_nome: 'Painel P5', valor: 100000, numero: 'MEU-NUMERO-MANUAL' });
+  assert.equal(a.numero, antes, 'o número vem do sistema, mesmo que alguém mande outro');
+  const b = await CO.criarOrcamento({ ...O, cliente: fic('Numero B'), produto_nome: 'Painel P5', valor: 100000 });
+  const seq = (n) => Number(n.slice(-4));
+  assert.equal(seq(b.numero), seq(a.numero) + 1, 'sequência sem buracos');
+  assert.equal(await CO.proximoNumero(), `${ano}-${String(seq(b.numero) + 1).padStart(4, '0')}`);
+  const editado = await CO.editarOrcamento(a.id, { numero: '999', valor: 250000 });
+  assert.equal(editado.numero, a.numero, 'o número não muda ao editar');
+  assert.equal(editado.valor, 250000);
+  // todo orçamento criado tem número
+  assert.ok((await CO.listarOrcamentos({ lancado_em: hoje })).every((o) => /^\d{4}-\d{4}$/.test(o.numero)));
+  // virada de ano: a sequência reinicia
+  assert.equal(await CO.proximoNumero('2031-03-10'), '2031-0001');
+});
+
+test('criação simultânea não repete número', async () => {
+  const novos = await Promise.all([1, 2, 3, 4].map((i) => CO.criarOrcamento({ ...O, cliente: fic('Paralelo ' + i), produto_nome: 'Painel P5', valor: 100000 })));
+  assert.equal(new Set(novos.map((o) => o.numero)).size, 4);
+});
