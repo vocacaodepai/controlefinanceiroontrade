@@ -463,3 +463,37 @@ FROM (SELECT id, to_char(data, 'YYYY') || '-' || lpad((row_number() OVER (PARTIT
       FROM orcamentos WHERE numero IS NULL OR btrim(numero) = '') sub
 WHERE o.id = sub.id;
 ALTER TABLE orcamentos ALTER COLUMN numero SET NOT NULL;
+
+-- ---------- Follow-up em cadência (comercial) e cobrança do orçamento aprovado (financeiro) ----------
+ALTER TABLE contatos ADD COLUMN IF NOT EXISTS canal text;
+ALTER TABLE contatos ADD COLUMN IF NOT EXISTS resultado text;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS cobranca_status text;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS cobranca_followup_em date;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS cobranca_vencimento date;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orcamentos_cobranca_status_check') THEN
+    ALTER TABLE orcamentos ADD CONSTRAINT orcamentos_cobranca_status_check CHECK (cobranca_status IS NULL OR cobranca_status IN ('a_cobrar','em_cobranca','pago'));
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_orc_cobranca ON orcamentos (cobranca_status, cobranca_followup_em);
+
+CREATE TABLE IF NOT EXISTS pagamentos (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  orcamento_id bigint NOT NULL REFERENCES orcamentos(id),
+  data date NOT NULL,
+  valor bigint NOT NULL CHECK (valor > 0),
+  conta_id bigint REFERENCES contas(id),
+  lancamento_id bigint REFERENCES lancamentos(id) ON DELETE SET NULL,
+  obs text,
+  criado_por_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_pag_orc ON pagamentos (orcamento_id);
+CREATE INDEX IF NOT EXISTS idx_pag_conta ON pagamentos (conta_id);
+CREATE INDEX IF NOT EXISTS idx_pag_lanc ON pagamentos (lancamento_id);
+CREATE INDEX IF NOT EXISTS idx_pag_criador ON pagamentos (criado_por_id);
+ALTER TABLE pagamentos ENABLE ROW LEVEL SECURITY;
+
+-- orçamentos que já estavam ganhos entram na fila de cobrança do financeiro
+UPDATE orcamentos SET cobranca_status = 'a_cobrar', cobranca_followup_em = (coalesce(fechado_em::date, data) + 1)
+WHERE status = 'ganho' AND cobranca_status IS NULL;

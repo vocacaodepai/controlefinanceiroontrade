@@ -4,7 +4,23 @@ import { query, one, tx } from './db.js';
 import { ErroNegocio, isData, isMes, hoje, addDias, intervaloMes } from './services.js';
 
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
-export const PRAZO_FOLLOWUP = 3; // dias após o orçamento
+// Cadência de follow-up (padrão de mercado para proposta/orçamento): toques nos dias 3, 7, 14 e 21 depois do envio.
+// Cada toque deve acrescentar algo (dúvida, condição, prazo) e o último é o de encerramento. Sem resposta, a cadência acaba e o orçamento
+// vai para a lista "cadência concluída" para a decisão de encerrar como sem retorno.
+export const CADENCIA_FOLLOWUP = [3, 7, 14, 21];
+export const PRAZO_FOLLOWUP = CADENCIA_FOLLOWUP[0];
+export const CANAIS_CONTATO = { whatsapp: 'WhatsApp', ligacao: 'Ligação', email: 'E-mail', presencial: 'Presencial' };
+export const RESULTADOS_CONTATO = { sem_resposta: 'Não respondeu', respondeu: 'Respondeu, vai avaliar', interessado: 'Interessado / negociando', pediu_prazo: 'Pediu mais prazo' };
+// Data do próximo aviso: segue a cadência a partir da data do orçamento; se já passou, volta em 2 dias; interessado volta em até 3 dias
+export function proximoAviso(dataOrc, contatosFeitos, resultado, adiarDias, h = hoje()) {
+  if (adiarDias) return addDias(h, adiarDias);
+  const dias = CADENCIA_FOLLOWUP[contatosFeitos];
+  if (dias === undefined) return null; // cadência concluída
+  let d = addDias(dataOrc, dias);
+  if (d <= h) d = addDias(h, 2);
+  if (resultado === 'interessado' && d > addDias(h, 3)) d = addDias(h, 3);
+  return d;
+}
 export const STATUS = { aberto: 'Em aberto', ganho: 'Ganho', perdido: 'Perdido', cancelado: 'Cancelado' };
 // De onde veio o orçamento (obrigatório): base do rastreio de marketing
 export const ORIGENS = {
@@ -121,7 +137,9 @@ export async function proximoNumero(data = hoje()) {
 
 const BASE_ORC = `SELECT o.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
     coalesce(p.nome, o.produto_desc, 'Sem produto') AS produto, u.nome AS criado_por_nome, cp.nome AS campanha_nome,
-    (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = o.id) AS qtd_contatos
+    (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = o.id AND t.tipo = 'follow-up') AS qtd_contatos,
+    (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = o.id AND t.tipo = 'cobranca') AS qtd_cobrancas,
+    (SELECT coalesce(sum(g.valor),0)::bigint FROM pagamentos g WHERE g.orcamento_id = o.id) AS recebido
   FROM orcamentos o JOIN clientes c ON c.id = o.cliente_id
   LEFT JOIN produtos_catalogo p ON p.id = o.produto_id LEFT JOIN usuarios u ON u.id = o.criado_por_id
   LEFT JOIN campanhas cp ON cp.id = o.campanha_id`;
@@ -181,7 +199,7 @@ export async function criarOrcamento(b, usuario) {
 // Tudo o que o formulário de orçamento precisa: produtos, origens e campanhas ativas (para ligar o orçamento ao anúncio)
 export async function opcoes() {
   const camp = await query(`SELECT id, nome, canal FROM campanhas WHERE ativa = 1 ORDER BY data_inicio DESC`);
-  return { proximo_numero: await proximoNumero(), produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp, checklist_orcamento: CHECKLIST_ORCAMENTO, checklist_cliente: CHECKLIST_CLIENTE };
+  return { proximo_numero: await proximoNumero(), produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp, cadencia: CADENCIA_FOLLOWUP, canais_contato: CANAIS_CONTATO, resultados_contato: RESULTADOS_CONTATO, checklist_orcamento: CHECKLIST_ORCAMENTO, checklist_cliente: CHECKLIST_CLIENTE };
 }
 
 export async function listarOrcamentos({ status, de, ate, q, cliente_id, lancado_em, por } = {}) {
@@ -212,10 +230,18 @@ export async function mudarStatus(id, { status, motivo }, usuario) {
   if (!STATUS[status]) throw new ErroNegocio('Situação inválida.');
   const m = txt(motivo);
   if ((status === 'perdido' || status === 'cancelado') && !m) throw new ErroNegocio('Informe o motivo (por que foi perdido/cancelado).');
-  const r = status === 'aberto'
-    ? await one(`UPDATE orcamentos SET status='aberto', motivo=NULL, fechado_em=NULL, fechado_por_id=NULL, followup_em=$2 WHERE id=$1 RETURNING id`, [id, addDias(hoje(), PRAZO_FOLLOWUP)])
-    : await one(`UPDATE orcamentos SET status=$2, motivo=$3, fechado_em=${AGORA}, fechado_por_id=$4 WHERE id=$1 RETURNING id`, [id, status, status === 'ganho' ? null : m, usuario?.id ?? null]);
-  if (!r) throw new ErroNegocio('Orçamento não encontrado.', 404);
+  const atual = await one('SELECT id, status, (SELECT count(*)::int FROM pagamentos g WHERE g.orcamento_id = orcamentos.id) AS pagamentos FROM orcamentos WHERE id = $1', [id]);
+  if (!atual) throw new ErroNegocio('Orçamento não encontrado.', 404);
+  if (atual.pagamentos > 0 && status !== 'ganho') throw new ErroNegocio('Este orçamento já tem pagamento registrado pelo financeiro; não dá para reabrir ou encerrar de outra forma.', 409);
+  if (status === 'aberto') {
+    // volta para o follow-up, reiniciando a cadência a partir de hoje (sai da fila de cobrança do financeiro)
+    await query(`UPDATE orcamentos SET status='aberto', motivo=NULL, fechado_em=NULL, fechado_por_id=NULL, followup_em=$2, cobranca_status=NULL, cobranca_followup_em=NULL, cobranca_vencimento=NULL WHERE id=$1`, [id, addDias(hoje(), PRAZO_FOLLOWUP)]);
+  } else if (status === 'ganho') {
+    // aprovado: sai do follow-up do comercial e entra na cobrança do financeiro (primeiro contato no dia seguinte)
+    await query(`UPDATE orcamentos SET status='ganho', motivo=NULL, fechado_em=${AGORA}, fechado_por_id=$2, followup_em=NULL, cobranca_status=coalesce(cobranca_status,'a_cobrar'), cobranca_followup_em=coalesce(cobranca_followup_em,$3) WHERE id=$1`, [id, usuario?.id ?? null, addDias(hoje(), 1)]);
+  } else {
+    await query(`UPDATE orcamentos SET status=$2, motivo=$3, fechado_em=${AGORA}, fechado_por_id=$4, followup_em=NULL WHERE id=$1`, [id, status, m, usuario?.id ?? null]);
+  }
   return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
 }
 
@@ -224,18 +250,25 @@ export async function mudarStatus(id, { status, motivo }, usuario) {
 export const followupsPendentes = () => query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em <= $1 ORDER BY o.followup_em, o.id`, [hoje()]);
 
 // Registra o contato feito e agenda o próximo aviso (padrão: mais 3 dias)
-export async function registrarContato(id, { nota, adiar_dias }, usuario) {
-  const o = await one('SELECT id, cliente_id, status FROM orcamentos WHERE id = $1', [id]);
+export async function registrarContato(id, { nota, adiar_dias, canal, resultado }, usuario) {
+  const o = await one('SELECT id, cliente_id, status, data, (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = orcamentos.id AND t.tipo = \'follow-up\') AS feitos FROM orcamentos WHERE id = $1', [id]);
   if (!o) throw new ErroNegocio('Orçamento não encontrado.', 404);
   if (o.status !== 'aberto') throw new ErroNegocio('Este orçamento já foi encerrado.');
-  const dias = adiar_dias == null || adiar_dias === '' ? PRAZO_FOLLOWUP : Number(adiar_dias);
-  if (!Number.isInteger(dias) || dias < 1 || dias > 60) throw new ErroNegocio('O novo prazo deve ser de 1 a 60 dias.');
+  if (canal && !CANAIS_CONTATO[canal]) throw new ErroNegocio('Canal de contato inválido.');
+  if (resultado && !RESULTADOS_CONTATO[resultado]) throw new ErroNegocio('Resultado do contato inválido.');
+  let adiar = adiar_dias == null || adiar_dias === '' ? null : Number(adiar_dias);
+  if (adiar != null && (!Number.isInteger(adiar) || adiar < 1 || adiar > 60)) throw new ErroNegocio('O novo prazo deve ser de 1 a 60 dias.');
+  if (resultado === 'pediu_prazo' && adiar == null) adiar = 7; // pediu mais prazo: volta em uma semana, se ninguém escolher outro
+  const proximo = proximoAviso(o.data, o.feitos + 1, resultado, adiar);
   await tx(async () => {
-    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota) VALUES ($1,$2,$3,'follow-up',$4)`, [id, o.cliente_id, usuario?.id ?? null, txt(nota)]);
-    await query('UPDATE orcamentos SET followup_em = $2 WHERE id = $1', [id, addDias(hoje(), dias)]);
+    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota, canal, resultado) VALUES ($1,$2,$3,'follow-up',$4,$5,$6)`, [id, o.cliente_id, usuario?.id ?? null, txt(nota), canal || null, resultado || null]);
+    await query('UPDATE orcamentos SET followup_em = $2 WHERE id = $1', [id, proximo]);
   });
   return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
 }
+
+// Cadência concluída: já teve todos os toques e continua sem resposta; falta decidir (encerrar como sem retorno ou retomar)
+export const cadenciaConcluida = () => query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em IS NULL ORDER BY o.data, o.id`);
 
 // Só adia o aviso, sem registrar contato
 export async function adiar(id, dias) {
@@ -336,13 +369,15 @@ export async function dadosParaRelatorio(mes) {
 // Painel comercial: resumo de tudo o que o time precisa no dia a dia (retornos, orçamentos, clientes)
 export async function painelComercial() {
   const h = hoje(), mes = h.slice(0, 7);
-  const [hojeP, mesP, abertos, retornos, proximos, deHoje, aniv] = await Promise.all([
+  const [hojeP, mesP, abertos, retornos, proximos, deHoje, aniv, concluidos, aprovados] = await Promise.all([
     periodo(h, h), periodo(`${mes}-01`, h),
     one(`SELECT count(*)::int AS qtd, coalesce(sum(valor),0)::bigint AS valor FROM orcamentos WHERE status='aberto'`),
     followupsPendentes(),
     query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em > $1 AND o.followup_em <= $2 ORDER BY o.followup_em, o.id LIMIT 15`, [h, addDias(h, 7)]),
     query(`${BASE_ORC} WHERE o.data = $1 ORDER BY o.id DESC LIMIT 15`, [h]),
     query(`SELECT id, nome, telefone, aniversario, to_char(aniversario, 'MM-DD') AS mmdd FROM clientes WHERE aniversario IS NOT NULL ORDER BY mmdd`),
+    cadenciaConcluida(),
+    query(`${BASE_ORC} WHERE o.status = 'ganho' ORDER BY o.fechado_em DESC, o.id DESC LIMIT 8`),
   ]);
   // aniversários dos clientes nos próximos 30 dias (vira o ano se preciso)
   const anoAtual = h.slice(0, 4);
@@ -354,6 +389,6 @@ export async function painelComercial() {
   }).filter((c) => c.data <= addDias(h, 30)).sort((a, b) => a.data.localeCompare(b.data)).slice(0, 8);
   return {
     atualizado_em: new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }), hoje: h, mes,
-    dia: hojeP, mes_atual: mesP, em_aberto: abertos, retornos, proximos_retornos: proximos, orcamentos_hoje: deHoje, aniversarios,
+    dia: hojeP, mes_atual: mesP, em_aberto: abertos, retornos, cadencia_concluida: concluidos, aprovados_recentes: aprovados, cadencia: CADENCIA_FOLLOWUP, proximos_retornos: proximos, orcamentos_hoje: deHoje, aniversarios,
   };
 }

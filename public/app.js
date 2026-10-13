@@ -24,6 +24,7 @@ Object.assign(ICONES, {
   zap: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   comercial: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  cobranca: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   dp: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
@@ -177,10 +178,10 @@ async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state
 document.getElementById('sair').onclick = sair;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, fluxo, cadastros, roadmap };
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
-  ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio']]],
+  ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio'], ['cobranca', 'Orçamentos Aprovados']]],
   ['Comercial', [['comercial', 'Painel'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Marketing', [['marketing', 'Painel']]],
   ['Sociedade', [['societario', 'Quadro Societário']]],
@@ -207,6 +208,7 @@ async function rota() {
   desenharTema();
   document.getElementById('quem').innerHTML = `<a href="#perfil" class="quem quem-link" title="Abrir meu perfil: foto e senha">${avatar(state.usuario, 40)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></a>`;
   renderMenu();
+  atualizarBadgeCobranca();
   if (!state.fuIniciado) { state.fuIniciado = true; iniciarFollowups(); } else if (state.followups) atualizarBadge(state.followups.length);
   const permitidas = rotasPermitidas();
   let nome = location.hash.slice(1) || permitidas[0] || 'painel';
@@ -785,12 +787,29 @@ function roadmap() {
 const ORIGENS_ROT = { instagram: 'Instagram', facebook: 'Facebook', google_anuncio: 'Google (anúncio)', google_busca: 'Google (busca)', tiktok: 'TikTok', youtube: 'YouTube', whatsapp: 'WhatsApp direto', site: 'Site', indicacao: 'Indicação', cliente_antigo: 'Cliente antigo', anuncio_rua: 'Anúncio na rua / outdoor', feira: 'Feira ou evento', outro: 'Outro' };
 const STATUS_ORC = { aberto: 'Em aberto', ganho: 'Ganho', perdido: 'Perdido', cancelado: 'Cancelado' };
 const TAG_ORC = { aberto: '', ganho: 'ok', perdido: 'ruim', cancelado: 'aviso' };
+const COBR_ROT = { a_cobrar: 'Financeiro vai cobrar', em_cobranca: 'Em cobrança no financeiro', pago: 'Pago' };
+const tagCobranca = (o) => COBR_ROT[o.cobranca_status] || '';
 const tagOrc = (s) => `<span class="tag ${TAG_ORC[s]}">${STATUS_ORC[s]}</span>`;
 const brlInput = (c) => (c / 100).toFixed(2).replace('.', ',');
 const hojeISO = () => state.meta?.hoje || new Date().toLocaleDateString('sv-SE');
 const zap = (tel) => { const d = String(tel || '').replace(/\D/g, ''); return d.length >= 10 ? `https://wa.me/${d.startsWith('55') ? d : '55' + d}` : null; };
 const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0];
-const msgOrc = (o) => `Olá, ${primeiroNome(o.cliente_nome)}! Aqui é da OnTrade. Estou passando para saber se você conseguiu avaliar o orçamento de ${o.produto} (${brl(o.valor)}). Posso ajudar em algo?`;
+// Régua de follow-up (padrão de mercado): 3, 7, 14 e 21 dias após o orçamento. Cada toque tem um objetivo e uma mensagem
+const ETAPAS_FU = [
+  { dia: 3, objetivo: 'Confirmar que recebeu e tirar dúvidas', canal: 'WhatsApp' },
+  { dia: 7, objetivo: 'Agregar valor: condições, prazo e exemplos', canal: 'Ligação' },
+  { dia: 14, objetivo: 'Criar urgência saudável: validade e disponibilidade', canal: 'E-mail ou WhatsApp' },
+  { dia: 21, objetivo: 'Último contato: encerrar com educação', canal: 'WhatsApp' },
+];
+const msgOrc = (o) => {
+  const n = primeiroNome(o.cliente_nome), item = `${o.produto} (${brl(o.valor)})`, e = Math.min(o.qtd_contatos || 0, 3);
+  return [
+    `Olá, ${n}! Aqui é da OnTrade. Conseguiu receber o orçamento de ${item}? Posso tirar alguma dúvida?`,
+    `Olá, ${n}! Passando para ajudar na sua decisão sobre o orçamento de ${item}. Posso detalhar condições de pagamento e prazo de entrega?`,
+    `Olá, ${n}! O orçamento de ${item} tem prazo de validade e a agenda de produção está se fechando. Quer que eu reserve para você?`,
+    `Olá, ${n}! Para não te incomodar, vou encerrar por aqui o orçamento de ${item}. Se ainda fizer sentido, é só me chamar.`,
+  ][e];
+};
 // Botão que abre a conversa do WhatsApp direto com o cliente (já com uma mensagem pronta, que dá para editar)
 const botaoZap = (tel, texto, rot = 'WhatsApp') => { const u = zap(tel); return u ? `<a class="mini sec zap" href="${u}?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener" title="Abrir conversa no WhatsApp">${ico('zap')} ${rot}</a>` : ''; };
 const contatoCli = (o) => [o.cliente_telefone && (zap(o.cliente_telefone) ? `<a href="${zap(o.cliente_telefone)}" target="_blank" rel="noopener">${esc(o.cliente_telefone)}</a>` : esc(o.cliente_telefone)), o.cliente_email && esc(o.cliente_email)].filter(Boolean).join(' · ') || '<span class="mut">sem contato</span>';
@@ -798,12 +817,16 @@ const variacao = (atual, ant) => (ant > 0 ? `<small class="${cls(atual - ant)}">
 
 // ---- contato / encerramento (usados na lista e no pop-up) ----
 function janelaContato(o, depois) {
+  const et = Math.min(o.qtd_contatos || 0, 3), E = ETAPAS_FU[et];
   const m = modal(`<h2>Registrar contato</h2>
     <p class="legenda">${esc(o.cliente_nome)} · ${esc(o.produto)} · ${brl(o.valor)}<br>${contatoCli(o)}</p>
+    <p class="legenda" style="margin-top:8px"><b>Follow-up ${et + 1} de ${ETAPAS_FU.length}</b> · ${esc(E.objetivo)}<br>Canal sugerido: ${esc(E.canal)}</p>
     ${zap(o.cliente_telefone) ? `<p style="margin:10px 0 0">${botaoZap(o.cliente_telefone, msgOrc(o), 'Chamar no WhatsApp')}</p>` : ''}
     <form class="form" id="fc" style="margin-top:14px">
+      <div><label>Canal usado</label><select name="canal"><option value="">Não informar</option><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option></select></div>
+      <div><label>Resultado</label><select name="resultado"><option value="">Não informar</option><option value="sem_resposta">Sem resposta</option><option value="respondeu">Respondeu</option><option value="interessado">Interessado</option><option value="pediu_prazo">Pediu mais prazo</option></select></div>
       <div class="cheio"><label>O que foi conversado</label><textarea name="nota" rows="3" placeholder="Ex.: pediu mais prazo; vai falar com o sócio"></textarea></div>
-      <div><label>Avisar de novo em (dias)</label><input name="adiar_dias" type="number" min="1" max="60" value="3"></div></form>
+      <div><label>Avisar de novo em (dias)</label><input name="adiar_dias" type="number" min="1" max="60" placeholder="Automático pela régua"></div></form>
     <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar contato</button></div>`);
   m.el.querySelector('#x').onclick = m.fechar;
   m.el.querySelector('#ok').onclick = () => acao(async () => {
@@ -1063,8 +1086,8 @@ async function orcamentos() {
     <div class="card">${lista.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th class="n">Valor</th><th>Situação</th><th>Próximo aviso</th><th>Lançado por</th><th></th></tr></thead><tbody>
       ${lista.map((o) => `<tr><td>${dataBR(o.data)}</td><td><b>${esc(o.cliente_nome)}</b> ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : ''}<br><small>${contatoCli(o)}</small></td>
         <td>${esc(o.produto)}${o.numero ? `<br><small class="mut">nº ${esc(o.numero)}</small>` : ''}<br><small class="mut">${esc(o.origem ? (o.origem === 'outro' ? o.origem_detalhe : ORIGENS_ROT[o.origem]) : 'origem não informada')}${o.campanha_nome ? ' · ' + esc(o.campanha_nome) : ''}</small></td><td class="n">${brl(o.valor)}</td>
-        <td>${tagOrc(o.status)}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
-        <td>${o.status === 'aberto' ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span>${o.qtd_contatos ? `<br><small class="mut">${o.qtd_contatos} contato(s)</small>` : ''}` : '<span class="mut">—</span>'}</td>
+        <td>${tagOrc(o.status)}${o.status === 'ganho' && o.cobranca_status ? `<br><small class="mut">${tagCobranca(o)}</small>` : ''}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
+        <td>${o.status === 'aberto' ? (o.followup_em ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span><br><small class="mut">follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4</small>` : '<span class="neg">Cadência concluída</span><br><small class="mut">decidir: encerrar ou retomar</small>') : '<span class="mut">—</span>'}</td>
         <td><small>${esc(o.criado_por_nome || '—')}<br><span class="mut">${quandoLancou(o.criado_em)}</span></small></td>
         <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `${botaoZap(o.cliente_telefone, msgOrc(o), '')}<button class="mini" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
           <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
@@ -1158,6 +1181,7 @@ async function aovivo() {
       ${linhaP('Orçamentos', 'qtd')}${linhaP('Valor orçado', 'valor', brl)}${linhaP('Valor vendido', 'valor_ganho', brl)}${linhaP('Clientes novos', 'clientes_novos')}
       </tbody></table></div><p class="legenda" style="margin-top:8px">O percentual compara a coluna anterior com o período atual (verde: acima; vermelho: abaixo).</p></div>
     <div class="card"><h2>Últimos 12 meses</h2>${graficoSerie(d.serie)}</div>
+    <div class="card"><h2>Aprovados Recentemente</h2><p class="legenda">Venda fechada. A cobrança é feita pelo financeiro; o comercial só acompanha.</p>${d.aprovados_recentes?.length ? `<div class="tbl"><table><tbody>${d.aprovados_recentes.map((o) => `<tr><td>${esc(o.cliente_nome)}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td><span class="tag ${o.cobranca_status === 'pago' ? 'ok' : 'aviso'}">${tagCobranca(o) || 'Aprovado'}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento aprovado ainda.</p>'}</div>
     <div class="card"><h2>Orçamentos de hoje</h2>${d.recentes.length ? `<div class="tbl"><table><tbody>${d.recentes.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td><td class="mut">${esc(o.criado_por_nome || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
   document.getElementById('att').onclick = () => aovivo();
   document.getElementById('tv').onclick = () => { document.body.classList.toggle('modo-tv'); document.documentElement.requestFullscreen?.().catch(() => {}); };
@@ -1293,7 +1317,7 @@ async function comercial() {
   const m = d.mes_atual, h = d.dia;
   const conv = m.qtd ? Math.round((m.qtd_ganho / m.qtd) * 100) + '%' : '—';
   const linhaOrc = (o, acoes) => `<div class="fu-item" data-id="${o.id}"><div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
-    <small class="mut">Orçamento de ${dataBR(o.data)} · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
+    <small class="mut">Orçamento de ${dataBR(o.data)} · follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4 · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}</small><br><small>${contatoCli(o)}</small></div>
     ${acoes ? `<div class="fu-acoes">${botaoZap(o.cliente_telefone, msgOrc(o))}<button class="mini" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>` : ''}</div>`;
   $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)}</p></div>
       <div class="row" style="margin:0"><button id="novo">Novo orçamento</button>${temArea('aovivo') ? '<a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a>' : ''}</div></div>
@@ -1305,6 +1329,7 @@ async function comercial() {
       <div class="card kpi"><div class="l">Em aberto</div><div class="v">${brl(d.em_aberto.valor)}</div><small class="mut">${d.em_aberto.qtd} orçamento(s)</small></div>
     </div>
     <div class="card"><h2>Retornos pendentes</h2>${d.retornos.length ? `<div class="fu-lista" style="max-height:none">${d.retornos.map((o) => linhaOrc(o, true)).join('')}</div>` : '<p class="mut">Nenhum retorno pendente. Tudo em dia.</p>'}</div>
+    ${d.cadencia_concluida?.length ? `<div class="card"><h2>Cadência Concluída</h2><p class="legenda">Já tiveram os 4 follow-ups e seguem sem resposta. Decida: encerrar como perdido ou retomar o contato.</p><div class="fu-lista" style="max-height:none">${d.cadencia_concluida.map((o) => `<div class="fu-item" data-cc="${o.id}"><div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br><small class="mut">Orçamento de ${dataBR(o.data)} · ${o.qtd_contatos} contato(s)</small></div><div class="fu-acoes"><button class="mini" data-a="retomar">Retomar</button><button class="mini sec" data-a="encerrar">Encerrar</button></div></div>`).join('')}</div></div>` : ''}
     <div class="grid2">
       <div class="card"><h2>Próximos retornos (7 dias)</h2>${d.proximos_retornos.length ? d.proximos_retornos.map((o) => `<p style="margin:7px 0;font-size:13.5px"><b>${dataBR(o.followup_em).slice(0, 5)}</b> · ${esc(o.cliente_nome)} <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span></p>`).join('') : '<p class="mut">Nada agendado para os próximos dias.</p>'}</div>
       <div class="card"><h2>Aniversários de clientes (30 dias)</h2>${d.aniversarios.length ? d.aniversarios.map((c) => `<p style="margin:7px 0;font-size:13.5px"><b>${dataBR(c.data).slice(0, 5)}</b> · ${esc(c.nome)} <span class="mut">${esc(c.telefone || '')}</span></p>`).join('') : '<p class="mut">Nenhum aniversário nos próximos 30 dias.</p>'}</div>
@@ -1312,11 +1337,113 @@ async function comercial() {
     <div class="card"><h2>Orçamentos de hoje</h2>${d.orcamentos_hoje.length ? `<div class="tbl"><table><tbody>${d.orcamentos_hoje.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
   const recarrega = async () => { await comercial(); verificarFollowups(); };
   document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
-  $app.querySelectorAll('.fu-item').forEach((el) => {
+  $app.querySelectorAll('[data-cc]').forEach((el) => {
+    const o = d.cadencia_concluida.find((x) => x.id === +el.dataset.cc);
+    el.querySelector('[data-a=retomar]').onclick = () => acao(async () => { await api(`/api/comercial/orcamentos/${o.id}/adiar`, { method: 'POST', body: { dias: 7 } }); await recarrega(); }, 'Orçamento retomado: novo aviso em 7 dias');
+    el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
+  });
+  $app.querySelectorAll('.fu-item[data-id]').forEach((el) => {
     const o = d.retornos.find((x) => x.id === +el.dataset.id); if (!o) return;
     el.querySelector('[data-a=contato]').onclick = () => janelaContato(o, recarrega);
     el.querySelector('[data-a=encerrar]').onclick = () => janelaEncerrar(o, recarrega);
   });
+}
+
+// =====================================================================
+// COBRANÇA: orçamentos aprovados (ganhos) que o financeiro precisa receber
+// =====================================================================
+const RESULT_COBR = { sem_resposta: 'Não respondeu', combinou_data: 'Combinou data de pagamento', enviou_comprovante: 'Enviou comprovante', dificuldade: 'Pediu condição / dificuldade' };
+const ETAPAS_COBR = ['Enviar dados de pagamento e confirmar o recebimento', 'Lembrar com cordialidade e oferecer ajuda', 'Reforçar o prazo combinado e perguntar o que trava', 'Última tentativa antes de levar à gestão'];
+const msgCobr = (o) => {
+  const n = primeiroNome(o.cliente_nome), v = brl(o.saldo), e = Math.min(o.qtd_cobrancas || 0, 3);
+  return [
+    `Olá, ${n}! Aqui é do financeiro da OnTrade. Obrigado por aprovar o orçamento ${o.numero || ''} de ${o.produto}. Segue o valor de ${v} e os dados para pagamento. Qualquer dúvida, estou à disposição.`,
+    `Olá, ${n}! Tudo bem? Passando para lembrar do pagamento de ${v} referente ao orçamento ${o.numero || ''}. Posso ajudar com algo?`,
+    `Olá, ${n}! Ainda não identificamos o pagamento de ${v} do orçamento ${o.numero || ''}. Há algo que esteja dificultando? Podemos combinar a melhor data.`,
+    `Olá, ${n}! Precisamos regularizar o pagamento de ${v} do orçamento ${o.numero || ''} para manter a produção. Consegue confirmar a data de hoje?`,
+  ][e];
+};
+const tagSitCobr = (o) => o.cobranca_status === 'pago' ? '<span class="tag ok">Pago</span>' : o.escalar ? '<span class="tag ruim">Levar à gestão</span>' : o.atrasado || o.vencido ? '<span class="tag ruim">Atrasado</span>' : `<span class="tag aviso">${o.cobranca_status === 'em_cobranca' ? 'Em cobrança' : 'A cobrar'}</span>`;
+async function cobranca() {
+  const f = state.filtroCobr || (state.filtroCobr = 'abertos');
+  const d = await api('/api/cobranca?situacao=' + f);
+  const r = d.resumo;
+  $app.innerHTML = `<h1>Orçamentos Aprovados</h1><p class="sub">Vendas fechadas pelo comercial. O financeiro cobra e registra o recebimento; o dinheiro que entra vira lançamento no caixa.</p>
+    <div class="grid">
+      <div class="card kpi"><div class="l">A receber</div><div class="v">${brl(r.a_receber)}</div><small class="mut">${r.abertos} orçamento(s)</small></div>
+      <div class="card kpi"><div class="l">Cobrar hoje</div><div class="v ${r.para_hoje ? 'neg' : ''}">${r.para_hoje}</div><small class="mut">contatos pendentes ou atrasados</small></div>
+      <div class="card kpi"><div class="l">Recebido no mês</div><div class="v pos">${brl(r.recebido_mes)}</div><small class="mut">${r.pagos} orçamento(s) quitado(s)</small></div>
+    </div>
+    <div class="row"><div><label>Mostrar</label><select id="fs"><option value="abertos" ${f === 'abertos' ? 'selected' : ''}>Em aberto</option><option value="pagos" ${f === 'pagos' ? 'selected' : ''}>Pagos</option><option value="todos" ${f === 'todos' ? 'selected' : ''}>Todos</option></select></div></div>
+    <div class="card">${d.lista.length ? `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Orçamento</th><th class="n">Valor</th><th class="n">Recebido</th><th class="n">Saldo</th><th>Situação</th><th>Próxima cobrança</th><th></th></tr></thead><tbody>
+      ${d.lista.map((o) => `<tr><td><b>${esc(o.cliente_nome)}</b><br><small>${contatoCli(o)}</small></td>
+        <td>${esc(o.produto)}<br><small class="mut">nº ${esc(o.numero || '—')} · vendedor ${esc(o.vendedor_nome || '—')}</small></td>
+        <td class="n">${brl(o.valor)}</td><td class="n">${brl(o.recebido)}</td><td class="n">${brl(o.saldo)}</td>
+        <td>${tagSitCobr(o)}${o.cobranca_vencimento ? `<br><small class="mut">vence ${dataBR(o.cobranca_vencimento)}</small>` : ''}</td>
+        <td>${o.cobranca_status === 'pago' ? '<span class="mut">—</span>' : o.cobranca_followup_em ? `<span class="${o.vence_hoje_ou_antes ? 'neg' : ''}">${dataBR(o.cobranca_followup_em)}</span><br><small class="mut">toque ${Math.min(o.qtd_cobrancas + 1, 4)} de 4</small>` : '<span class="neg">Sem aviso</span>'}</td>
+        <td class="n" style="white-space:nowrap">${o.cobranca_status === 'pago' ? `<button class="mini sec" data-h="${o.id}">Histórico</button>` : `${botaoZap(o.cliente_telefone, msgCobr(o), '')}<button class="mini" data-c="${o.id}">Cobrança</button> <button class="mini" data-p="${o.id}">Recebido</button> <button class="mini sec" data-h="${o.id}">Histórico</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento aprovado nesta lista.</p>'}</div>`;
+  const recarrega = async () => { await cobranca(); atualizarBadgeCobranca(); };
+  document.getElementById('fs').onchange = (e) => { state.filtroCobr = e.target.value; cobranca(); };
+  const achar = (id) => d.lista.find((o) => o.id === +id);
+  $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaCobranca(achar(b.dataset.c), recarrega)));
+  $app.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => janelaRecebimento(achar(b.dataset.p), recarrega)));
+  $app.querySelectorAll('[data-h]').forEach((b) => (b.onclick = () => janelaHistoricoCobranca(achar(b.dataset.h))));
+}
+function janelaCobranca(o, depois) {
+  const et = Math.min(o.qtd_cobrancas || 0, 3);
+  const m = modal(`<h2>Registrar Cobrança</h2>
+    <p class="legenda">${esc(o.cliente_nome)} · ${esc(o.produto)} · saldo ${brl(o.saldo)}<br>${contatoCli(o)}</p>
+    <p class="legenda" style="margin-top:8px"><b>Toque ${et + 1} de 4</b> · ${esc(ETAPAS_COBR[et])}${o.escalar ? '<br><b class="neg">Régua esgotada: leve o caso à gestão.</b>' : ''}</p>
+    ${zap(o.cliente_telefone) ? `<p style="margin:10px 0 0">${botaoZap(o.cliente_telefone, msgCobr(o), 'Chamar no WhatsApp')}</p>` : ''}
+    <form class="form" id="fc" style="margin-top:14px">
+      <div><label>Canal usado</label><select name="canal"><option value="">Não informar</option><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option></select></div>
+      <div><label>Resultado</label><select name="resultado"><option value="">Não informar</option>${Object.entries(RESULT_COBR).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div id="dv" hidden><label>Data combinada para pagar *</label><input name="vencimento" type="date"></div>
+      <div class="cheio"><label>O que foi conversado</label><textarea name="nota" rows="3"></textarea></div></form>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`);
+  const sel = m.el.querySelector('[name=resultado]'), dv = m.el.querySelector('#dv');
+  sel.onchange = () => { dv.hidden = sel.value !== 'combinou_data'; };
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => acao(async () => {
+    await api(`/api/cobranca/${o.id}/contato`, { method: 'POST', body: Object.fromEntries(new FormData(m.el.querySelector('#fc'))) });
+    m.fechar(); await depois();
+  }, 'Cobrança registrada');
+}
+function janelaRecebimento(o, depois) {
+  const contas = state.meta.contas.filter((c) => c.ativo);
+  const m = modal(`<h2>Registrar Recebimento</h2>
+    <p class="legenda">${esc(o.cliente_nome)} · orçamento ${esc(o.numero || '')} · falta receber ${brl(o.saldo)}</p>
+    <form class="form" id="fr" style="margin-top:14px">
+      <div><label>Valor recebido (R$) *</label><input name="valor" value="${brlInput(o.saldo)}" inputmode="decimal" required></div>
+      <div><label>Data *</label><input name="data" type="date" value="${hojeISO()}" max="${hojeISO()}" required></div>
+      <div class="cheio"><label>Conta onde entrou *</label><select name="conta_id" required><option value="">Escolha a conta</option>${contas.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+      <div class="cheio"><label>Observação</label><input name="obs"></div></form>
+    <p class="legenda">O valor entra no caixa como Recebimento de cliente, na data e conta escolhidas.</p>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Confirmar</button></div>`);
+  m.el.querySelector('#x').onclick = m.fechar;
+  m.el.querySelector('#ok').onclick = () => {
+    const v = Object.fromEntries(new FormData(m.el.querySelector('#fr'))); const valor = paraCentavos(v.valor);
+    if (!(valor > 0)) return toast('Valor inválido', true);
+    if (!v.conta_id) return toast('Escolha a conta', true);
+    acao(async () => { await api(`/api/cobranca/${o.id}/pagamento`, { method: 'POST', body: { ...v, valor } }); m.fechar(); await depois(); }, 'Recebimento registrado');
+  };
+}
+async function janelaHistoricoCobranca(o) {
+  const d = await api(`/api/cobranca/${o.id}`);
+  const m = modal(`<h2>Histórico de Cobrança</h2><p class="legenda">${esc(d.cliente_nome)} · orçamento ${esc(d.numero || '')} · ${brl(d.valor)}</p>
+    <h3 style="margin:14px 0 6px">Pagamentos</h3>${d.pagamentos.length ? d.pagamentos.map((p) => `<p style="margin:5px 0;font-size:13.5px">${dataBR(p.data)} · <b class="pos">${brl(p.valor)}</b> <span class="mut">· ${esc(p.conta_nome || '—')} · ${esc(p.usuario_nome || '—')}</span></p>`).join('') : '<p class="mut">Nenhum pagamento ainda.</p>'}
+    <h3 style="margin:14px 0 6px">Contatos</h3>${d.contatos.length ? d.contatos.map((c) => `<p style="margin:5px 0;font-size:13.5px">${String(c.criado_em).slice(0, 10).split('-').reverse().join('/')} · ${esc(c.usuario_nome || '—')} <span class="mut">${c.canal ? '· ' + esc(c.canal) : ''} ${c.resultado ? '· ' + esc(RESULT_COBR[c.resultado] || c.resultado) : ''}</span>${c.nota ? `<br><small>${esc(c.nota)}</small>` : ''}</p>`).join('') : '<p class="mut">Nenhum contato registrado.</p>'}
+    <div class="modal-acoes"><span style="flex:1"></span><button id="x">Fechar</button></div>`, 520);
+  m.el.querySelector('#x').onclick = m.fechar;
+}
+async function atualizarBadgeCobranca() {
+  if (!temArea('cobranca')) return;
+  try {
+    const n = (await api('/api/cobranca/pendentes')).length;
+    const a = document.querySelector('#nav a[href="#cobranca"]'); if (!a) return;
+    a.querySelector('.badge')?.remove();
+    if (n > 0) a.insertAdjacentHTML('beforeend', `<span class="badge">${n}</span>`);
+  } catch {}
 }
 
 // =====================================================================

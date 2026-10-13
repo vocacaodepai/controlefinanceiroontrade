@@ -10,6 +10,7 @@ import * as X from './extratos.js';
 import * as P from './patrimonio.js';
 import * as SO from './societario.js';
 import * as CO from './comercial.js';
+import * as CB from './cobranca.js';
 import * as DP from './dp.js';
 import * as MK from './marketing.js';
 import { gerarPdf } from './relatorio.js';
@@ -152,6 +153,14 @@ app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json
 app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias))));
+// ---------- cobrança dos orçamentos aprovados (financeiro) ----------
+const cobr = A.exigirArea('cobranca');
+app.get('/api/cobranca', cobr, h(async (req, res) => res.json({ resumo: await CB.resumo(), lista: await CB.listar(req.query), cadencia: CB.CADENCIA_COBRANCA, resultados: CB.RESULTADOS_COBRANCA })));
+app.get('/api/cobranca/pendentes', cobr, h(async (_, res) => res.json(await CB.pendentes())));
+app.get('/api/cobranca/:id', cobr, h(async (req, res) => res.json(await CB.detalhe(idNum(req.params.id)))));
+app.post('/api/cobranca/:id/contato', cobr, h(async (req, res) => res.json(await CB.registrarContato(idNum(req.params.id), req.body, req.usuario))));
+app.post('/api/cobranca/:id/pagamento', cobr, h(async (req, res) => res.json(await CB.registrarPagamento(idNum(req.params.id), req.body, req.usuario))));
+
 app.get('/api/comercial/followups', trabCom, h(async (_, res) => res.json(await CO.followupsPendentes())));
 
 // ---------- Departamento de Pessoas (só administrador: dados pessoais e de saúde) ----------
