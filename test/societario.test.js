@@ -118,3 +118,17 @@ test('mês sem nenhum dado também gera o PDF', async () => {
   assert.ok(d.alertas.some((a) => /não foram informados/.test(a)));
   assert.equal(buf.subarray(0, 5).toString(), '%PDF-');
 });
+
+test('patrimônio: carro e "outro" (com o que é) entram nos totais; "outro" exige descrição do tipo', async () => {
+  const mes = '2031-04';
+  await assert.rejects(P.salvarItem(null, { mes, tipo: 'outro', descricao: 'Algo', valor: 100 }, null), /o que é/);
+  const c = await P.salvarItem(null, { mes, tipo: 'carro', descricao: 'Fiorino da empresa', valor: 5000000 }, null);
+  const o = await P.salvarItem(null, { mes, tipo: 'outro', tipo_outro: 'Máquina de corte', descricao: 'Máquina serra', valor: 3000000 }, null);
+  assert.equal(c.tipo, 'carro'); assert.equal(o.tipo_outro, 'Máquina de corte');
+  const pos = await P.posicao(mes);
+  assert.equal(pos.total_carro, 5000000); assert.equal(pos.total_outro, 3000000); assert.equal(pos.total, 8000000);
+  assert.equal(P.rotuloTipo(o), 'Outro: Máquina de corte');
+  const e = await P.salvarItem(c.id, { mes, tipo: 'carro', descricao: 'Fiorino', valor: 4000000 }, null);
+  assert.equal(e.tipo_outro, null);
+  await assert.rejects(P.salvarItem(null, { mes, tipo: 'moto', descricao: 'x', valor: 1 }, null), /Tipo inválido/);
+});
