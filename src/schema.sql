@@ -481,6 +481,9 @@ ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS campanha_id bigint REFERENCES ca
 CREATE INDEX IF NOT EXISTS idx_orc_campanha ON orcamentos (campanha_id);
 CREATE INDEX IF NOT EXISTS idx_orc_origem ON orcamentos (origem);
 
+-- 1 = o sistema ligou o orçamento à campanha sozinho (origem + campanha ativa no período)
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS campanha_auto integer NOT NULL DEFAULT 0;
+
 ALTER TABLE campanhas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campanha_dias ENABLE ROW LEVEL SECURITY;
 

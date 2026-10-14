@@ -29,6 +29,17 @@ export const ORIGENS = {
 };
 // Origens que podem estar ligadas a uma campanha paga cadastrada no Marketing
 export const CANAL_DA_ORIGEM = { instagram: 'instagram', facebook: 'facebook', google_anuncio: 'google', tiktok: 'tiktok', youtube: 'youtube', anuncio_rua: 'outdoor' };
+// Instagram e Facebook costumam rodar no mesmo gerenciador de anúncios (Meta): uma origem vale para campanha de qualquer um dos dois
+const FAMILIA_META = ['instagram', 'facebook'];
+export const ORIGENS_DO_CANAL = (canal) => Object.entries(CANAL_DA_ORIGEM).filter(([, c]) => c === canal || (FAMILIA_META.includes(canal) && FAMILIA_META.includes(c))).map(([o]) => o);
+// Campanha ativa que cobre a data do orçamento para esta origem. Se houver mais de uma, vale a do mesmo canal e, depois, a mais recente.
+export async function campanhaParaOrigem(origem, data) {
+  const canal = CANAL_DA_ORIGEM[origem];
+  if (!canal) return null;
+  const canais = FAMILIA_META.includes(canal) ? FAMILIA_META : [canal];
+  return one(`SELECT id, nome, canal FROM campanhas WHERE ativa = 1 AND canal = ANY($1) AND data_inicio <= $2 AND (data_fim IS NULL OR data_fim >= $2)
+    ORDER BY (canal = $3) DESC, data_inicio DESC, id DESC LIMIT 1`, [canais, data, canal]);
+}
 // Checklists de conferência: o formulário só envia depois que a pessoa marca todos os itens (o servidor confere de novo)
 export const CHECKLIST_ORCAMENTO = {
   cliente: 'Conferi o nome do cliente, o telefone com DDD e o e-mail',
@@ -179,20 +190,24 @@ export async function criarOrcamento(b, usuario) {
       if (!b.cliente) throw new ErroNegocio('Escolha um cliente já cadastrado ou preencha a ficha de um novo.');
       cli = await salvarCliente(null, b.cliente, usuario);
     }
-    let campanhaId = null;
+    let campanhaId = null, campanhaAuto = 0;
     if (b.campanha_id) {
       const c = await one('SELECT id FROM campanhas WHERE id = $1', [Number(b.campanha_id)]);
       if (!c) throw new ErroNegocio('Campanha não encontrada.', 404);
       campanhaId = c.id;
+    } else if (ORIGENS[b.origem]) {
+      // veio de anúncio (Instagram, Facebook, Google...) e há campanha ativa no período: liga sozinho
+      const auto = await campanhaParaOrigem(b.origem, data);
+      if (auto) { campanhaId = auto.id; campanhaAuto = 1; }
     }
     // novo = primeiro orçamento deste cliente; recorrente = já tinha orçamento antes
     const antes = await one('SELECT count(*)::int AS n FROM orcamentos WHERE cliente_id = $1', [cli.id]);
     const produtoId = b.produto_id ? Number(b.produto_id) : await produtoPorNome(b.produto_nome);
     if (!produtoId && !txt(b.produto_desc)) throw new ErroNegocio('Informe o tipo de produto (ex.: Painel P3.9).');
-    const r = await one(`INSERT INTO orcamentos (numero,cliente_id,produto_id,produto_desc,valor,cliente_tipo,data,followup_em,obs,criado_por_id,origem,origem_detalhe,campanha_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+    const r = await one(`INSERT INTO orcamentos (numero,cliente_id,produto_id,produto_desc,valor,cliente_tipo,data,followup_em,obs,criado_por_id,origem,origem_detalhe,campanha_id,campanha_auto)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
       [numero, cli.id, produtoId, txt(b.produto_desc), valor, antes.n > 0 ? 'recorrente' : 'novo', data, addDias(data, PRAZO_FOLLOWUP), txt(b.obs), usuario?.id ?? null,
-        b.origem, b.origem === 'outro' ? txt(b.origem_detalhe) : null, campanhaId]);
+        b.origem, b.origem === 'outro' ? txt(b.origem_detalhe) : null, campanhaId, campanhaAuto]);
     if (!cli.origem) await query('UPDATE clientes SET origem = $1 WHERE id = $2', [b.origem, cli.id]); // como o cliente chegou até nós
     return one(`${BASE_ORC} WHERE o.id = $1`, [r.id]);
   });
@@ -200,7 +215,7 @@ export async function criarOrcamento(b, usuario) {
 
 // Tudo o que o formulário de orçamento precisa: produtos, origens e campanhas ativas (para ligar o orçamento ao anúncio)
 export async function opcoes() {
-  const camp = await query(`SELECT id, nome, canal FROM campanhas WHERE ativa = 1 ORDER BY data_inicio DESC`);
+  const camp = await query(`SELECT id, nome, canal, data_inicio, data_fim FROM campanhas WHERE ativa = 1 ORDER BY data_inicio DESC`);
   return { proximo_numero: await proximoNumero(), produtos: await produtos(), origens: ORIGENS, canal_da_origem: CANAL_DA_ORIGEM, campanhas: camp, cadencia: CADENCIA_FOLLOWUP, canais_contato: CANAIS_CONTATO, resultados_contato: RESULTADOS_CONTATO, checklist_orcamento: CHECKLIST_ORCAMENTO, checklist_cliente: CHECKLIST_CLIENTE };
 }
 

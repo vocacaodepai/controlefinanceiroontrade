@@ -1028,7 +1028,7 @@ async function novoOrcamentoForm(depois, clientePre) {
         <div><label>Nº do orçamento ${ast}</label><input name="numero" value="${esc(op.proximo_numero)}" readonly class="numero-auto" title="Gerado automaticamente"><small class="mut">gerado automaticamente</small></div>
         ${seletorObr('De onde veio este orçamento?', 'origem', `<option value="">Selecione</option>${Object.entries(op.origens).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}`, 'class="larg"')}
         <div id="origem-outro" hidden class="larg"><label>Qual origem? ${ast}</label><input name="origem_detalhe" data-obrig="text" placeholder="Ex.: panfleto no shopping"></div>
-        <div id="camp" hidden class="larg"><label>Veio de qual campanha de anúncio? (se souber)</label><select name="campanha_id"></select></div>
+        <div id="camp" hidden class="larg"><label>Campanha de anúncio (o sistema liga sozinho à campanha ativa do canal)</label><select name="campanha_id"></select></div>
         <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></div>
       <p class="legenda" style="margin-top:10px">O sistema vai avisar para retomar o contato <b>3 dias</b> depois de hoje.</p>
       <div class="modal-acoes"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Registrar orçamento</button></div></form>`, 640);
@@ -1060,9 +1060,13 @@ async function novoOrcamentoForm(depois, clientePre) {
   orig.onchange = () => {
     m.el.querySelector('#origem-outro').hidden = orig.value !== 'outro';
     const canal = op.canal_da_origem[orig.value];
-    const lista = canal ? op.campanhas.filter((c) => c.canal === canal) : [];
-    m.el.querySelector('#camp').hidden = !lista.length;
-    camp.innerHTML = `<option value="">Não sei / nenhuma</option>${lista.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}`;
+    // Instagram e Facebook rodam juntos no gerenciador da Meta; vale campanha ativa de qualquer um dos dois
+    const meta = ['instagram', 'facebook'];
+    const hojeF = hojeISO();
+    const lista = canal ? op.campanhas.filter((c) => (meta.includes(canal) ? meta.includes(c.canal) : c.canal === canal) && c.data_inicio <= hojeF && (!c.data_fim || c.data_fim >= hojeF)) : [];
+    const auto = [...lista].sort((a, b) => (b.canal === canal) - (a.canal === canal) || (a.data_inicio < b.data_inicio ? 1 : -1))[0];
+    m.el.querySelector('#camp').hidden = !canal;
+    camp.innerHTML = `<option value="">${auto ? `Automática: ${esc(auto.nome)}` : 'Nenhuma campanha ativa para este canal'}</option>${lista.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}`;
   };
   m.el.querySelector('#x').onclick = m.fechar;
   f.onsubmit = (e) => {
@@ -1672,12 +1676,12 @@ async function marketing() {
       <div class="card kpi"><div class="l">Investido em anúncios</div><div class="v">${brl(a.gasto)}</div><small class="mut">mês anterior ${brl(p.gasto)} ${comp(a.gasto, p.gasto)}</small></div>
       <div class="card kpi"><div class="l">Leads gerados</div><div class="v">${num(a.leads)}</div><small class="mut">custo por lead ${brlOu(a.cpl)} · mês anterior ${num(p.leads)} ${comp(a.leads, p.leads)}</small></div>
       <div class="card kpi"><div class="l">Orçamentos vindos de campanhas</div><div class="v">${num(a.orcamentos)}</div><small class="mut">de ${num(a.orcamentos_todos)} no mês · custo por orçamento ${brlOu(a.custo_orcamento)}</small></div>
-      <div class="card kpi"><div class="l">Vendido pelas campanhas</div><div class="v">${brl(a.valor_vendido)}</div><small class="mut">${a.vendas} venda(s) · retorno ${xOu(a.roas)} sobre o investido</small></div>
+      <div class="card kpi"><div class="l">Vendido pelas campanhas</div><div class="v">${brl(a.valor_vendido)}</div><small class="mut">${a.vendas} venda(s) · retorno ${xOu(a.roas)} sobre o investido · já recebido ${brl(a.valor_recebido)}</small></div>
     </div>
     <div class="card"><h2>Campanhas em ${nomeMes(d.mes)}</h2>${d.por_campanha.length ? `<div class="tbl"><table><thead><tr><th>Campanha</th><th>Início</th><th class="n">Investido</th><th class="n">Leads</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Custo/orçam.</th><th class="n">Vendido</th><th class="n">Retorno</th></tr></thead><tbody>
-      ${d.por_campanha.map((c) => `<tr><td><b>${esc(c.nome)}</b> ${c.ativa ? '' : '<span class="tag">encerrada</span>'}<br><small class="mut">${esc(CANAIS_MKT[c.canal])}${c.verba ? ` · verba ${brl(c.verba)} (usado ${brl(c.gasto_total)})` : ''}</small>${edita ? `<br><button class="mini sec" data-dias="${c.id}" style="margin-top:6px">Números</button> <button class="mini sec" data-edit="${c.id}" style="margin-top:6px">Editar</button>` : ''}</td>
+      ${d.por_campanha.map((c) => `<tr><td><b>${esc(c.nome)}</b> ${c.ativa ? '' : '<span class="tag">encerrada</span>'}<br><small class="mut">${esc(CANAIS_MKT[c.canal])}${c.verba ? ` · verba ${brl(c.verba)} (usado ${brl(c.gasto_total)})` : ''}</small><br><button class="mini" data-ret="${c.id}" style="margin-top:6px">Retorno</button>${edita ? ` <button class="mini sec" data-dias="${c.id}" style="margin-top:6px">Números</button> <button class="mini sec" data-edit="${c.id}" style="margin-top:6px">Editar</button>` : ''}</td>
         <td>${dataBR(c.data_inicio)}${c.data_fim ? `<br><small class="mut">até ${dataBR(c.data_fim)}</small>` : ''}</td><td class="n">${brl(c.gasto)}</td><td class="n">${num(c.leads)}</td><td class="n">${brlOu(c.cpl)}</td>
-        <td class="n">${c.orcamentos}<br><small class="mut">${brl(c.valor_orcado)}</small></td><td class="n">${brlOu(c.custo_orcamento)}</td><td class="n">${brl(c.valor_vendido)}<br><small class="mut">${c.vendas} venda(s)</small></td><td class="n">${xOu(c.roas)}</td></tr>`).join('')}</tbody></table></div>`
+        <td class="n">${c.orcamentos}<br><small class="mut">${brl(c.valor_orcado)}</small></td><td class="n">${brlOu(c.custo_orcamento)}</td><td class="n">${brl(c.valor_vendido)}<br><small class="mut">${c.vendas} venda(s) · recebido ${brl(c.valor_recebido)}</small></td><td class="n">${xOu(c.roas)}<br><small class="mut">${c.vendas ? `${brlOu(c.custo_venda)}/venda` : ''}</small></td></tr>`).join('')}</tbody></table></div>`
       : `<p class="mut">Nenhuma campanha neste mês.${edita ? ' Cadastre uma em "Nova campanha".' : ''}</p>`}</div>
     <div class="card"><h2>Semana a semana</h2>${d.semanas.length ? `<div class="tbl"><table><thead><tr><th>Semana</th><th class="n">Investido</th><th class="n">Cliques</th><th class="n">Leads</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Vendido</th></tr></thead><tbody>
       ${d.semanas.map((w) => `<tr><td>${dataBR(w.semana).slice(0, 5)} a ${dataBR(w.ate).slice(0, 5)}</td><td class="n">${brl(w.gasto)}</td><td class="n">${num(w.cliques)}</td><td class="n">${num(w.leads)}</td><td class="n">${w.leads ? brl(Math.round(w.gasto / w.leads)) : '—'}</td><td class="n">${w.orcamentos}</td><td class="n">${brl(w.valor_vendido)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Sem lançamentos nas semanas deste mês.</p>'}</div>
@@ -1685,12 +1689,32 @@ async function marketing() {
       ${d.por_origem.length ? d.por_origem.map((o) => `<div class="barra"><span class="nome" title="${esc(o.rotulo)}">${esc(o.rotulo)}</span><span class="trilho"><span class="fill" style="display:block;width:${(o.qtd / maxO) * 100}%"></span></span><span class="val">${o.qtd} orçam.</span><span class="val mut" style="width:150px">${brl(o.valor_vendido)} vendido</span></div>`).join('') : '<p class="mut">Nenhum orçamento no mês.</p>'}</div>
     <div class="card"><h2>Ligação com as plataformas de anúncio</h2><p class="legenda">Hoje: lançamento manual dos números de cada campanha (gasto, cliques, leads). Próxima etapa: conectar as contas de anúncios (Meta Ads e Google Ads) para esses números chegarem sozinhos. Isso depende de você autorizar o acesso às contas de anúncio; nenhuma senha passa pelo chat.</p></div>`;
   ligaMes(marketing);
+  $app.querySelectorAll('[data-ret]').forEach((b) => (b.onclick = () => janelaRetorno(+b.dataset.ret)));
   if (!edita) return;
   const recarrega = () => marketing();
   document.getElementById('nova-camp').onclick = () => janelaCampanha(null, recarrega);
   document.getElementById('lanc-dia').onclick = () => janelaDias(null, recarrega);
   $app.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => janelaCampanha(d.por_campanha.find((c) => c.id === +b.dataset.edit), recarrega)));
   $app.querySelectorAll('[data-dias]').forEach((b) => (b.onclick = () => janelaDias(+b.dataset.dias, recarrega)));
+}
+
+// Retorno da campanha desde o início: investido, orçamentos ligados, vendas e quanto já entrou no caixa
+async function janelaRetorno(id) {
+  const d = await api(`/api/marketing/campanhas/${id}/retorno`);
+  const t = d.totais, c = d.campanha;
+  const SIT = { aberto: 'Em aberto', ganho: 'Vendido', perdido: 'Perdido', cancelado: 'Cancelado' };
+  const m = modal(`<h2>Retorno: ${esc(c.nome)}</h2><p class="legenda">${esc(CANAIS_MKT[c.canal])} · desde ${dataBR(c.data_inicio)}${c.data_fim ? ` até ${dataBR(c.data_fim)}` : ''}. Os orçamentos entram sozinhos quando o comercial marca a origem e há campanha ativa; vendas e recebimentos atualizam conforme o financeiro avança.</p>
+    <div class="grid" style="margin-top:12px">
+      <div class="card kpi"><div class="l">Investido</div><div class="v">${brl(t.gasto)}</div><small class="mut">${num(t.leads)} lead(s)</small></div>
+      <div class="card kpi"><div class="l">Orçamentos</div><div class="v">${t.orcamentos}</div><small class="mut">${brl(t.valor_orcado)} · ${brlOu(t.custo_orcamento)} cada</small></div>
+      <div class="card kpi"><div class="l">Vendido</div><div class="v">${brl(t.valor_vendido)}</div><small class="mut">${t.vendas} venda(s) · retorno ${xOu(t.roas)}</small></div>
+      <div class="card kpi"><div class="l">Já recebido</div><div class="v pos">${brl(t.valor_recebido)}</div><small class="mut">retorno em caixa ${xOu(t.roas_recebido)}${t.a_receber ? ` · falta ${brl(t.a_receber)}` : ''}</small></div>
+    </div>
+    <p class="legenda">Custo por venda ${brlOu(t.custo_venda)} · conversão ${pctOu(t.conversao)} · ${t.em_aberto} orçamento(s) ainda em aberto.</p>
+    ${d.orcamentos.length ? `<div class="tbl"><table><thead><tr><th>Orçamento</th><th>Cliente</th><th>Semana</th><th class="n">Valor</th><th>Situação</th><th class="n">Recebido</th></tr></thead><tbody>
+      ${d.orcamentos.map((o) => `<tr><td>${esc(o.numero || '—')}${o.campanha_auto ? '<br><small class="mut">ligado automaticamente</small>' : ''}</td><td>${esc(o.cliente_nome)}</td><td>${dataBR(o.semana).slice(0, 5)}</td><td class="n">${brl(o.valor)}</td><td>${SIT[o.status]}${o.status === 'ganho' && o.cobranca_status ? `<br><small class="mut">${o.cobranca_status === 'pago' ? 'pago' : 'cobrança no financeiro'}</small>` : ''}</td><td class="n">${brl(o.recebido)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento ligado a esta campanha ainda.</p>'}
+    <div class="modal-acoes"><span style="flex:1"></span><button id="x">Fechar</button></div>`, 760);
+  m.el.querySelector('#x').onclick = m.fechar;
 }
 
 function janelaCampanha(c, depois) {
