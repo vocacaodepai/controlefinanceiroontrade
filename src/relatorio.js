@@ -3,7 +3,7 @@ import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { SITUACOES, rotuloTipo } from './patrimonio.js';
+import { rotuloSituacao, rotuloTipo } from './patrimonio.js';
 
 const AZ = '#012d61', AZ2 = '#0c5aa6', TX = '#14202f', CIN = '#6a7585', LIN = '#d3d9e2', FUNDO = '#f3f6fa', VER = '#1b8a5a', VERM = '#c0392b';
 const W = 595.28, H = 841.89, M = 42, CW = W - 2 * M;
@@ -185,7 +185,7 @@ export function gerarPdf(d, saida) {
     if (pat.defasado) paragrafo(doc, `Atenção: valores de ${pat.mes_ref.split('-').reverse().join('/')} (último mês informado).`, { cor: '#8a5d10', tam: 8.5 });
     tabela(doc, [
       { t: 'Item', w: 4.2, k: 'descricao' }, { t: 'Tipo', w: 1.3, k: 'tipo', f: (v, i) => rotuloTipo(i) },
-      { t: 'Situação', w: 2.4, k: 'situacao', f: (v) => SITUACOES[v] || v }, { t: 'Valor', w: 2, a: 'r', k: 'valor', f: brl },
+      { t: 'Situação', w: 2.4, k: 'situacao', f: (v, i) => rotuloSituacao(i) }, { t: 'Valor', w: 2, a: 'r', k: 'valor', f: brl },
     ], pat.itens, { total: { descricao: 'Total em ativos', tipo: '', situacao: '', valor: pat.total } });
     kpis(doc, [
       { rotulo: 'Containers', valor: brl(pat.total_container) },

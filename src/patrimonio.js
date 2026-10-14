@@ -8,6 +8,9 @@ export const TIPOS = { container: 'Container', estoque: 'Estoque', carro: 'Carro
 export const rotuloTipo = (i) => (i.tipo === 'outro' && i.tipo_outro ? `Outro: ${i.tipo_outro}` : TIPOS[i.tipo] || i.tipo);
 export const SITUACOES = { em_transito: 'Em trânsito (no mar)', no_porto: 'No porto / desembaraço', em_estoque: 'Em estoque', outro: 'Outro' };
 
+// Situação para exibir: "Outro" mostra o que o usuário escreveu
+export const rotuloSituacao = (i) => (i.situacao === 'outro' && i.situacao_outro ? `Outro: ${i.situacao_outro}` : SITUACOES[i.situacao] || i.situacao);
+
 export const mesAnterior = (mes) => {
   const [a, m] = mes.split('-').map(Number);
   return m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`;
@@ -56,19 +59,22 @@ function validar(b) {
   if (!Number.isFinite(valor) || valor < 0) throw new ErroNegocio('Informe o valor do item.');
   const situacao = b.situacao || (b.tipo === 'estoque' ? 'em_estoque' : b.tipo === 'container' ? 'em_transito' : 'outro');
   if (!Object.hasOwn(SITUACOES, situacao)) throw new ErroNegocio('Situação inválida.');
-  const prev = b.previsao_chegada || null;
+  const situacaoOutro = situacao === 'outro' ? String(b.situacao_outro || (b.situacao ? '' : 'Em uso')).trim().slice(0, 60) : null;
+  if (situacao === 'outro' && !situacaoOutro) throw new ErroNegocio('Escreva qual é a situação (ex.: em uso, em manutenção, à venda).');
+  const semChegada = b.chegada_nao_se_aplica === true || b.chegada_nao_se_aplica === 1 || b.chegada_nao_se_aplica === '1' || b.chegada_nao_se_aplica === 'on' ? 1 : 0;
+  const prev = semChegada ? null : b.previsao_chegada || null;
   if (prev && !/^\d{4}-\d{2}-\d{2}$/.test(prev)) throw new ErroNegocio('Data de chegada inválida.');
-  return [b.mes, b.tipo, b.descricao.trim().slice(0, 200), valor, situacao, prev, b.obs?.trim() || null, tipoOutro];
+  return [b.mes, b.tipo, b.descricao.trim().slice(0, 200), valor, situacao, prev, b.obs?.trim() || null, tipoOutro, situacaoOutro, semChegada];
 }
 
 export async function salvarItem(id, b, usuario) {
   const v = validar(b);
   if (id) {
-    const r = await one(`UPDATE patrimonio_itens SET mes=$1,tipo=$2,descricao=$3,valor=$4,situacao=$5,previsao_chegada=$6,obs=$7,tipo_outro=$8 WHERE id=$9 RETURNING *`, [...v, id]);
+    const r = await one(`UPDATE patrimonio_itens SET mes=$1,tipo=$2,descricao=$3,valor=$4,situacao=$5,previsao_chegada=$6,obs=$7,tipo_outro=$8,situacao_outro=$9,chegada_nao_se_aplica=$10 WHERE id=$11 RETURNING *`, [...v, id]);
     if (!r) throw new ErroNegocio('Item não encontrado.', 404);
     return r;
   }
-  return one(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [...v, usuario?.nome || null]);
+  return one(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,situacao_outro,chegada_nao_se_aplica,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [...v, usuario?.nome || null]);
 }
 
 export async function excluirItem(id) {
@@ -83,8 +89,8 @@ export async function copiarMes(de, para) {
   const origem = await itensDoMes(de);
   if (!origem.length) throw new ErroNegocio('O mês de origem não tem itens.');
   for (const i of origem) {
-    await query(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [para, i.tipo, i.descricao, i.valor, i.situacao, i.previsao_chegada, i.obs, i.tipo_outro, i.criado_por]);
+    await query(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,situacao_outro,chegada_nao_se_aplica,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [para, i.tipo, i.descricao, i.valor, i.situacao, i.previsao_chegada, i.obs, i.tipo_outro, i.situacao_outro, i.chegada_nao_se_aplica, i.criado_por]);
   }
   return origem.length;
 }

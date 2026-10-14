@@ -463,7 +463,7 @@ async function patrimonio() {
     ${pos.defasado ? `<div class="aviso-box">${ico('info')}<span>${nomeMes(state.mes)} ainda não tem valores lançados. Os totais acima são de <b>${nomeMes(pos.mes_ref)}</b>, o último mês informado.</span></div>` : ''}
     <div class="card"><h2>Itens de ${nomeMes(state.mes)}</h2>
       ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(d.situacoes[i.situacao])}</td><td>${i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
+        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(i.situacao === 'outro' && i.situacao_outro ? 'Outro: ' + i.situacao_outro : d.situacoes[i.situacao])}</td><td>${i.chegada_nao_se_aplica ? '<span class="mut">Não se aplica</span>' : i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
         <td class="n">${adm ? `<button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td colspan="4">Total</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td></td></tr></tfoot></table></div>`
         : `<p class="mut">Nenhum item lançado em ${nomeMes(state.mes)}.</p>${adm && pos.mes_ref ? `<button class="sec" id="copiar">Copiar os itens de ${nomeMes(d.mes_anterior)} e ajustar os valores</button>` : ''}`}
@@ -473,19 +473,25 @@ async function patrimonio() {
       <div id="tp-outro" hidden><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" placeholder="Ex.: máquina, terreno, equipamento"></div>
       <div class="larg"><label>Descrição</label><input name="descricao" required placeholder="Ex.: Container MSKU 481920 — painéis P3.9"></div>
       <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
-      <div><label>Situação</label><select name="situacao">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-      <div><label>Chegada prevista</label><input name="previsao_chegada" type="date"></div>
+      <div><label>Situação</label><select name="situacao" id="sit">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div id="sit-outro" hidden><label>Qual a situação? *</label><input name="situacao_outro" maxlength="60" placeholder="Ex.: em uso, em manutenção, à venda"></div>
+      <div><label>Chegada prevista</label><input name="previsao_chegada" id="chg" type="date"><label class="chk-na"><input type="checkbox" name="chegada_nao_se_aplica" id="chg-na" value="1"> Não se aplica</label></div>
       <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div>
       <div style="align-self:end"><button>Adicionar</button></div></form>
       <p class="legenda" style="margin-top:12px">Informe o valor pelo que custou ou pelo valor de venda esperado, sempre do mesmo jeito. Container vendido sai da lista no mês seguinte.</p></div>` : ''}`;
   ligaMes(patrimonio);
   const salvar = (id, corpo, ok) => acao(async () => { await api(id ? `/api/patrimonio/${id}` : '/api/patrimonio', { method: id ? 'PUT' : 'POST', body: corpo }); await patrimonio(); }, ok);
   const tp = document.getElementById('tp'), tpOutro = document.getElementById('tp-outro');
-  if (tp) tp.onchange = () => { document.querySelector('#novo-item [name=situacao]').value = tp.value === 'estoque' ? 'em_estoque' : tp.value === 'container' ? 'em_transito' : 'outro'; tpOutro.hidden = tp.value !== 'outro'; if (!tpOutro.hidden) tpOutro.querySelector('input').focus(); };
+  const sit = document.getElementById('sit'), sitOutro = document.getElementById('sit-outro'), chg = document.getElementById('chg'), chgNa = document.getElementById('chg-na');
+  const ajustaSit = () => { sitOutro.hidden = sit.value !== 'outro'; };
+  const ajustaChg = () => { chg.disabled = chgNa.checked; if (chgNa.checked) chg.value = ''; };
+  if (sit) { sit.onchange = ajustaSit; chgNa.onchange = ajustaChg; }
+  if (tp) tp.onchange = () => { sit.value = tp.value === 'estoque' ? 'em_estoque' : tp.value === 'container' ? 'em_transito' : 'outro'; ajustaSit(); chgNa.checked = tp.value !== 'container'; ajustaChg(); tpOutro.hidden = tp.value !== 'outro'; if (!tpOutro.hidden) tpOutro.querySelector('input').focus(); };
   document.getElementById('novo-item')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor);
     if (f.tipo === 'outro' && !String(f.tipo_outro || '').trim()) return toast('Escreva o que é este "outro"', true);
+    if (f.situacao === 'outro' && !String(f.situacao_outro || '').trim()) return toast('Escreva qual é a situação', true);
     if (!(valor >= 0)) return toast('Informe um valor válido', true);
     salvar(null, { ...f, valor, mes: state.mes }, 'Item adicionado');
   });
@@ -497,12 +503,16 @@ async function patrimonio() {
       ${i.tipo === 'outro' ? `<div class="cheio"><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" value="${esc(i.tipo_outro || '')}" required></div>` : ''}
       <div class="cheio"><label>Descrição</label><input name="descricao" value="${esc(i.descricao)}" required></div>
       <div><label>Valor (R$)</label><input name="valor" value="${(i.valor / 100).toFixed(2).replace('.', ',')}" inputmode="decimal" required></div>
-      <div><label>Situação</label><select name="situacao">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}" ${i.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div><label>Chegada prevista</label><input name="previsao_chegada" type="date" value="${i.previsao_chegada || ''}"></div>
+      <div><label>Situação</label><select name="situacao" id="esit">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}" ${i.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div id="esit-outro" ${i.situacao === 'outro' ? '' : 'hidden'}><label>Qual a situação? *</label><input name="situacao_outro" maxlength="60" value="${esc(i.situacao_outro || '')}" placeholder="Ex.: em uso, em manutenção"></div>
+      <div><label>Chegada prevista</label><input name="previsao_chegada" id="echg" type="date" value="${i.previsao_chegada || ''}" ${i.chegada_nao_se_aplica ? 'disabled' : ''}><label class="chk-na"><input type="checkbox" name="chegada_nao_se_aplica" id="echg-na" value="1" ${i.chegada_nao_se_aplica ? 'checked' : ''}> Não se aplica</label></div>
       <div class="cheio"><label>Observação</label><input name="obs" value="${esc(i.obs || '')}"></div>
       <div class="modal-acoes cheio"><span style="flex:1"></span><button type="button" class="sec" id="x">Cancelar</button><button>Salvar</button></div></form>`, 520);
     m.el.querySelector('#x').onclick = m.fechar;
-    m.el.querySelector('#ed').onsubmit = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor); if (!(valor >= 0)) return toast('Valor inválido', true); m.fechar(); salvar(i.id, { ...f, valor, mes: i.mes, tipo: i.tipo }, 'Item atualizado'); };
+    const esit = m.el.querySelector('#esit'), echg = m.el.querySelector('#echg'), echgNa = m.el.querySelector('#echg-na');
+    esit.onchange = () => { m.el.querySelector('#esit-outro').hidden = esit.value !== 'outro'; };
+    echgNa.onchange = () => { echg.disabled = echgNa.checked; if (echgNa.checked) echg.value = ''; };
+    m.el.querySelector('#ed').onsubmit = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor); if (!(valor >= 0)) return toast('Valor inválido', true); if (f.situacao === 'outro' && !String(f.situacao_outro || '').trim()) return toast('Escreva qual é a situação', true); m.fechar(); salvar(i.id, { ...f, valor, mes: i.mes, tipo: i.tipo }, 'Item atualizado'); };
   }));
 }
 
