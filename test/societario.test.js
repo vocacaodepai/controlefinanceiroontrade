@@ -132,3 +132,15 @@ test('patrimônio: carro e "outro" (com o que é) entram nos totais; "outro" exi
   assert.equal(e.tipo_outro, null);
   await assert.rejects(P.salvarItem(null, { mes, tipo: 'moto', descricao: 'x', valor: 1 }, null), /Tipo inválido/);
 });
+
+test('patrimônio: situação "outro" exige texto e chegada pode ser "não se aplica"', async () => {
+  const mes = '2031-05';
+  await assert.rejects(P.salvarItem(null, { mes, tipo: 'carro', descricao: 'Carro', valor: 100, situacao: 'outro' }, null), /situação/i);
+  const a = await P.salvarItem(null, { mes, tipo: 'carro', descricao: 'Carro', valor: 100, situacao: 'outro', situacao_outro: 'Em uso', chegada_nao_se_aplica: '1', previsao_chegada: '2031-06-01' }, null);
+  assert.equal(a.situacao_outro, 'Em uso'); assert.equal(a.chegada_nao_se_aplica, 1); assert.equal(a.previsao_chegada, null);
+  assert.equal(P.rotuloSituacao(a), 'Outro: Em uso');
+  const b = await P.salvarItem(null, { mes, tipo: 'container', descricao: 'Cont', valor: 100, previsao_chegada: '2031-07-01' }, null);
+  assert.equal(b.chegada_nao_se_aplica, 0); assert.equal(String(b.previsao_chegada).slice(0, 10), '2031-07-01');
+  const c = await P.salvarItem(null, { mes, tipo: 'estoque', descricao: 'Est', valor: 100, situacao: 'em_estoque', situacao_outro: 'lixo' }, null);
+  assert.equal(c.situacao_outro, null);
+});

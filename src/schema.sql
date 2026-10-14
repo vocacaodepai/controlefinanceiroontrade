@@ -271,6 +271,9 @@ CREATE INDEX IF NOT EXISTS idx_pat_mes ON patrimonio_itens(mes);
 
 -- Tipos de ativo: container, estoque, carro e outro (neste caso, o que é fica em tipo_outro)
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS tipo_outro text;
+-- Situação "outro" com texto livre e chegada prevista "não se aplica"
+ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS situacao_outro text;
+ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS chegada_nao_se_aplica integer NOT NULL DEFAULT 0;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'patrimonio_itens_tipo_check' AND pg_get_constraintdef(oid) LIKE '%carro%') THEN
     ALTER TABLE patrimonio_itens DROP CONSTRAINT IF EXISTS patrimonio_itens_tipo_check;
