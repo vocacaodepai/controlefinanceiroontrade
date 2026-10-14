@@ -193,11 +193,35 @@ const MENU = [
 ];
 const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n === r)?.[2] || r;
 const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , area]) => rotas[n] && temArea(area || n)).map(([n]) => n);
+// Cada grupo vira um bloco: título + itens. No computador o bloco é invisível (display: contents) e o menu fica como sempre foi;
+// no celular o título vira uma aba da barra de baixo e os itens abrem numa bandeja acima dela.
+const GRUPO_ICO = { Financeiro: 'cobranca', Comercial: 'orcamentos', Marketing: 'marketing', Estoque: 'estoque', Sociedade: 'societario', Pessoas: 'dp', Sistema: 'cadastros' };
+const noCelular = () => matchMedia('(max-width: 820px)').matches;
+const fechaBandeja = () => document.querySelectorAll('#nav .nav-bloco.aberto').forEach((b) => b.classList.remove('aberto'));
 function renderMenu() {
-  document.getElementById('nav').innerHTML = MENU.map(([grupo, itens]) => {
+  const nav = document.getElementById('nav');
+  nav.innerHTML = MENU.map(([grupo, itens]) => {
     const vis = itens.filter(([n, , area]) => rotas[n] && temArea(area || n));
-    return vis.length ? `<div class="nav-grupo">${grupo}</div>` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span>${n === 'aovivo' ? '<i class="live-dot" title="Ao vivo: atualiza sozinho a cada 15 minutos" aria-hidden="true"></i>' : ''}</a>`).join('') : '';
+    return vis.length ? `<div class="nav-bloco"><div class="nav-grupo" role="button" tabindex="0" aria-haspopup="true"><span class="nav-g-ico">${ico(GRUPO_ICO[grupo] || 'painel')}</span><span>${grupo}</span></div><div class="nav-itens">` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span>${n === 'aovivo' ? '<i class="live-dot" title="Ao vivo: atualiza sozinho a cada 15 minutos" aria-hidden="true"></i>' : ''}</a>`).join('') + '</div></div>' : '';
   }).join('');
+  nav.querySelectorAll('.nav-grupo').forEach((g) => {
+    const abrir = () => {
+      if (!noCelular()) return;
+      const bloco = g.parentElement, links = bloco.querySelectorAll('.nav-itens a');
+      if (links.length === 1) { fechaBandeja(); location.hash = links[0].getAttribute('href'); return; } // grupo com um item só: vai direto
+      const abre = !bloco.classList.contains('aberto');
+      fechaBandeja();
+      if (abre) bloco.classList.add('aberto');
+    };
+    g.onclick = abrir;
+    g.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } };
+  });
+  if (!state.navLigada) {
+    state.navLigada = true;
+    document.addEventListener('click', (e) => { if (!e.target.closest('#nav .nav-bloco.aberto')) fechaBandeja(); });
+    document.getElementById('nav').addEventListener('click', (e) => { if (e.target.closest('.nav-itens a')) setTimeout(fechaBandeja, 0); });
+    addEventListener('hashchange', fechaBandeja);
+  }
 }
 async function rota() {
   if (!state.usuario) {
@@ -217,6 +241,7 @@ async function rota() {
   let nome = location.hash.slice(1) || permitidas[0] || 'painel';
   if (nome !== 'perfil' && !permitidas.includes(nome)) { nome = permitidas[0]; if (!nome) { $app.innerHTML = '<div class="card">Seu perfil ainda não tem nenhuma área liberada. Fale com o administrador.</div>'; return; } history.replaceState(null, '', '#' + nome); }
   document.querySelectorAll('#menu a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + nome && !a.classList.contains('quem-link')));
+  document.querySelectorAll('#nav .nav-bloco').forEach((b) => b.classList.toggle('ativo', !!b.querySelector('a.on'))); // grupo da tela atual, destacado na barra do celular
   document.querySelector('.quem-link')?.classList.toggle('ativo', nome === 'perfil');
   if (!state.meta) {
     if (pode('leitor')) state.meta = await api('/api/meta');
