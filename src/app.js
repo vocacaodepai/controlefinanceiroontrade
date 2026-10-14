@@ -213,6 +213,7 @@ app.get('/api/marketing/painel/:mes', verMkt, h(async (req, res) => res.json(awa
 app.get('/api/marketing/campanhas', verMkt, h(async (_, res) => res.json({ campanhas: await MK.listarCampanhas(), canais: MK.CANAIS })));
 app.post('/api/marketing/campanhas', verMkt, editaMkt, h(async (req, res) => res.status(201).json(await MK.salvarCampanha(null, req.body, req.usuario))));
 app.put('/api/marketing/campanhas/:id', verMkt, editaMkt, h(async (req, res) => res.json(await MK.salvarCampanha(idNum(req.params.id), req.body, req.usuario))));
+app.get('/api/marketing/campanhas/:id/retorno', verMkt, h(async (req, res) => res.json(await MK.retornoCampanha(idNum(req.params.id)))));
 app.get('/api/marketing/campanhas/:id/dias', verMkt, h(async (req, res) => res.json(await MK.listarDias(idNum(req.params.id)))));
 app.post('/api/marketing/dias', verMkt, editaMkt, h(async (req, res) => res.status(201).json(await MK.lancarDia(req.body))));
 app.delete('/api/marketing/dias/:id', verMkt, editaMkt, h(async (req, res) => { await MK.excluirDia(idNum(req.params.id)); res.status(204).end(); }));

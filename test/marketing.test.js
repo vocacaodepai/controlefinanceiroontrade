@@ -68,3 +68,49 @@ test('perfis: marketing vê só o marketing; sócio e admin veem; comercial e op
   assert.ok(AREAS.admin.includes('marketing') && AREAS.socio.includes('marketing'));
   assert.ok(!AREAS.comercial.includes('marketing') && !AREAS.operador.includes('marketing'));
 });
+
+test('vínculo automático: origem Instagram/Facebook + campanha ativa no período liga o orçamento sozinho', async () => {
+  const ini = S.addDias(hoje, -10);
+  const fb = await MK.salvarCampanha(null, { nome: 'Meta Teste Semana', canal: 'facebook', data_inicio: ini });
+  // Instagram também vale para campanha da Meta cadastrada como Facebook
+  const o = await CO.criarOrcamento({ cliente: fic('Lead Auto 1'), produto_nome: 'Painel P5', valor: 2000000, origem: 'instagram', data: S.addDias(hoje, -1) });
+  const ligado = (await CO.listarOrcamentos({ q: 'Lead Auto 1' }))[0];
+  const insta = (await MK.listarCampanhas()).find((c) => c.nome === 'Lançamento P3.9');
+  assert.equal(ligado.campanha_id, insta.id, 'havendo campanha do mesmo canal, ela vale antes da campanha da Meta cadastrada como Facebook');
+  assert.equal(ligado.campanha_auto, 1);
+  // origem sem anúncio nunca liga
+  const sem = await CO.criarOrcamento({ cliente: fic('Lead Indicação'), produto_nome: 'Painel P5', valor: 100000, origem: 'indicacao' });
+  assert.equal(sem.campanha_id, null);
+  // antes do início da campanha: não liga
+  const antes = await CO.criarOrcamento({ cliente: fic('Lead Antigo'), produto_nome: 'Painel P5', valor: 100000, origem: 'facebook', data: S.addDias(ini, -5) });
+  assert.ok(antes.campanha_id === null || antes.campanha_id === insta.id);
+  // escolha manual continua valendo e não é marcada como automática
+  const manual = await CO.criarOrcamento({ cliente: fic('Lead Manual'), produto_nome: 'Painel P5', valor: 100000, origem: 'facebook', campanha_id: fb.id });
+  assert.equal(manual.campanha_id, fb.id); assert.equal(manual.campanha_auto, 0);
+  // campanha nova cobrindo o período puxa os orçamentos que ficaram sem campanha
+  const g = await MK.salvarCampanha(null, { nome: 'Antiga Retroativa', canal: 'facebook', data_inicio: S.addDias(ini, -8), data_fim: S.addDias(ini, -2) });
+  assert.equal((await CO.listarOrcamentos({ q: 'Lead Antigo' }))[0].campanha_id, g.id);
+  assert.equal(o.origem, 'instagram');
+});
+
+test('retorno da campanha: orçamento caminha até a venda e o recebimento e a campanha acompanha', async () => {
+  const camp = await MK.salvarCampanha(null, { nome: 'Google Retorno', canal: 'google', data_inicio: S.addDias(hoje, -3) });
+  await MK.lancarDia({ campanha_id: camp.id, data: S.addDias(hoje, -2), gasto: 100000, leads: 4, cliques: 40, impressoes: 900 });
+  const o = await CO.criarOrcamento({ cliente: fic('Lead Google'), produto_nome: 'Painel P5', valor: 1000000, origem: 'google_anuncio' });
+  assert.equal(o.campanha_id, camp.id);
+  let r = await MK.retornoCampanha(camp.id);
+  assert.equal(r.totais.orcamentos, 1); assert.equal(r.totais.vendas, 0); assert.equal(r.totais.custo_orcamento, 100000);
+  await CO.mudarStatus(o.id, { status: 'ganho' }, null);
+  r = await MK.retornoCampanha(camp.id);
+  assert.equal(r.totais.valor_vendido, 1000000); assert.equal(r.totais.roas, 10); assert.equal(r.totais.valor_recebido, 0);
+  const CB = await import('../src/cobranca.js');
+  const { one } = await import('../src/db.js');
+  const conta = await one('SELECT id FROM contas ORDER BY id LIMIT 1');
+  await CB.registrarPagamento(o.id, { valor: 400000, conta_id: conta.id }, null);
+  r = await MK.retornoCampanha(camp.id);
+  assert.equal(r.totais.valor_recebido, 400000); assert.equal(r.totais.a_receber, 600000); assert.equal(r.totais.roas_recebido, 4);
+  const p = await MK.painel(mes);
+  const linha = p.por_campanha.find((c) => c.id === camp.id);
+  assert.equal(linha.valor_recebido >= 400000 || linha.orcamentos === 0, true);
+  await assert.rejects(MK.retornoCampanha(999999), /não encontrada/);
+});

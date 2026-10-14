@@ -2,7 +2,7 @@
 // Hoje os números diários (gasto, impressões, cliques, leads) são lançados à mão; as APIs de anúncios (Meta, Google) entram depois.
 import { query, one } from './db.js';
 import { ErroNegocio, isData, isMes, hoje, addDias, intervaloMes } from './services.js';
-import { ORIGENS } from './comercial.js';
+import { ORIGENS, ORIGENS_DO_CANAL } from './comercial.js';
 
 export const CANAIS = { instagram: 'Instagram', facebook: 'Facebook', google: 'Google Ads', tiktok: 'TikTok', youtube: 'YouTube', outdoor: 'Anúncio na rua / outdoor', outro: 'Outro' };
 const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
@@ -22,14 +22,23 @@ export async function salvarCampanha(id, b, usuario) {
   const verba = b.verba == null || b.verba === '' ? null : Math.round(Number(b.verba));
   if (verba != null && (!Number.isFinite(verba) || verba < 0)) throw new ErroNegocio('Verba inválida.');
   const ativa = b.ativa === 0 || b.ativa === false ? 0 : 1;
+  const comVinculo = async (c) => { await vincularOrfaos(c); return c; };
   if (id) {
     const r = await one('UPDATE campanhas SET nome=$1,canal=$2,data_inicio=$3,data_fim=$4,objetivo=$5,verba=$6,ativa=$7,obs=$8 WHERE id=$9 RETURNING *',
       [b.nome.trim(), b.canal, b.data_inicio, fim, txt(b.objetivo), verba, ativa, txt(b.obs), id]);
     if (!r) throw new ErroNegocio('Campanha não encontrada.', 404);
-    return r;
+    return comVinculo(r);
   }
-  return one('INSERT INTO campanhas (nome,canal,data_inicio,data_fim,objetivo,verba,ativa,obs,criado_por_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-    [b.nome.trim(), b.canal, b.data_inicio, fim, txt(b.objetivo), verba, ativa, txt(b.obs), usuario?.id ?? null]);
+  return comVinculo(await one('INSERT INTO campanhas (nome,canal,data_inicio,data_fim,objetivo,verba,ativa,obs,criado_por_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+    [b.nome.trim(), b.canal, b.data_inicio, fim, txt(b.objetivo), verba, ativa, txt(b.obs), usuario?.id ?? null]));
+}
+
+// Orçamentos já lançados no período da campanha, vindos do mesmo canal e ainda sem campanha, entram nela
+async function vincularOrfaos(c) {
+  if (!c.ativa) return;
+  const origens = ORIGENS_DO_CANAL(c.canal);
+  if (!origens.length) return;
+  await query(`UPDATE orcamentos SET campanha_id = $1, campanha_auto = 1 WHERE campanha_id IS NULL AND origem = ANY($2) AND data >= $3 AND ($4::date IS NULL OR data <= $4::date)`, [c.id, origens, c.data_inicio, c.data_fim]);
 }
 export const listarCampanhas = () => query(`SELECT c.*, coalesce((SELECT sum(gasto) FROM campanha_dias d WHERE d.campanha_id = c.id),0)::bigint AS gasto_total,
     coalesce((SELECT sum(leads) FROM campanha_dias d WHERE d.campanha_id = c.id),0)::int AS leads_total,
@@ -69,10 +78,11 @@ async function totais(de, ate) {
     FROM campanha_dias WHERE data BETWEEN $1 AND $2`, [de, ate]);
   const o = await one(`SELECT count(*) FILTER (WHERE campanha_id IS NOT NULL)::int AS orcamentos, coalesce(sum(valor) FILTER (WHERE campanha_id IS NOT NULL),0)::bigint AS valor_orcado,
       count(*) FILTER (WHERE campanha_id IS NOT NULL AND status='ganho')::int AS vendas, coalesce(sum(valor) FILTER (WHERE campanha_id IS NOT NULL AND status='ganho'),0)::bigint AS valor_vendido,
-      count(*)::int AS orcamentos_todos
+      count(*)::int AS orcamentos_todos,
+      coalesce((SELECT sum(g.valor) FROM pagamentos g JOIN orcamentos x ON x.id = g.orcamento_id WHERE x.campanha_id IS NOT NULL AND x.data BETWEEN $1 AND $2),0)::bigint AS valor_recebido
     FROM orcamentos WHERE data BETWEEN $1 AND $2`, [de, ate]);
   const t = { ...g, ...o };
-  return { ...t, cpl: razao(t.gasto, t.leads), custo_orcamento: razao(t.gasto, t.orcamentos), roas: razao(t.valor_vendido, t.gasto), ctr: razao(t.cliques * 100, t.impressoes), lead_para_orcamento: razao(t.orcamentos * 100, t.leads) };
+  return { ...t, custo_venda: razao(t.gasto, t.vendas), roas_recebido: razao(t.valor_recebido, t.gasto), cpl: razao(t.gasto, t.leads), custo_orcamento: razao(t.gasto, t.orcamentos), roas: razao(t.valor_vendido, t.gasto), ctr: razao(t.cliques * 100, t.impressoes), lead_para_orcamento: razao(t.orcamentos * 100, t.leads) };
 }
 
 export async function painel(mes) {
@@ -88,9 +98,10 @@ export async function painel(mes) {
       (SELECT count(*) FROM orcamentos o WHERE o.campanha_id=c.id AND o.data BETWEEN $1 AND $2)::int AS orcamentos,
       coalesce((SELECT sum(valor) FROM orcamentos o WHERE o.campanha_id=c.id AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_orcado,
       (SELECT count(*) FROM orcamentos o WHERE o.campanha_id=c.id AND o.status='ganho' AND o.data BETWEEN $1 AND $2)::int AS vendas,
-      coalesce((SELECT sum(valor) FROM orcamentos o WHERE o.campanha_id=c.id AND o.status='ganho' AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_vendido
+      coalesce((SELECT sum(valor) FROM orcamentos o WHERE o.campanha_id=c.id AND o.status='ganho' AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_vendido,
+      coalesce((SELECT sum(g.valor) FROM pagamentos g JOIN orcamentos o ON o.id=g.orcamento_id WHERE o.campanha_id=c.id AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_recebido
     FROM campanhas c WHERE c.data_inicio <= $2 AND (c.data_fim IS NULL OR c.data_fim >= $1) ORDER BY c.ativa DESC, gasto DESC, c.id`, [de, ate]))
-    .map((c) => ({ ...c, cpl: razao(c.gasto, c.leads), custo_orcamento: razao(c.gasto, c.orcamentos), roas: razao(c.valor_vendido, c.gasto) }));
+    .map((c) => ({ ...c, cpl: razao(c.gasto, c.leads), custo_orcamento: razao(c.gasto, c.orcamentos), custo_venda: razao(c.gasto, c.vendas), roas: razao(c.valor_vendido, c.gasto), roas_recebido: razao(c.valor_recebido, c.gasto) }));
   // semana a semana (segunda a domingo)
   const gsem = await query(`SELECT to_char(date_trunc('week', data::timestamp),'YYYY-MM-DD') AS semana, sum(gasto)::bigint AS gasto, sum(leads)::int AS leads, sum(cliques)::int AS cliques
     FROM campanha_dias WHERE data BETWEEN $1 AND $2 GROUP BY 1`, [de, ate]);
@@ -106,4 +117,27 @@ export async function painel(mes) {
     FROM orcamentos WHERE data BETWEEN $1 AND $2 GROUP BY 1 ORDER BY qtd DESC, valor_orcado DESC`, [de, ate]))
     .map((x) => ({ ...x, rotulo: x.origem === 'sem_origem' ? 'Sem origem (lançado antes do rastreio)' : ORIGENS[x.origem] || x.origem }));
   return { mes, de, ate, hoje: hoje(), atual, anterior, por_campanha: porCampanha, semanas, por_origem: porOrigem, canais: CANAIS };
+}
+
+// Retorno de uma campanha desde o início: tudo o que ela trouxe e como cada orçamento caminhou (aberto, vendido, recebido)
+export async function retornoCampanha(id) {
+  const c = await one('SELECT * FROM campanhas WHERE id = $1', [id]);
+  if (!c) throw new ErroNegocio('Campanha não encontrada.', 404);
+  const g = await one('SELECT coalesce(sum(gasto),0)::bigint AS gasto, coalesce(sum(leads),0)::int AS leads FROM campanha_dias WHERE campanha_id = $1', [id]);
+  const orcamentos = await query(`SELECT o.id, o.numero, o.data, o.valor, o.status, o.campanha_auto, o.origem, cl.nome AS cliente_nome, o.cobranca_status,
+      to_char(date_trunc('week', o.data::timestamp),'YYYY-MM-DD') AS semana,
+      (SELECT coalesce(sum(p.valor),0)::bigint FROM pagamentos p WHERE p.orcamento_id = o.id) AS recebido
+    FROM orcamentos o JOIN clientes cl ON cl.id = o.cliente_id WHERE o.campanha_id = $1 ORDER BY o.data DESC, o.id DESC`, [id]);
+  const ganhos = orcamentos.filter((o) => o.status === 'ganho');
+  const t = {
+    gasto: g.gasto, leads: g.leads, orcamentos: orcamentos.length, valor_orcado: orcamentos.reduce((a, o) => a + o.valor, 0),
+    em_aberto: orcamentos.filter((o) => o.status === 'aberto').length, vendas: ganhos.length, valor_vendido: ganhos.reduce((a, o) => a + o.valor, 0),
+    valor_recebido: orcamentos.reduce((a, o) => a + o.recebido, 0),
+  };
+  return {
+    campanha: c,
+    totais: { ...t, a_receber: Math.max(t.valor_vendido - t.valor_recebido, 0), custo_orcamento: razao(t.gasto, t.orcamentos), custo_venda: razao(t.gasto, t.vendas), cpl: razao(t.gasto, t.leads),
+      roas: razao(t.valor_vendido, t.gasto), roas_recebido: razao(t.valor_recebido, t.gasto), conversao: razao(t.vendas * 100, t.orcamentos) },
+    orcamentos,
+  };
 }
