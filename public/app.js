@@ -1842,6 +1842,58 @@ function ajustaTitulos(raiz) {
   }
 }
 new MutationObserver((muts) => { for (const m of muts) m.addedNodes.forEach((n) => ajustaTitulos(n.nodeType === 3 ? n.parentElement : n)); }).observe(document.body, { childList: true, subtree: true });
+
+// ---- datas: navegação rápida por ano (‹ ano ›, lista de anos e "Hoje") junto de todo campo de data ou mês ----
+function atalhoAno(inp) {
+  if (inp.dataset.atalho || inp.closest('td,th') || inp.hasAttribute('data-sem-atalho')) return;
+  inp.dataset.atalho = '1';
+  const mes = inp.type === 'month';
+  const hoje = hojeISO();
+  const anoDe = (v) => (/^\d{4}/.test(v || '') ? +v.slice(0, 4) : null);
+  const anoAtual = +hoje.slice(0, 4);
+  const maxA = anoDe(inp.max) ?? anoAtual + 5, minA = anoDe(inp.min) ?? anoAtual - 100;
+  const barra = document.createElement('div');
+  barra.className = 'dt-rapida';
+  barra.innerHTML = `<button type="button" class="mini sec" data-d="-1" title="Ano anterior" aria-label="Ano anterior">&lsaquo;</button><select aria-label="Ano"></select><button type="button" class="mini sec" data-d="1" title="Próximo ano" aria-label="Próximo ano">&rsaquo;</button><button type="button" class="mini sec" data-d="hoje">${mes ? 'Este mês' : 'Hoje'}</button>`;
+  const sel = barra.querySelector('select');
+  const monta = () => {
+    const atual = anoDe(inp.value);
+    const anos = []; for (let y = maxA; y >= minA; y--) anos.push(y);
+    if (atual && !anos.includes(atual)) { anos.push(atual); anos.sort((x, y) => y - x); }
+    sel.innerHTML = `<option value="">Ano</option>` + anos.map((y) => `<option value="${y}">${y}</option>`).join('');
+    sel.value = atual ? String(atual) : '';
+    barra.classList.toggle('off', inp.disabled || inp.readOnly);
+  };
+  const grava = (v) => {
+    if (inp.max && v > inp.max) v = inp.max;
+    if (inp.min && v < inp.min) v = inp.min;
+    inp.value = v; monta();
+    inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  // troca só o ano, mantendo mês e dia (29/02 vira 28/02 em ano não bissexto)
+  const noAno = (y) => {
+    const base = /^\d{4}-\d{2}/.test(inp.value) ? inp.value : hoje;
+    const m = base.slice(5, 7); let d = base.slice(8, 10);
+    if (mes) return `${y}-${m}`;
+    const ultimo = new Date(y, +m, 0).getDate();
+    if (+d > ultimo) d = String(ultimo);
+    return `${y}-${m}-${d}`;
+  };
+  sel.onchange = () => { if (sel.value) grava(noAno(+sel.value)); };
+  barra.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b || inp.disabled || inp.readOnly) return;
+    if (b.dataset.d === 'hoje') return grava(mes ? hoje.slice(0, 7) : hoje);
+    const y = (anoDe(inp.value) ?? anoAtual) + Number(b.dataset.d);
+    grava(noAno(Math.min(Math.max(y, minA), maxA)));
+  });
+  inp.addEventListener('input', monta); inp.addEventListener('change', monta);
+  new MutationObserver(monta).observe(inp, { attributes: true, attributeFilter: ['disabled', 'readonly', 'min', 'max'] });
+  inp.insertAdjacentElement('afterend', barra);
+  monta();
+}
+const variasDatas = (raiz) => (raiz.querySelectorAll ? raiz.querySelectorAll('input[type=date],input[type=month]') : []).forEach(atalhoAno);
+new MutationObserver((muts) => { for (const m of muts) m.addedNodes.forEach((n) => { if (n.nodeType === 1) { if (n.matches?.('input[type=date],input[type=month]')) atalhoAno(n); variasDatas(n); } }); }).observe(document.body, { childList: true, subtree: true });
+
 ajustaTitulos(document.body);
 
 // ---- meu perfil: foto e senha ficam aqui (clicando no nome, no rodapé do menu) ----
