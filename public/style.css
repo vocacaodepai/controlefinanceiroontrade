@@ -329,3 +329,12 @@ input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;lette
   .login{padding:28px 20px}
   .tema-flutuante{top:calc(10px + env(safe-area-inset-top));right:12px}
 }
+
+/* atalho de ano ao lado dos campos de data e mês */
+.dt-rapida{display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap}
+.dt-rapida select{width:auto;min-width:78px;padding:4px 8px;font-size:12.5px;border-radius:8px}
+.dt-rapida button.mini{padding:3px 10px;min-width:30px}
+.dt-rapida.off{opacity:.45;pointer-events:none}
+@media(max-width:820px){
+  .dt-rapida{gap:6px}.dt-rapida select{font-size:16px;min-height:38px;padding:6px 10px}.dt-rapida button.mini{min-height:38px;min-width:40px;font-size:16px}
+}
