@@ -108,14 +108,19 @@ app.get('/api/painel/:mes', ler, h(async (req, res) => {
 
 // ---------- patrimônio em ativos (containers e estoque) ----------
 const verPat = A.exigirArea('patrimonio'), verSoc = A.exigirArea('societario');
-app.get('/api/patrimonio/:mes', verPat, h(async (req, res) => {
-  const m = mes(req);
-  res.json({ mes: m, itens: await P.itensDoMes(m), posicao: await P.posicao(m), mes_anterior: P.mesAnterior(m), tipos: P.TIPOS, situacoes: P.SITUACOES });
+// Geral por padrão (tudo o que a empresa tem hoje); ?mes=AAAA-MM filtra o que entrou naquele mês; ?baixados=1 mostra os que saíram
+app.get('/api/patrimonio', verPat, h(async (req, res) => {
+  const g = await P.geral();
+  const filtro = req.query.mes ? mes({ params: { mes: req.query.mes } }) : null;
+  const baixados = req.query.baixados === '1';
+  const itens = baixados ? await P.itensBaixados() : filtro ? await P.itensDoMes(filtro) : g.itens;
+  const { itens: _, ...geral } = g;
+  res.json({ filtro, baixados, itens, geral, meses: await P.mesesComItens(), mes_atual: S.hoje().slice(0, 7), tipos: P.TIPOS, situacoes: P.SITUACOES });
 }));
 app.post('/api/patrimonio', admin, h(async (req, res) => res.status(201).json(await P.salvarItem(null, req.body, req.usuario))));
 app.put('/api/patrimonio/:id', admin, h(async (req, res) => res.json(await P.salvarItem(idNum(req.params.id), req.body, req.usuario))));
 app.delete('/api/patrimonio/:id', admin, h(async (req, res) => { await P.excluirItem(idNum(req.params.id)); res.status(204).end(); }));
-app.post('/api/patrimonio/copiar', admin, h(async (req, res) => res.json({ copiados: await P.copiarMes(req.body.de, req.body.para) })));
+app.post('/api/patrimonio/:id/baixa', admin, h(async (req, res) => res.json(await P.baixar(idNum(req.params.id), req.body || {}))));
 
 // ---------- quadro societário e relatório mensal dos sócios ----------
 app.get('/api/societario/quadro', verSoc, h(async (_, res) => res.json(await SO.quadro())));

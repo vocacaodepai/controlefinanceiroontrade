@@ -41,20 +41,20 @@ test('não deixa as participações passarem de 100% nem repetir sócio', async 
   await SO.salvarSocio(tulio.id, { nome: 'Luiz Túlio', participacao: null }); // volta ao estado "a confirmar"
 });
 
-test('patrimônio: usa o último mês informado quando o atual está vazio e calcula a variação dos ativos', async () => {
+test('patrimônio: visão geral + filtro por mês de entrada, baixa e variação dos ativos', async () => {
   assert.equal((await P.posicao('2026-08')).informado, false);
+  assert.equal((await P.geral()).informado, false);
   await P.salvarItem(null, { mes: '2026-08', tipo: 'container', descricao: 'Container A — painéis P3.9', valor: 100000000, situacao: 'em_transito' }, { nome: 'Elisa' });
-  await P.salvarItem(null, { mes: '2026-08', tipo: 'estoque', descricao: 'Estoque Rio', valor: 30000000 }, { nome: 'Elisa' });
+  const est = await P.salvarItem(null, { mes: '2026-08', tipo: 'estoque', descricao: 'Estoque Rio', valor: 30000000 }, { nome: 'Elisa' });
+  // o item continua sendo da empresa nos meses seguintes, sem copiar nada
   const set = await P.posicao('2026-09');
-  assert.equal(set.defasado, true);
-  assert.equal(set.mes_ref, '2026-08');
+  assert.equal(set.defasado, false);
   assert.equal(set.total, 130000000);
-
-  await P.copiarMes('2026-08', '2026-09');
-  await assert.rejects(P.copiarMes('2026-08', '2026-09'), /já tem itens/);
-  const itens = await P.itensDoMes('2026-09');
   await P.salvarItem(null, { mes: '2026-09', tipo: 'container', descricao: 'Container B', valor: 120000000 }, { nome: 'Elisa' });
-  await P.salvarItem(itens[1].id, { ...itens[1], valor: 20000000 }, { nome: 'Elisa' }); // estoque caiu 10 mi
+  await P.salvarItem(est.id, { ...est, valor: 20000000 }, { nome: 'Elisa' }); // estoque caiu 10 mi
+  assert.equal((await P.itensDoMes('2026-09')).length, 1, 'filtro por mês mostra só o que entrou nele');
+  const g = await P.geral();
+  assert.equal(g.total, 240000000); assert.equal(g.itens.length, 3); assert.equal(g.total_container, 220000000);
 
   // mês de caixa negativo, mas com ativos subindo: o resultado econômico mostra a diferença
   await lanc('2026-09-03', 'entrada', 50000000, 'Banco Safra', 'Recebimento de cliente');
@@ -62,9 +62,19 @@ test('patrimônio: usa o último mês informado quando o atual está vazio e cal
   const painel = await S.painelMes('2026-09');
   assert.equal(painel.resultado, -40000000);
   const r = await P.resumoPainel('2026-09', painel);
-  assert.equal(r.total, 100000000 + 20000000 + 120000000);
-  assert.equal(r.variacao_ativos, 240000000 - 130000000);
-  assert.equal(r.resultado_economico, -40000000 + 110000000);
+  assert.equal(r.total, 240000000);
+  assert.equal(r.variacao_ativos, 240000000 - 120000000); // 2026-08 ficou em 100 + 20
+  assert.equal(r.resultado_economico, -40000000 + 120000000);
+
+  // baixa: sai do geral, continua no histórico; não vale antes da entrada
+  const a = (await P.itensDoMes('2026-08'))[0];
+  await assert.rejects(P.baixar(a.id, { mes: '2026-07' }), /antes do mês de entrada/);
+  await P.baixar(a.id, { mes: '2026-10' });
+  assert.equal((await P.geral()).total, 240000000 - a.valor);
+  assert.equal((await P.posicao('2026-09')).total, 240000000, 'em setembro ainda era da empresa');
+  assert.equal((await P.itensBaixados()).length >= 1, true);
+  await P.baixar(a.id, { desfazer: true });
+  assert.equal((await P.geral()).total, 240000000);
 
   await assert.rejects(P.salvarItem(null, { mes: '2026-09', tipo: 'barco', descricao: 'x', valor: 1 }), /Tipo inválido/);
   await assert.rejects(P.salvarItem(null, { mes: '2026-09', tipo: 'estoque', descricao: '', valor: 1 }), /Descreva/);
@@ -125,8 +135,8 @@ test('patrimônio: carro e "outro" (com o que é) entram nos totais; "outro" exi
   const c = await P.salvarItem(null, { mes, tipo: 'carro', descricao: 'Fiorino da empresa', valor: 5000000 }, null);
   const o = await P.salvarItem(null, { mes, tipo: 'outro', tipo_outro: 'Máquina de corte', descricao: 'Máquina serra', valor: 3000000 }, null);
   assert.equal(c.tipo, 'carro'); assert.equal(o.tipo_outro, 'Máquina de corte');
-  const pos = await P.posicao(mes);
-  assert.equal(pos.total_carro, 5000000); assert.equal(pos.total_outro, 3000000); assert.equal(pos.total, 8000000);
+  const antes = await P.posicao('2031-03'), pos = await P.posicao(mes);
+  assert.equal(pos.total_carro - antes.total_carro, 5000000); assert.equal(pos.total_outro - antes.total_outro, 3000000); assert.equal(pos.total - antes.total, 8000000);
   assert.equal(P.rotuloTipo(o), 'Outro: Máquina de corte');
   const e = await P.salvarItem(c.id, { mes, tipo: 'carro', descricao: 'Fiorino', valor: 4000000 }, null);
   assert.equal(e.tipo_outro, null);
