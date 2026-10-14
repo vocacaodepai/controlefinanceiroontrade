@@ -1,7 +1,7 @@
 // Patrimônio em ativos (containers e estoque): valores informados mês a mês, para o painel e para o relatório dos sócios.
 // É uma visão GERENCIAL (não contábil): serve para mostrar que um mês de caixa negativo pode ter virado ativo.
 import { query, one } from './db.js';
-import { ErroNegocio, isMes, intervaloMes } from './services.js';
+import { ErroNegocio, isMes, intervaloMes, hoje } from './services.js';
 
 export const TIPOS = { container: 'Container', estoque: 'Estoque', carro: 'Carro', outro: 'Outro' };
 // Nome do tipo para exibir: "Outro" mostra o que o usuário escreveu
@@ -17,20 +17,43 @@ export const mesAnterior = (mes) => {
 };
 export const mesDoAnoAnterior = (mes) => `${Number(mes.slice(0, 4)) - 1}-${mes.slice(5)}`;
 
-export const itensDoMes = (mes) => query('SELECT * FROM patrimonio_itens WHERE mes = $1 ORDER BY tipo, id', [mes]);
+// Cada item "entra" em um mês (coluna mes) e continua sendo da empresa até a baixa (vendido, baixado ou perdido).
+export const itensDoMes = (mes) => query('SELECT * FROM patrimonio_itens WHERE mes = $1 ORDER BY tipo, id', [mes]);          // o que entrou neste mês
+export const itensAtivos = () => query('SELECT * FROM patrimonio_itens WHERE baixa_mes IS NULL ORDER BY mes DESC, tipo, id');   // patrimônio geral hoje
+export const itensBaixados = () => query('SELECT * FROM patrimonio_itens WHERE baixa_mes IS NOT NULL ORDER BY baixa_mes DESC, id');
 
-// Posição de um mês. Se o mês não tem lançamento de ativos, usa o último mês anterior que tenha (e avisa).
-export async function posicao(mes) {
-  let ref = mes;
-  let itens = await itensDoMes(mes);
-  if (!itens.length) {
-    const ult = await one('SELECT MAX(mes) AS mes FROM patrimonio_itens WHERE mes < $1', [mes]);
-    if (!ult?.mes) return { mes_ref: null, defasado: false, itens: [], total_container: 0, total_estoque: 0, total_carro: 0, total_outro: 0, total: 0, informado: false };
-    ref = ult.mes; itens = await itensDoMes(ref);
-  }
+const totais = (itens) => {
   const soma = (t) => itens.filter((i) => i.tipo === t).reduce((a, i) => a + i.valor, 0);
-  return { mes_ref: ref, defasado: ref !== mes, itens, total_container: soma('container'), total_estoque: soma('estoque'), total_carro: soma('carro'), total_outro: soma('outro'), total: itens.reduce((a, i) => a + i.valor, 0), informado: true };
+  return { total_container: soma('container'), total_estoque: soma('estoque'), total_carro: soma('carro'), total_outro: soma('outro'), total: itens.reduce((a, i) => a + i.valor, 0) };
+};
+
+// Patrimônio geral hoje: tudo o que entrou e ainda não teve baixa
+export async function geral() {
+  const itens = await itensAtivos();
+  return { itens, ...totais(itens), informado: itens.length > 0 };
 }
+
+// Posição ao fim de um mês: o que já tinha entrado até lá e ainda não tinha baixa
+export async function posicao(mes) {
+  const itens = await query('SELECT * FROM patrimonio_itens WHERE mes <= $1 AND (baixa_mes IS NULL OR baixa_mes > $1) ORDER BY mes, tipo, id', [mes]);
+  return { mes_ref: mes, defasado: false, itens, ...totais(itens), informado: itens.length > 0 };
+}
+
+// Meses em que entrou algum item (para o filtro da tela)
+export const mesesComItens = async () => (await query('SELECT DISTINCT mes FROM patrimonio_itens ORDER BY mes DESC')).map((r) => r.mes);
+
+// Baixa (vendido, baixado, perdido) ou desfazer a baixa
+export async function baixar(id, { mes, desfazer } = {}) {
+  const i = await one('SELECT * FROM patrimonio_itens WHERE id = $1', [id]);
+  if (!i) throw new ErroNegocio('Item não encontrado.', 404);
+  if (desfazer) { await query('UPDATE patrimonio_itens SET baixa_mes = NULL WHERE id = $1', [id]); return one('SELECT * FROM patrimonio_itens WHERE id = $1', [id]); }
+  const m = mes || hojeMes();
+  if (!isMes(m)) throw new ErroNegocio('Mês da baixa inválido.');
+  if (m < i.mes) throw new ErroNegocio('A baixa não pode ser antes do mês de entrada.');
+  await query('UPDATE patrimonio_itens SET baixa_mes = $2 WHERE id = $1', [id, m]);
+  return one('SELECT * FROM patrimonio_itens WHERE id = $1', [id]);
+}
+const hojeMes = () => hoje().slice(0, 7);
 
 // Quadro do painel: caixa x ativos
 export async function resumoPainel(mes, painel) {
@@ -82,16 +105,4 @@ export async function excluirItem(id) {
   if (!r) throw new ErroNegocio('Item não encontrado.', 404);
 }
 
-// Atalho de fim de mês: traz os itens do mês anterior para o mês escolhido, para só ajustar os valores.
-export async function copiarMes(de, para) {
-  if (!isMes(de) || !isMes(para) || de === para) throw new ErroNegocio('Meses inválidos.');
-  if ((await itensDoMes(para)).length) throw new ErroNegocio('Este mês já tem itens. Edite-os ou exclua antes de copiar.', 409);
-  const origem = await itensDoMes(de);
-  if (!origem.length) throw new ErroNegocio('O mês de origem não tem itens.');
-  for (const i of origem) {
-    await query(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,situacao_outro,chegada_nao_se_aplica,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [para, i.tipo, i.descricao, i.valor, i.situacao, i.previsao_chegada, i.obs, i.tipo_outro, i.situacao_outro, i.chegada_nao_se_aplica, i.criado_por]);
-  }
-  return origem.length;
-}
 export { intervaloMes };

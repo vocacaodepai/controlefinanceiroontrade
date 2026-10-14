@@ -271,6 +271,8 @@ CREATE INDEX IF NOT EXISTS idx_pat_mes ON patrimonio_itens(mes);
 
 -- Tipos de ativo: container, estoque, carro e outro (neste caso, o que é fica em tipo_outro)
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS tipo_outro text;
+-- Patrimônio geral: o item entra em um mês (coluna mes) e fica na empresa até a baixa (vendido, baixado ou perdido)
+ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS baixa_mes text;
 -- Situação "outro" com texto livre e chegada prevista "não se aplica"
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS situacao_outro text;
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS chegada_nao_se_aplica integer NOT NULL DEFAULT 0;

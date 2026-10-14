@@ -446,40 +446,47 @@ function checklistFechamento(d, contagens, obs) {
 
 // ---------- PATRIMÔNIO (containers e estoque) ----------
 async function patrimonio() {
-  const d = await api(`/api/patrimonio/${state.mes}`);
+  const f = state.filtroPat || (state.filtroPat = { mes: '', baixados: false });
+  const qs = new URLSearchParams(); if (f.baixados) qs.set('baixados', '1'); else if (f.mes) qs.set('mes', f.mes);
+  const d = await api('/api/patrimonio?' + qs);
   const adm = pode('admin');
-  const pos = d.posicao;
+  const g = d.geral;
+  const titulo = f.baixados ? 'Itens com baixa (vendidos ou baixados)' : f.mes ? `Entraram em ${nomeMes(f.mes)}` : 'Todos os ativos da empresa';
+  const meses = [...new Set([...d.meses, d.mes_atual])].sort().reverse();
   $app.innerHTML = `
     <h1>Patrimônio em ativos</h1>
-    <p class="sub">Quanto vale hoje o que está em containers (a caminho ou parados) e em estoque. Atualize no fechamento do mês: esses valores entram no painel e no relatório dos sócios.</p>
-    <div class="row">${seletorMes()}</div>
+    <p class="sub">Tudo o que a empresa tem hoje em containers, estoque, carros e outros bens. Cada item entra em um mês e fica aqui até a baixa. Use o filtro para ver o que entrou em cada mês.</p>
     <div class="grid">
-      <div class="card kpi"><div class="l">Containers</div><div class="v">${brl(pos.total_container)}</div></div>
-      <div class="card kpi"><div class="l">Estoque</div><div class="v">${brl(pos.total_estoque)}</div></div>
-      <div class="card kpi"><div class="l">Carros</div><div class="v">${brl(pos.total_carro)}</div></div>
-      <div class="card kpi"><div class="l">Outros</div><div class="v">${brl(pos.total_outro)}</div></div>
-      <div class="card kpi"><div class="l">Total em ativos</div><div class="v">${brl(pos.total)}</div></div>
+      <div class="card kpi"><div class="l">Patrimônio total</div><div class="v">${brl(g.total)}</div><small class="mut">no geral, todos os meses</small></div>
+      <div class="card kpi"><div class="l">Containers</div><div class="v">${brl(g.total_container)}</div></div>
+      <div class="card kpi"><div class="l">Estoque</div><div class="v">${brl(g.total_estoque)}</div></div>
+      <div class="card kpi"><div class="l">Carros</div><div class="v">${brl(g.total_carro)}</div></div>
+      <div class="card kpi"><div class="l">Outros</div><div class="v">${brl(g.total_outro)}</div></div>
     </div>
-    ${pos.defasado ? `<div class="aviso-box">${ico('info')}<span>${nomeMes(state.mes)} ainda não tem valores lançados. Os totais acima são de <b>${nomeMes(pos.mes_ref)}</b>, o último mês informado.</span></div>` : ''}
-    <div class="card"><h2>Itens de ${nomeMes(state.mes)}</h2>
-      ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(i.situacao === 'outro' && i.situacao_outro ? 'Outro: ' + i.situacao_outro : d.situacoes[i.situacao])}</td><td>${i.chegada_nao_se_aplica ? '<span class="mut">Não se aplica</span>' : i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
-        <td class="n">${adm ? `<button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="4">Total</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td></td></tr></tfoot></table></div>`
-        : `<p class="mut">Nenhum item lançado em ${nomeMes(state.mes)}.</p>${adm && pos.mes_ref ? `<button class="sec" id="copiar">Copiar os itens de ${nomeMes(d.mes_anterior)} e ajustar os valores</button>` : ''}`}
+    <div class="row"><div><label>Ver</label><select id="pf">
+        <option value="" ${!f.mes && !f.baixados ? 'selected' : ''}>Geral (todos os ativos)</option>
+        ${meses.map((m) => `<option value="${m}" ${f.mes === m && !f.baixados ? 'selected' : ''}>Entraram em ${nomeMes(m)}</option>`).join('')}
+        <option value="baixados" ${f.baixados ? 'selected' : ''}>Com baixa (vendidos)</option></select></div></div>
+    <div class="card"><h2>${titulo}</h2>
+      ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Entrou em</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor</th><th></th></tr></thead><tbody>
+        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}${i.baixa_mes ? `<br><small class="mut">baixa em ${esc(nomeMes(i.baixa_mes))}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(nomeMes(i.mes))}</td><td>${esc(i.situacao === 'outro' && i.situacao_outro ? 'Outro: ' + i.situacao_outro : d.situacoes[i.situacao])}</td><td>${i.chegada_nao_se_aplica ? '<span class="mut">Não se aplica</span>' : i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
+        <td class="n" style="white-space:nowrap">${adm ? `<button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-baixa="${i.id}" data-d="${i.baixa_mes ? 1 : 0}">${i.baixa_mes ? 'desfazer baixa' : 'dar baixa'}</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="5">Total${f.baixados ? '' : f.mes ? ' do que entrou no mês' : ' em ativos'}</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td></td></tr></tfoot></table></div>`
+        : `<p class="mut">${f.baixados ? 'Nenhum item com baixa.' : f.mes ? `Nada entrou em ${nomeMes(f.mes)}.` : 'Nenhum ativo cadastrado ainda. Adicione o primeiro abaixo.'}</p>`}
     </div>
     ${adm ? `<div class="card"><h2>Adicionar item</h2><form class="form" id="novo-item">
       <div><label>Tipo</label><select name="tipo" id="tp">${Object.entries(d.tipos).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div id="tp-outro" hidden><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" placeholder="Ex.: máquina, terreno, equipamento"></div>
       <div class="larg"><label>Descrição</label><input name="descricao" required placeholder="Ex.: Container MSKU 481920 — painéis P3.9"></div>
       <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+      <div><label>Mês de entrada</label><input name="mes" type="month" value="${f.mes || d.mes_atual}" required></div>
       <div><label>Situação</label><select name="situacao" id="sit">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div id="sit-outro" hidden><label>Qual a situação? *</label><input name="situacao_outro" maxlength="60" placeholder="Ex.: em uso, em manutenção, à venda"></div>
       <div><label>Chegada prevista</label><input name="previsao_chegada" id="chg" type="date"><label class="chk-na"><input type="checkbox" name="chegada_nao_se_aplica" id="chg-na" value="1"> Não se aplica</label></div>
       <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div>
       <div style="align-self:end"><button>Adicionar</button></div></form>
-      <p class="legenda" style="margin-top:12px">Informe o valor pelo que custou ou pelo valor de venda esperado, sempre do mesmo jeito. Container vendido sai da lista no mês seguinte.</p></div>` : ''}`;
-  ligaMes(patrimonio);
+      <p class="legenda" style="margin-top:12px">Informe o valor pelo que custou ou pelo valor de venda esperado, sempre do mesmo jeito. Quando vender ou baixar um item, use "dar baixa": ele sai do total geral, mas continua no histórico.</p></div>` : ''}`;
+  document.getElementById('pf').onchange = (e) => { const v = e.target.value; f.baixados = v === 'baixados'; f.mes = v && v !== 'baixados' ? v : ''; patrimonio(); };
   const salvar = (id, corpo, ok) => acao(async () => { await api(id ? `/api/patrimonio/${id}` : '/api/patrimonio', { method: id ? 'PUT' : 'POST', body: corpo }); await patrimonio(); }, ok);
   const tp = document.getElementById('tp'), tpOutro = document.getElementById('tp-outro');
   const sit = document.getElementById('sit'), sitOutro = document.getElementById('sit-outro'), chg = document.getElementById('chg'), chgNa = document.getElementById('chg-na');
@@ -493,15 +500,17 @@ async function patrimonio() {
     if (f.tipo === 'outro' && !String(f.tipo_outro || '').trim()) return toast('Escreva o que é este "outro"', true);
     if (f.situacao === 'outro' && !String(f.situacao_outro || '').trim()) return toast('Escreva qual é a situação', true);
     if (!(valor >= 0)) return toast('Informe um valor válido', true);
-    salvar(null, { ...f, valor, mes: state.mes }, 'Item adicionado');
+    if (!/^\d{4}-\d{2}$/.test(f.mes || '')) return toast('Informe o mês de entrada', true);
+    salvar(null, { ...f, valor }, 'Item adicionado');
   });
-  document.getElementById('copiar')?.addEventListener('click', () => acao(async () => { const r = await api('/api/patrimonio/copiar', { method: 'POST', body: { de: d.mes_anterior, para: state.mes } }); await patrimonio(); toast(`${r.copiados} item(ns) copiado(s). Ajuste os valores.`); }));
+  $app.querySelectorAll('[data-baixa]').forEach((b) => (b.onclick = () => acao(async () => { await api(`/api/patrimonio/${b.dataset.baixa}/baixa`, { method: 'POST', body: b.dataset.d === '1' ? { desfazer: true } : {} }); await patrimonio(); }, b.dataset.d === '1' ? 'Baixa desfeita' : 'Baixa registrada')));
   $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir este item?') && acao(async () => { await api(`/api/patrimonio/${b.dataset.del}`, { method: 'DELETE' }); await patrimonio(); }, 'Item excluído')));
   $app.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => {
     const i = d.itens.find((x) => x.id === +b.dataset.edit);
     const m = modal(`<h2>Editar item</h2><form class="form" id="ed" style="margin-top:14px">
       ${i.tipo === 'outro' ? `<div class="cheio"><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" value="${esc(i.tipo_outro || '')}" required></div>` : ''}
       <div class="cheio"><label>Descrição</label><input name="descricao" value="${esc(i.descricao)}" required></div>
+      <div><label>Mês de entrada</label><input name="mes" type="month" value="${esc(i.mes)}" required></div>
       <div><label>Valor (R$)</label><input name="valor" value="${(i.valor / 100).toFixed(2).replace('.', ',')}" inputmode="decimal" required></div>
       <div><label>Situação</label><select name="situacao" id="esit">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}" ${i.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div id="esit-outro" ${i.situacao === 'outro' ? '' : 'hidden'}><label>Qual a situação? *</label><input name="situacao_outro" maxlength="60" value="${esc(i.situacao_outro || '')}" placeholder="Ex.: em uso, em manutenção"></div>
@@ -512,7 +521,7 @@ async function patrimonio() {
     const esit = m.el.querySelector('#esit'), echg = m.el.querySelector('#echg'), echgNa = m.el.querySelector('#echg-na');
     esit.onchange = () => { m.el.querySelector('#esit-outro').hidden = esit.value !== 'outro'; };
     echgNa.onchange = () => { echg.disabled = echgNa.checked; if (echgNa.checked) echg.value = ''; };
-    m.el.querySelector('#ed').onsubmit = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor); if (!(valor >= 0)) return toast('Valor inválido', true); if (f.situacao === 'outro' && !String(f.situacao_outro || '').trim()) return toast('Escreva qual é a situação', true); m.fechar(); salvar(i.id, { ...f, valor, mes: i.mes, tipo: i.tipo }, 'Item atualizado'); };
+    m.el.querySelector('#ed').onsubmit = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor); if (!(valor >= 0)) return toast('Valor inválido', true); if (f.situacao === 'outro' && !String(f.situacao_outro || '').trim()) return toast('Escreva qual é a situação', true); m.fechar(); salvar(i.id, { ...f, valor, tipo: i.tipo }, 'Item atualizado'); };
   }));
 }
 

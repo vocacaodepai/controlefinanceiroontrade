@@ -203,7 +203,7 @@ test('acesso por ID (sem e-mail): operadora comercial só enxerga a área comerc
   assert.equal((await chamar('GET', '/api/comercial/painel', null, julia)).status, 200);
   assert.equal((await chamar('GET', '/api/aovivo', null, julia)).status, 403, 'Ao Vivo não é do comercial');
   assert.equal((await chamar('GET', '/api/comercial/clientes', null, julia)).status, 200);
-  for (const url of ['/api/meta', '/api/painel/2026-05', '/api/lancamentos', '/api/extratos', '/api/marketing/campanhas', '/api/dp/funcionarios', '/api/societario/quadro', '/api/patrimonio/2026-05', '/api/usuarios']) {
+  for (const url of ['/api/meta', '/api/painel/2026-05', '/api/lancamentos', '/api/extratos', '/api/marketing/campanhas', '/api/dp/funcionarios', '/api/societario/quadro', '/api/patrimonio', '/api/usuarios']) {
     assert.equal((await chamar('GET', url, null, julia)).status, 403, url);
   }
 });
