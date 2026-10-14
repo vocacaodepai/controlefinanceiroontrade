@@ -196,7 +196,7 @@ const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , a
 function renderMenu() {
   document.getElementById('nav').innerHTML = MENU.map(([grupo, itens]) => {
     const vis = itens.filter(([n, , area]) => rotas[n] && temArea(area || n));
-    return vis.length ? `<div class="nav-grupo">${grupo}</div>` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span>${n === 'aovivo' ? '<i class="live-dot" title="Ao vivo: atualiza sozinho de hora em hora" aria-hidden="true"></i>' : ''}</a>`).join('') : '';
+    return vis.length ? `<div class="nav-grupo">${grupo}</div>` + vis.map(([n, r]) => `<a href="#${n}">${ico(n)}<span>${r}</span>${n === 'aovivo' ? '<i class="live-dot" title="Ao vivo: atualiza sozinho a cada 15 minutos" aria-hidden="true"></i>' : ''}</a>`).join('') : '';
   }).join('');
 }
 async function rota() {
@@ -226,7 +226,20 @@ async function rota() {
   }
   if (nome !== 'aovivo') { clearInterval(state.timerVivo); document.body.classList.remove('modo-tv'); }
   try { await rotas[nome](); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
+  state.ultimaAtualizacao = Date.now();
 }
+
+// Atualização automática do dashboard inteiro a cada 15 minutos. Confere a cada minuto e só recarrega a tela atual se ela não estiver sendo usada:
+// sem pop-up aberto, sem campo em edição e fora das telas de formulário (lançar, extratos e perfil), para ninguém perder o que está digitando.
+const ATUALIZA_MS = 15 * 60 * 1000;
+setInterval(() => {
+  if (!state.usuario || document.hidden || state.filaAtiva || Date.now() - (state.ultimaAtualizacao || 0) < ATUALIZA_MS) return;
+  if (document.querySelector('.modal-fundo') || ['#lancar', '#extratos', '#perfil'].includes(location.hash)) return;
+  const ae = document.activeElement;
+  if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName) && $app.contains(ae)) return;
+  state.meta = null; // recarrega também contas, categorias e equipe
+  rota();
+}, 60 * 1000);
 addEventListener('hashchange', () => { if (location.hash !== '#extratos') state.extrato = null; rota(); });
 const recarregarMeta = async () => { state.meta = { ...(await api('/api/meta')), hoje: state.meta.hoje }; };
 
@@ -1251,7 +1264,7 @@ async function aovivo() {
   const linha = (rot, campo, f = String) => `<tr><td>${rot}</td>${['mes_atual', 'mes_anterior_parcial', 'mes_anterior_total', 'mesmo_mes_ano_anterior'].map((k, i) => { const o = i === 0 ? m : c[k]; return `<td class="n ${i === 0 ? 'dest' : ''}">${f(o[campo])}${i === 1 ? ' ' + variacao(m[campo], o[campo]) : i === 3 ? ' ' + variacao(m[campo], o[campo]) : ''}</td>`; }).join('')}</tr>`;
   const linhaP = (rot, campo, f = String) => `<tr><td>${rot}</td>${[['semestre', 'semestre_anterior'], ['ano', 'ano_anterior']].map(([a, b]) => `<td class="n dest">${f(c[a][campo])}</td><td class="n">${f(c[b][campo])} ${variacao(c[a][campo], c[b][campo])}</td>`).join('')}</tr>`;
   const maxP = Math.max(...d.produtos.map((p) => p.valor_orcado), 1);
-  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao Vivo — Comercial <i class="live-dot grande" title="Atualiza sozinho de hora em hora" aria-hidden="true"></i></h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho de hora em hora (próxima às ${String((+d.atualizado_em.slice(11, 13) + 1) % 24).padStart(2, '0')}:${d.atualizado_em.slice(14, 16)}) · use Atualizar para ver agora</p></div>
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao Vivo — Comercial <i class="live-dot grande" title="Atualiza sozinho a cada 15 minutos" aria-hidden="true"></i></h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho a cada 15 minutos (próxima às ${(() => { const t = (+d.atualizado_em.slice(11, 13) * 60 + +d.atualizado_em.slice(14, 16) + 15) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); })()}) · use Atualizar para ver agora</p></div>
       <div class="row" style="margin:0"><button class="mini sec" id="att">${ico('refresh')} Atualizar</button><button class="mini sec" id="tv">Tela cheia</button></div></div>
     ${d.followups_pendentes && temArea('comercial') ? `<div class="aviso-box">${ico('info')}<span><b>${d.followups_pendentes} orçamento(s)</b> aguardando retorno do comercial. <a href="#orcamentos">Abrir orçamentos</a></span></div>` : ''}
     <div class="grid">
@@ -1281,13 +1294,13 @@ async function aovivo() {
     <div class="card"><h2>Orçamentos de hoje</h2>${d.recentes.length ? `<div class="tbl"><table><tbody>${d.recentes.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td><td class="mut">${esc(o.criado_por_nome || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
   document.getElementById('att').onclick = () => aovivo();
   document.getElementById('tv').onclick = () => { document.body.classList.toggle('modo-tv'); document.documentElement.requestFullscreen?.().catch(() => {}); };
-  // Atualização automática de hora em hora. Confere a cada minuto (sem pedir nada ao servidor) e só busca de novo quando passou 1 hora
+  // Atualização automática a cada 15 minutos. Confere a cada minuto (sem pedir nada ao servidor) e só busca de novo quando passaram 15 minutos
   // desde a última atualização; assim também funciona se a aba ficou escondida ou o computador dormiu.
   state.vivoEm = Date.now();
   clearInterval(state.timerVivo);
   state.timerVivo = setInterval(() => {
     if (location.hash !== '#aovivo') return clearInterval(state.timerVivo);
-    if (Date.now() - state.vivoEm >= 60 * 60 * 1000 && !document.querySelector('.modal-fundo') && !document.hidden) aovivo().catch(() => {});
+    if (Date.now() - state.vivoEm >= ATUALIZA_MS && !document.querySelector('.modal-fundo') && !document.hidden) { state.ultimaAtualizacao = Date.now(); aovivo().catch(() => {}); }
   }, 60 * 1000);
 }
 
@@ -1415,7 +1428,7 @@ async function comercial() {
   const linhaOrc = (o, acoes) => `<div class="fu-item" data-id="${o.id}"><div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
     <small class="mut">Orçamento de ${dataBR(o.data)} · follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4 · retorno ${o.followup_em <= d.hoje ? 'desde' : 'em'} ${dataBR(o.followup_em)}</small><br><small>${contatoCli(o)}</small></div>
     ${acoes ? `<div class="fu-acoes"><button class="mini" data-a="msg">Enviar Mensagem</button><button class="mini sec" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button></div>` : ''}</div>`;
-  $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)}</p></div>
+  $app.innerHTML = `<div class="topo-vivo"><div><h1>Painel comercial</h1><p class="sub">Resumo do time comercial em ${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho a cada 15 minutos</p></div>
       <div class="row" style="margin:0"><button id="novo">Novo orçamento</button>${temArea('aovivo') ? '<a href="#aovivo" class="mini sec" style="padding:9px 14px;border:1px solid var(--bd2);border-radius:8px;text-decoration:none">Ver ao vivo completo</a>' : ''}</div></div>
     <div class="grid">
       <div class="card kpi"><div class="l">Retornos pendentes</div><div class="v">${d.retornos.length}</div><small class="mut">orçamentos esperando contato</small></div>
@@ -1674,17 +1687,19 @@ async function marketing() {
     <div class="row">${seletorMes()}</div>
     <div class="grid">
       <div class="card kpi"><div class="l">Investido em anúncios</div><div class="v">${brl(a.gasto)}</div><small class="mut">mês anterior ${brl(p.gasto)} ${comp(a.gasto, p.gasto)}</small></div>
+      <div class="card kpi"><div class="l">Conversas por mensagem iniciadas</div><div class="v">${num(a.conversas)}</div><small class="mut">custo por conversa ${brlOu(a.custo_conversa)} · mês anterior ${num(p.conversas)} ${comp(a.conversas, p.conversas)}</small></div>
+      <div class="card kpi"><div class="l">Alcance e impressões</div><div class="v">${num(a.alcance)}</div><small class="mut">${num(a.impressoes)} impressões · frequência ${a.frequencia == null ? '—' : a.frequencia.toFixed(2).replace('.', ',')} · CPM ${brlOu(a.cpm)}</small></div>
       <div class="card kpi"><div class="l">Leads gerados</div><div class="v">${num(a.leads)}</div><small class="mut">custo por lead ${brlOu(a.cpl)} · mês anterior ${num(p.leads)} ${comp(a.leads, p.leads)}</small></div>
       <div class="card kpi"><div class="l">Orçamentos vindos de campanhas</div><div class="v">${num(a.orcamentos)}</div><small class="mut">de ${num(a.orcamentos_todos)} no mês · custo por orçamento ${brlOu(a.custo_orcamento)}</small></div>
       <div class="card kpi"><div class="l">Vendido pelas campanhas</div><div class="v">${brl(a.valor_vendido)}</div><small class="mut">${a.vendas} venda(s) · retorno ${xOu(a.roas)} sobre o investido · já recebido ${brl(a.valor_recebido)}</small></div>
     </div>
     <div class="card"><h2>Campanhas em ${nomeMes(d.mes)}</h2>${d.por_campanha.length ? `<div class="tbl"><table><thead><tr><th>Campanha</th><th>Início</th><th class="n">Investido</th><th class="n">Leads</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Custo/orçam.</th><th class="n">Vendido</th><th class="n">Retorno</th></tr></thead><tbody>
       ${d.por_campanha.map((c) => `<tr><td><b>${esc(c.nome)}</b> ${c.ativa ? '' : '<span class="tag">encerrada</span>'}<br><small class="mut">${esc(CANAIS_MKT[c.canal])}${c.verba ? ` · verba ${brl(c.verba)} (usado ${brl(c.gasto_total)})` : ''}</small><br><button class="mini" data-ret="${c.id}" style="margin-top:6px">Retorno</button>${edita ? ` <button class="mini sec" data-dias="${c.id}" style="margin-top:6px">Números</button> <button class="mini sec" data-edit="${c.id}" style="margin-top:6px">Editar</button>` : ''}</td>
-        <td>${dataBR(c.data_inicio)}${c.data_fim ? `<br><small class="mut">até ${dataBR(c.data_fim)}</small>` : ''}</td><td class="n">${brl(c.gasto)}</td><td class="n">${num(c.leads)}</td><td class="n">${brlOu(c.cpl)}</td>
+        <td>${dataBR(c.data_inicio)}${c.data_fim ? `<br><small class="mut">até ${dataBR(c.data_fim)}</small>` : ''}</td><td class="n">${brl(c.gasto)}</td><td class="n">${num(c.leads)}<br><small class="mut">${num(c.conversas)} conversas</small></td><td class="n">${brlOu(c.cpl)}<br><small class="mut">${c.conversas ? brlOu(c.custo_conversa) + '/conversa' : ''}</small></td>
         <td class="n">${c.orcamentos}<br><small class="mut">${brl(c.valor_orcado)}</small></td><td class="n">${brlOu(c.custo_orcamento)}</td><td class="n">${brl(c.valor_vendido)}<br><small class="mut">${c.vendas} venda(s) · recebido ${brl(c.valor_recebido)}</small></td><td class="n">${xOu(c.roas)}<br><small class="mut">${c.vendas ? `${brlOu(c.custo_venda)}/venda` : ''}</small></td></tr>`).join('')}</tbody></table></div>`
       : `<p class="mut">Nenhuma campanha neste mês.${edita ? ' Cadastre uma em "Nova campanha".' : ''}</p>`}</div>
-    <div class="card"><h2>Semana a semana</h2>${d.semanas.length ? `<div class="tbl"><table><thead><tr><th>Semana</th><th class="n">Investido</th><th class="n">Cliques</th><th class="n">Leads</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Vendido</th></tr></thead><tbody>
-      ${d.semanas.map((w) => `<tr><td>${dataBR(w.semana).slice(0, 5)} a ${dataBR(w.ate).slice(0, 5)}</td><td class="n">${brl(w.gasto)}</td><td class="n">${num(w.cliques)}</td><td class="n">${num(w.leads)}</td><td class="n">${w.leads ? brl(Math.round(w.gasto / w.leads)) : '—'}</td><td class="n">${w.orcamentos}</td><td class="n">${brl(w.valor_vendido)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Sem lançamentos nas semanas deste mês.</p>'}</div>
+    <div class="card"><h2>Semana a semana</h2>${d.semanas.length ? `<div class="tbl"><table><thead><tr><th>Semana</th><th class="n">Investido</th><th class="n">Cliques</th><th class="n">Leads</th><th class="n">Conversas</th><th class="n">Custo/lead</th><th class="n">Orçamentos</th><th class="n">Vendido</th></tr></thead><tbody>
+      ${d.semanas.map((w) => `<tr><td>${dataBR(w.semana).slice(0, 5)} a ${dataBR(w.ate).slice(0, 5)}</td><td class="n">${brl(w.gasto)}</td><td class="n">${num(w.cliques)}</td><td class="n">${num(w.leads)}</td><td class="n">${num(w.conversas)}</td><td class="n">${w.leads ? brl(Math.round(w.gasto / w.leads)) : '—'}</td><td class="n">${w.orcamentos}</td><td class="n">${brl(w.valor_vendido)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Sem lançamentos nas semanas deste mês.</p>'}</div>
     <div class="card"><h2>De onde vêm os orçamentos</h2><p class="legenda">Todos os orçamentos do mês, pela origem marcada pelo comercial (com ou sem campanha paga).</p>
       ${d.por_origem.length ? d.por_origem.map((o) => `<div class="barra"><span class="nome" title="${esc(o.rotulo)}">${esc(o.rotulo)}</span><span class="trilho"><span class="fill" style="display:block;width:${(o.qtd / maxO) * 100}%"></span></span><span class="val">${o.qtd} orçam.</span><span class="val mut" style="width:150px">${brl(o.valor_vendido)} vendido</span></div>`).join('') : '<p class="mut">Nenhum orçamento no mês.</p>'}</div>
     <div class="card"><h2>Ligação com as plataformas de anúncio</h2><p class="legenda">Hoje: lançamento manual dos números de cada campanha (gasto, cliques, leads). Próxima etapa: conectar as contas de anúncios (Meta Ads e Google Ads) para esses números chegarem sozinhos. Isso depende de você autorizar o acesso às contas de anúncio; nenhuma senha passa pelo chat.</p></div>`;
@@ -1705,7 +1720,7 @@ async function janelaRetorno(id) {
   const SIT = { aberto: 'Em aberto', ganho: 'Vendido', perdido: 'Perdido', cancelado: 'Cancelado' };
   const m = modal(`<h2>Retorno: ${esc(c.nome)}</h2><p class="legenda">${esc(CANAIS_MKT[c.canal])} · desde ${dataBR(c.data_inicio)}${c.data_fim ? ` até ${dataBR(c.data_fim)}` : ''}. Os orçamentos entram sozinhos quando o comercial marca a origem e há campanha ativa; vendas e recebimentos atualizam conforme o financeiro avança.</p>
     <div class="grid" style="margin-top:12px">
-      <div class="card kpi"><div class="l">Investido</div><div class="v">${brl(t.gasto)}</div><small class="mut">${num(t.leads)} lead(s)</small></div>
+      <div class="card kpi"><div class="l">Investido</div><div class="v">${brl(t.gasto)}</div><small class="mut">${num(t.leads)} lead(s) · ${num(t.conversas)} conversa(s)${t.conversas ? ` (${brlOu(t.custo_conversa)} cada)` : ''}</small></div>
       <div class="card kpi"><div class="l">Orçamentos</div><div class="v">${t.orcamentos}</div><small class="mut">${brl(t.valor_orcado)} · ${brlOu(t.custo_orcamento)} cada</small></div>
       <div class="card kpi"><div class="l">Vendido</div><div class="v">${brl(t.valor_vendido)}</div><small class="mut">${t.vendas} venda(s) · retorno ${xOu(t.roas)}</small></div>
       <div class="card kpi"><div class="l">Já recebido</div><div class="v pos">${brl(t.valor_recebido)}</div><small class="mut">retorno em caixa ${xOu(t.roas_recebido)}${t.a_receber ? ` · falta ${brl(t.a_receber)}` : ''}</small></div>
@@ -1742,13 +1757,14 @@ async function janelaDias(campId, depois) {
     <form class="form" id="fd" style="margin-top:12px" novalidate>
       ${seletorObr('Campanha', 'campanha_id', campanhas.map((c) => `<option value="${c.id}" ${c.id === campId ? 'selected' : ''}>${esc(c.nome)}${c.ativa ? '' : ' (encerrada)'}</option>`).join(''), 'class="larg"')}
       ${campoObr('Dia', 'data', hojeISO(), 'date')}${campoObr('Valor gasto (R$)', 'gasto', '', 'text')}
-      <div><label>Impressões</label><input name="impressoes" type="number" min="0" placeholder="0"></div><div><label>Cliques</label><input name="cliques" type="number" min="0" placeholder="0"></div><div><label>Leads gerados</label><input name="leads" type="number" min="0" placeholder="0"></div></form>
+      <div><label>Impressões</label><input name="impressoes" type="number" min="0" placeholder="0"></div><div><label>Cliques</label><input name="cliques" type="number" min="0" placeholder="0"></div><div><label>Leads gerados</label><input name="leads" type="number" min="0" placeholder="0"></div>
+      <div><label>Alcance</label><input name="alcance" type="number" min="0" placeholder="0"></div><div><label>Conversas por mensagem iniciadas</label><input name="conversas" type="number" min="0" placeholder="0"></div></form>
     <div id="hist"></div>
     <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Fechar</button><button id="ok">Salvar números</button></div>`, 600);
   const f = m.el.querySelector('#fd'), hist = m.el.querySelector('#hist');
   const carrega = async () => {
     const dias = await api(`/api/marketing/campanhas/${f.campanha_id.value}/dias`);
-    hist.innerHTML = dias.length ? `<h3 style="margin:16px 0 6px;font-size:14px">Últimos lançamentos</h3><div class="tbl" style="max-height:200px;overflow-y:auto"><table><tbody>${dias.slice(0, 15).map((x) => `<tr><td>${dataBR(x.data)}</td><td class="n">${brl(x.gasto)}</td><td class="n">${num(x.cliques)} cliques</td><td class="n">${num(x.leads)} leads</td><td class="n"><button type="button" class="mini sec" data-del="${x.id}">excluir</button></td></tr>`).join('')}</tbody></table></div>` : '';
+    hist.innerHTML = dias.length ? `<h3 style="margin:16px 0 6px;font-size:14px">Últimos lançamentos</h3><div class="tbl" style="max-height:200px;overflow-y:auto"><table><tbody>${dias.slice(0, 15).map((x) => `<tr><td>${dataBR(x.data)}</td><td class="n">${brl(x.gasto)}</td><td class="n">${num(x.cliques)} cliques</td><td class="n">${num(x.leads)} leads · ${num(x.conversas)} conversas</td><td class="n"><button type="button" class="mini sec" data-del="${x.id}">excluir</button></td></tr>`).join('')}</tbody></table></div>` : '';
     hist.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => acao(async () => { await api(`/api/marketing/dias/${b.dataset.del}`, { method: 'DELETE' }); await carrega(); await depois(); }, 'Lançamento excluído')));
   };
   f.campanha_id.onchange = carrega; carrega();

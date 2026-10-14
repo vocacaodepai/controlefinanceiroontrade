@@ -114,3 +114,15 @@ test('retorno da campanha: orçamento caminha até a venda e o recebimento e a c
   assert.equal(linha.valor_recebido >= 400000 || linha.orcamentos === 0, true);
   await assert.rejects(MK.retornoCampanha(999999), /não encontrada/);
 });
+
+test('números do anúncio: alcance e conversas por mensagem entram no painel, com custo por conversa e frequência', async () => {
+  const c = await MK.salvarCampanha(null, { nome: 'Conversas Teste', canal: 'tiktok', data_inicio: mes + '-01' });
+  await assert.rejects(MK.lancarDia({ campanha_id: c.id, data: mes + '-01', gasto: 100, alcance: -1 }), /Alcance inválido/);
+  await MK.lancarDia({ campanha_id: c.id, data: mes + '-02', gasto: 92622, impressoes: 43017, cliques: 500, leads: 0, alcance: 21665, conversas: 165 });
+  const p = await MK.painel(mes);
+  const l = p.por_campanha.find((x) => x.id === c.id);
+  assert.equal(l.conversas, 165); assert.equal(l.alcance, 21665);
+  assert.equal(Math.round(l.custo_conversa), 561); // R$ 5,61 por conversa, como no gerenciador de anúncios
+  assert.ok(p.atual.conversas >= 165 && p.atual.alcance >= 21665 && p.atual.frequencia > 1);
+  assert.equal((await MK.retornoCampanha(c.id)).totais.conversas, 165);
+});
