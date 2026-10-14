@@ -3,7 +3,7 @@ import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { SITUACOES } from './patrimonio.js';
+import { SITUACOES, rotuloTipo } from './patrimonio.js';
 
 const AZ = '#012d61', AZ2 = '#0c5aa6', TX = '#14202f', CIN = '#6a7585', LIN = '#d3d9e2', FUNDO = '#f3f6fa', VER = '#1b8a5a', VERM = '#c0392b';
 const W = 595.28, H = 841.89, M = 42, CW = W - 2 * M;
@@ -178,18 +178,20 @@ export function gerarPdf(d, saida) {
   graficoMeses(doc, d.serie, mesCurto);
 
   // ---- patrimônio ----
-  secao(doc, '5. Patrimônio em ativos: containers e estoque', 'Valores informados pela administração. Um mês de caixa negativo pode refletir dinheiro que virou ativo (containers a caminho, estoque).');
+  secao(doc, '5. Patrimônio em ativos: containers, estoque, carros e outros', 'Valores informados pela administração. Um mês de caixa negativo pode refletir dinheiro que virou ativo (containers a caminho, estoque).');
   if (!pat.informado) {
     paragrafo(doc, 'Ainda não há valores de containers e estoque informados para este período.', { cor: CIN });
   } else {
     if (pat.defasado) paragrafo(doc, `Atenção: valores de ${pat.mes_ref.split('-').reverse().join('/')} (último mês informado).`, { cor: '#8a5d10', tam: 8.5 });
     tabela(doc, [
-      { t: 'Item', w: 4.2, k: 'descricao' }, { t: 'Tipo', w: 1.3, k: 'tipo', f: (v) => (v === 'container' ? 'Container' : v === 'estoque' ? 'Estoque' : '') },
+      { t: 'Item', w: 4.2, k: 'descricao' }, { t: 'Tipo', w: 1.3, k: 'tipo', f: (v, i) => rotuloTipo(i) },
       { t: 'Situação', w: 2.4, k: 'situacao', f: (v) => SITUACOES[v] || v }, { t: 'Valor', w: 2, a: 'r', k: 'valor', f: brl },
     ], pat.itens, { total: { descricao: 'Total em ativos', tipo: '', situacao: '', valor: pat.total } });
     kpis(doc, [
       { rotulo: 'Containers', valor: brl(pat.total_container) },
       { rotulo: 'Estoque', valor: brl(pat.total_estoque) },
+      ...(pat.total_carro ? [{ rotulo: 'Carros', valor: brl(pat.total_carro) }] : []),
+      ...(pat.total_outro ? [{ rotulo: 'Outros', valor: brl(pat.total_outro) }] : []),
       { rotulo: 'Variação dos ativos', valor: pat.variacao_ativos === null ? '—' : brl(pat.variacao_ativos), cor: pat.variacao_ativos === null ? TX : corVal(pat.variacao_ativos), sub: pat.variacao_ativos === null ? 'sem mês anterior informado' : `mês anterior: ${brl(pat.ativos_anterior)}` },
       { rotulo: 'Resultado econômico', valor: pat.resultado_economico === null ? '—' : brl(pat.resultado_economico), cor: pat.resultado_economico === null ? TX : corVal(pat.resultado_economico), sub: 'estimado: caixa + ativos' },
     ]);

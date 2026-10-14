@@ -3,7 +3,9 @@
 import { query, one } from './db.js';
 import { ErroNegocio, isMes, intervaloMes } from './services.js';
 
-export const TIPOS = { container: 'Container', estoque: 'Estoque' };
+export const TIPOS = { container: 'Container', estoque: 'Estoque', carro: 'Carro', outro: 'Outro' };
+// Nome do tipo para exibir: "Outro" mostra o que o usuário escreveu
+export const rotuloTipo = (i) => (i.tipo === 'outro' && i.tipo_outro ? `Outro: ${i.tipo_outro}` : TIPOS[i.tipo] || i.tipo);
 export const SITUACOES = { em_transito: 'Em trânsito (no mar)', no_porto: 'No porto / desembaraço', em_estoque: 'Em estoque', outro: 'Outro' };
 
 export const mesAnterior = (mes) => {
@@ -20,11 +22,11 @@ export async function posicao(mes) {
   let itens = await itensDoMes(mes);
   if (!itens.length) {
     const ult = await one('SELECT MAX(mes) AS mes FROM patrimonio_itens WHERE mes < $1', [mes]);
-    if (!ult?.mes) return { mes_ref: null, defasado: false, itens: [], total_container: 0, total_estoque: 0, total: 0, informado: false };
+    if (!ult?.mes) return { mes_ref: null, defasado: false, itens: [], total_container: 0, total_estoque: 0, total_carro: 0, total_outro: 0, total: 0, informado: false };
     ref = ult.mes; itens = await itensDoMes(ref);
   }
   const soma = (t) => itens.filter((i) => i.tipo === t).reduce((a, i) => a + i.valor, 0);
-  return { mes_ref: ref, defasado: ref !== mes, itens, total_container: soma('container'), total_estoque: soma('estoque'), total: itens.reduce((a, i) => a + i.valor, 0), informado: true };
+  return { mes_ref: ref, defasado: ref !== mes, itens, total_container: soma('container'), total_estoque: soma('estoque'), total_carro: soma('carro'), total_outro: soma('outro'), total: itens.reduce((a, i) => a + i.valor, 0), informado: true };
 }
 
 // Quadro do painel: caixa x ativos
@@ -46,25 +48,27 @@ export async function resumoPainel(mes, painel) {
 
 function validar(b) {
   if (!isMes(b.mes)) throw new ErroNegocio('Mês inválido.');
-  if (!Object.hasOwn(TIPOS, b.tipo)) throw new ErroNegocio('Tipo inválido (container ou estoque).');
+  if (!Object.hasOwn(TIPOS, b.tipo)) throw new ErroNegocio('Tipo inválido (container, estoque, carro ou outro).');
+  const tipoOutro = b.tipo === 'outro' ? String(b.tipo_outro || '').trim().slice(0, 60) : null;
+  if (b.tipo === 'outro' && !tipoOutro) throw new ErroNegocio('Escreva o que é este "outro" (ex.: máquina, terreno, equipamento).');
   if (!b.descricao?.trim()) throw new ErroNegocio('Descreva o item (ex.: Container MSKU 123 — painéis P3.9).');
   const valor = Math.round(Number(b.valor));
   if (!Number.isFinite(valor) || valor < 0) throw new ErroNegocio('Informe o valor do item.');
-  const situacao = b.situacao || (b.tipo === 'estoque' ? 'em_estoque' : 'em_transito');
+  const situacao = b.situacao || (b.tipo === 'estoque' ? 'em_estoque' : b.tipo === 'container' ? 'em_transito' : 'outro');
   if (!Object.hasOwn(SITUACOES, situacao)) throw new ErroNegocio('Situação inválida.');
   const prev = b.previsao_chegada || null;
   if (prev && !/^\d{4}-\d{2}-\d{2}$/.test(prev)) throw new ErroNegocio('Data de chegada inválida.');
-  return [b.mes, b.tipo, b.descricao.trim().slice(0, 200), valor, situacao, prev, b.obs?.trim() || null];
+  return [b.mes, b.tipo, b.descricao.trim().slice(0, 200), valor, situacao, prev, b.obs?.trim() || null, tipoOutro];
 }
 
 export async function salvarItem(id, b, usuario) {
   const v = validar(b);
   if (id) {
-    const r = await one(`UPDATE patrimonio_itens SET mes=$1,tipo=$2,descricao=$3,valor=$4,situacao=$5,previsao_chegada=$6,obs=$7 WHERE id=$8 RETURNING *`, [...v, id]);
+    const r = await one(`UPDATE patrimonio_itens SET mes=$1,tipo=$2,descricao=$3,valor=$4,situacao=$5,previsao_chegada=$6,obs=$7,tipo_outro=$8 WHERE id=$9 RETURNING *`, [...v, id]);
     if (!r) throw new ErroNegocio('Item não encontrado.', 404);
     return r;
   }
-  return one(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [...v, usuario?.nome || null]);
+  return one(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [...v, usuario?.nome || null]);
 }
 
 export async function excluirItem(id) {
@@ -79,8 +83,8 @@ export async function copiarMes(de, para) {
   const origem = await itensDoMes(de);
   if (!origem.length) throw new ErroNegocio('O mês de origem não tem itens.');
   for (const i of origem) {
-    await query(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [para, i.tipo, i.descricao, i.valor, i.situacao, i.previsao_chegada, i.obs, i.criado_por]);
+    await query(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [para, i.tipo, i.descricao, i.valor, i.situacao, i.previsao_chegada, i.obs, i.tipo_outro, i.criado_por]);
   }
   return origem.length;
 }

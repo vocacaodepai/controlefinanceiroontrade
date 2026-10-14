@@ -270,7 +270,7 @@ function cartaoPatrimonio(p) {
     <div class="titulo-saldos"><h2>Caixa e patrimônio em ativos</h2>${temArea('patrimonio') ? '<a class="btn sec mini" href="#patrimonio">Ver e atualizar</a>' : ''}</div>
     <p class="legenda aviso-vivo">Valores de containers e estoque de <b>${nomeMes(t.mes_ref)}</b>${t.defasado ? ' (último mês informado)' : ''}. Atualizados no fechamento do mês, não no dia a dia.</p>
     <div class="mk-grade">
-      ${mk('Containers', brl(t.total_container))}${mk('Estoque', brl(t.total_estoque))}
+      ${mk('Containers', brl(t.total_container))}${mk('Estoque', brl(t.total_estoque))}${t.total_carro ? mk('Carros', brl(t.total_carro)) : ''}${t.total_outro ? mk('Outros', brl(t.total_outro)) : ''}
       ${mk('Posição total', brl(t.posicao_total), t.posicao_total < 0 ? 'neg' : '', 'saldo em contas + ativos')}
       ${t.resultado_economico === null ? mk('Resultado econômico', '—', '', 'falta o mês anterior para comparar') : mk('Resultado econômico', brl(t.resultado_economico), t.resultado_economico < 0 ? 'neg' : '', 'caixa do mês + variação dos ativos')}
     </div>
@@ -456,18 +456,21 @@ async function patrimonio() {
     <div class="grid">
       <div class="card kpi"><div class="l">Containers</div><div class="v">${brl(pos.total_container)}</div></div>
       <div class="card kpi"><div class="l">Estoque</div><div class="v">${brl(pos.total_estoque)}</div></div>
+      <div class="card kpi"><div class="l">Carros</div><div class="v">${brl(pos.total_carro)}</div></div>
+      <div class="card kpi"><div class="l">Outros</div><div class="v">${brl(pos.total_outro)}</div></div>
       <div class="card kpi"><div class="l">Total em ativos</div><div class="v">${brl(pos.total)}</div></div>
     </div>
     ${pos.defasado ? `<div class="aviso-box">${ico('info')}<span>${nomeMes(state.mes)} ainda não tem valores lançados. Os totais acima são de <b>${nomeMes(pos.mes_ref)}</b>, o último mês informado.</span></div>` : ''}
     <div class="card"><h2>Itens de ${nomeMes(state.mes)}</h2>
       ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td><span class="tag">${esc(d.tipos[i.tipo])}</span></td><td>${esc(d.situacoes[i.situacao])}</td><td>${i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
+        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(d.situacoes[i.situacao])}</td><td>${i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
         <td class="n">${adm ? `<button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td colspan="4">Total</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td></td></tr></tfoot></table></div>`
         : `<p class="mut">Nenhum item lançado em ${nomeMes(state.mes)}.</p>${adm && pos.mes_ref ? `<button class="sec" id="copiar">Copiar os itens de ${nomeMes(d.mes_anterior)} e ajustar os valores</button>` : ''}`}
     </div>
     ${adm ? `<div class="card"><h2>Adicionar item</h2><form class="form" id="novo-item">
-      <div><label>Tipo</label><select name="tipo">${Object.entries(d.tipos).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div><label>Tipo</label><select name="tipo" id="tp">${Object.entries(d.tipos).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div id="tp-outro" hidden><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" placeholder="Ex.: máquina, terreno, equipamento"></div>
       <div class="larg"><label>Descrição</label><input name="descricao" required placeholder="Ex.: Container MSKU 481920 — painéis P3.9"></div>
       <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
       <div><label>Situação</label><select name="situacao">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
@@ -477,9 +480,12 @@ async function patrimonio() {
       <p class="legenda" style="margin-top:12px">Informe o valor pelo que custou ou pelo valor de venda esperado, sempre do mesmo jeito. Container vendido sai da lista no mês seguinte.</p></div>` : ''}`;
   ligaMes(patrimonio);
   const salvar = (id, corpo, ok) => acao(async () => { await api(id ? `/api/patrimonio/${id}` : '/api/patrimonio', { method: id ? 'PUT' : 'POST', body: corpo }); await patrimonio(); }, ok);
+  const tp = document.getElementById('tp'), tpOutro = document.getElementById('tp-outro');
+  if (tp) tp.onchange = () => { document.querySelector('#novo-item [name=situacao]').value = tp.value === 'estoque' ? 'em_estoque' : tp.value === 'container' ? 'em_transito' : 'outro'; tpOutro.hidden = tp.value !== 'outro'; if (!tpOutro.hidden) tpOutro.querySelector('input').focus(); };
   document.getElementById('novo-item')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target)); const valor = paraCentavos(f.valor);
+    if (f.tipo === 'outro' && !String(f.tipo_outro || '').trim()) return toast('Escreva o que é este "outro"', true);
     if (!(valor >= 0)) return toast('Informe um valor válido', true);
     salvar(null, { ...f, valor, mes: state.mes }, 'Item adicionado');
   });
@@ -488,6 +494,7 @@ async function patrimonio() {
   $app.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => {
     const i = d.itens.find((x) => x.id === +b.dataset.edit);
     const m = modal(`<h2>Editar item</h2><form class="form" id="ed" style="margin-top:14px">
+      ${i.tipo === 'outro' ? `<div class="cheio"><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" value="${esc(i.tipo_outro || '')}" required></div>` : ''}
       <div class="cheio"><label>Descrição</label><input name="descricao" value="${esc(i.descricao)}" required></div>
       <div><label>Valor (R$)</label><input name="valor" value="${(i.valor / 100).toFixed(2).replace('.', ',')}" inputmode="decimal" required></div>
       <div><label>Situação</label><select name="situacao">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}" ${i.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
