@@ -241,3 +241,82 @@ input.invalido,select.invalido,textarea.invalido{border-color:var(--verm)!import
 input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;letter-spacing:.02em;cursor:default}
 .chk-na{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;color:var(--mut);text-transform:none;letter-spacing:0;cursor:pointer}
 .chk-na input{width:auto;margin:0}
+
+/* =====================================================================
+   CELULAR (iPhone 15 ≈ 393 px): visual de aplicativo, com barra no topo e menu embaixo.
+   Tudo aqui dentro só vale em telas estreitas; no computador nada muda.
+   ===================================================================== */
+@media(max-width:820px){
+  html,body{max-width:100%;overflow-x:hidden}
+  body{display:block;min-height:100vh;min-height:100dvh;padding-bottom:calc(68px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+  body.deslogado{display:flex;padding-bottom:0}
+
+  /* barra superior: logo, aparência e perfil */
+  #menu{position:sticky;top:0;z-index:30;display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:10px;width:100%;height:auto;overflow:visible;
+    padding:calc(8px + env(safe-area-inset-top)) 14px 8px;background:var(--card);border:0;border-bottom:1px solid var(--bd)}
+  #menu .marca{display:block;flex:1;min-width:0;padding:0}
+  #menu .marca .logo-menu{width:38px}
+  :root[data-tema=escuro] #menu .marca .logo-menu{width:34px;padding:4px 5px}
+  #tema-menu{flex:0 0 auto;padding:0}.tema-menu .tema{display:inline-flex;width:auto}.tema-menu .tema button{padding:7px 11px;min-height:36px}
+  .usuario{flex:0 0 auto;margin:0;padding:0;border:0;gap:6px}
+  .quem-link{padding:2px;margin:0;border-radius:50%}.quem-link>div{display:none}
+  .usuario .mini{min-height:36px;padding:6px 12px}
+
+  /* menu inferior, como as abas de um aplicativo */
+  #menu nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;flex-direction:row;gap:0;flex:none;min-height:0;overflow-x:auto;overflow-y:hidden;
+    background:var(--card);border-top:1px solid var(--bd);padding:6px 6px calc(6px + env(safe-area-inset-bottom));scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+  #menu nav::-webkit-scrollbar{display:none}
+  .nav-grupo{display:none}
+  #menu nav a{position:relative;flex:0 0 auto;flex-direction:column;justify-content:center;gap:3px;min-width:68px;max-width:92px;margin:0;padding:6px 6px;border-radius:12px;font-size:10.5px;line-height:1.2;text-align:center;scroll-snap-align:start}
+  #menu nav a span:not(.badge){display:block;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #menu nav a .ico{width:22px;height:22px}
+  #menu nav a .badge{position:absolute;top:0;right:12px;margin:0;min-width:17px;height:17px;font-size:10px;padding:0 5px}
+  #menu nav a .live-dot{position:absolute;top:6px;right:20px;margin:0}
+
+  /* conteúdo */
+  main{padding:16px 14px 24px;max-width:100%}
+  h1{font-size:21px}h2{font-size:15px}
+  .sub{margin-bottom:16px;font-size:13.5px}
+  .card{padding:16px;border-radius:14px;margin-bottom:14px}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}
+  .grid .card{padding:13px}
+  .grid.dois,.grid2{grid-template-columns:minmax(0,1fr)}
+  .mk-grade{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpi .l{font-size:10.5px;letter-spacing:.05em}.kpi .v{font-size:19px;overflow-wrap:anywhere}.kpi small{font-size:11.5px}
+  .grande{font-size:24px}
+  .topo-vivo{flex-direction:column;gap:10px}.topo-vivo>.row{width:100%;margin:0 0 14px!important}
+
+  /* filtros e formulários: um campo por linha, fáceis de tocar */
+  .row{gap:10px;margin-bottom:14px}.row>div{min-width:0;flex:1 1 140px}.row>button,.row>.btn{flex:1 1 auto}
+  .form{grid-template-columns:minmax(0,1fr);gap:12px}.form .larg,.form .cheio{grid-column:auto}
+  input,select,textarea{font-size:16px;padding:11px 12px;min-height:44px}
+  input[type=checkbox],input[type=radio]{min-height:0;width:20px;height:20px}
+  button,.btn{min-height:44px}
+  button.mini,.btn.mini,a.zap{min-height:38px;padding:7px 12px}
+  .seg button{padding:10px 16px}
+  .abas{overflow-x:auto;scrollbar-width:none}.abas button{flex:0 0 auto}
+
+  /* tabelas: rolam de lado sem estourar a tela */
+  .tbl{margin:0 -6px;padding:0 6px;-webkit-overflow-scrolling:touch}
+  th,td{padding:10px 6px;font-size:13px}
+  .barra .nome{width:36%}.barra .val{width:auto;min-width:56px}
+  .serie{height:96px}
+  .fu-item{flex-direction:column;align-items:stretch}.fu-acoes>*{flex:1 1 auto}
+  .resumo-check{grid-template-columns:1fr 1fr}
+  .foto-area{justify-content:center}.foto-area canvas{width:100%;height:auto;aspect-ratio:1}
+  .avatar{flex:none}
+
+  /* janelas viram painéis que sobem de baixo */
+  .modal-fundo{align-items:flex-end;padding:0}
+  .modal{max-width:100%!important;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;max-height:92dvh;border-bottom:0}
+  .modal-acoes{flex-wrap:wrap;gap:8px}.modal-acoes>button{flex:1 1 auto}.modal-acoes>span{display:none}
+  .check-item{padding:12px}
+
+  /* aviso por cima do menu de baixo */
+  #toast{left:12px;right:12px;bottom:calc(78px + env(safe-area-inset-bottom));text-align:center}
+
+  /* tela de login */
+  body.deslogado main{padding:20px 16px}
+  .login{padding:28px 20px}
+  .tema-flutuante{top:calc(10px + env(safe-area-inset-top));right:12px}
+}
