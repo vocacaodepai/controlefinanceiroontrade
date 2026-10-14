@@ -59,9 +59,9 @@ export async function lancarDia(b) {
   if (b.data < camp.data_inicio) throw new ErroNegocio('A data é anterior ao início da campanha.');
   const gasto = Math.round(Number(b.gasto));
   if (!Number.isFinite(gasto) || gasto < 0) throw new ErroNegocio('Valor gasto inválido.');
-  return one(`INSERT INTO campanha_dias (campanha_id,data,gasto,impressoes,cliques,leads) VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (campanha_id,data) DO UPDATE SET gasto=EXCLUDED.gasto, impressoes=EXCLUDED.impressoes, cliques=EXCLUDED.cliques, leads=EXCLUDED.leads RETURNING *`,
-    [camp.id, b.data, gasto, inteiro(b.impressoes, 'Impressões'), inteiro(b.cliques, 'Cliques'), inteiro(b.leads, 'Leads')]);
+  return one(`INSERT INTO campanha_dias (campanha_id,data,gasto,impressoes,cliques,leads,alcance,conversas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    ON CONFLICT (campanha_id,data) DO UPDATE SET gasto=EXCLUDED.gasto, impressoes=EXCLUDED.impressoes, cliques=EXCLUDED.cliques, leads=EXCLUDED.leads, alcance=EXCLUDED.alcance, conversas=EXCLUDED.conversas RETURNING *`,
+    [camp.id, b.data, gasto, inteiro(b.impressoes, 'Impressões'), inteiro(b.cliques, 'Cliques'), inteiro(b.leads, 'Leads'), inteiro(b.alcance, 'Alcance'), inteiro(b.conversas, 'Conversas')]);
 }
 export const listarDias = (campanhaId) => query('SELECT * FROM campanha_dias WHERE campanha_id = $1 ORDER BY data DESC LIMIT 120', [campanhaId]);
 export async function excluirDia(id) {
@@ -74,7 +74,8 @@ const razao = (a, b) => (b > 0 ? a / b : null);
 const mesAnt = (m) => { const [a, n] = m.split('-').map(Number); return n === 1 ? `${a - 1}-12` : `${a}-${String(n - 1).padStart(2, '0')}`; };
 
 async function totais(de, ate) {
-  const g = await one(`SELECT coalesce(sum(gasto),0)::bigint AS gasto, coalesce(sum(impressoes),0)::bigint AS impressoes, coalesce(sum(cliques),0)::bigint AS cliques, coalesce(sum(leads),0)::bigint AS leads
+  const g = await one(`SELECT coalesce(sum(gasto),0)::bigint AS gasto, coalesce(sum(impressoes),0)::bigint AS impressoes, coalesce(sum(cliques),0)::bigint AS cliques, coalesce(sum(leads),0)::bigint AS leads,
+    coalesce(sum(alcance),0)::bigint AS alcance, coalesce(sum(conversas),0)::bigint AS conversas
     FROM campanha_dias WHERE data BETWEEN $1 AND $2`, [de, ate]);
   const o = await one(`SELECT count(*) FILTER (WHERE campanha_id IS NOT NULL)::int AS orcamentos, coalesce(sum(valor) FILTER (WHERE campanha_id IS NOT NULL),0)::bigint AS valor_orcado,
       count(*) FILTER (WHERE campanha_id IS NOT NULL AND status='ganho')::int AS vendas, coalesce(sum(valor) FILTER (WHERE campanha_id IS NOT NULL AND status='ganho'),0)::bigint AS valor_vendido,
@@ -82,7 +83,7 @@ async function totais(de, ate) {
       coalesce((SELECT sum(g.valor) FROM pagamentos g JOIN orcamentos x ON x.id = g.orcamento_id WHERE x.campanha_id IS NOT NULL AND x.data BETWEEN $1 AND $2),0)::bigint AS valor_recebido
     FROM orcamentos WHERE data BETWEEN $1 AND $2`, [de, ate]);
   const t = { ...g, ...o };
-  return { ...t, custo_venda: razao(t.gasto, t.vendas), roas_recebido: razao(t.valor_recebido, t.gasto), cpl: razao(t.gasto, t.leads), custo_orcamento: razao(t.gasto, t.orcamentos), roas: razao(t.valor_vendido, t.gasto), ctr: razao(t.cliques * 100, t.impressoes), lead_para_orcamento: razao(t.orcamentos * 100, t.leads) };
+  return { ...t, custo_venda: razao(t.gasto, t.vendas), roas_recebido: razao(t.valor_recebido, t.gasto), custo_conversa: razao(t.gasto, t.conversas), frequencia: razao(t.impressoes, t.alcance), cpm: razao(t.gasto * 1000, t.impressoes), cpl: razao(t.gasto, t.leads), custo_orcamento: razao(t.gasto, t.orcamentos), roas: razao(t.valor_vendido, t.gasto), ctr: razao(t.cliques * 100, t.impressoes), lead_para_orcamento: razao(t.orcamentos * 100, t.leads) };
 }
 
 export async function painel(mes) {
@@ -94,6 +95,8 @@ export async function painel(mes) {
       coalesce((SELECT sum(gasto) FROM campanha_dias d WHERE d.campanha_id=c.id AND d.data BETWEEN $1 AND $2),0)::bigint AS gasto,
       coalesce((SELECT sum(leads) FROM campanha_dias d WHERE d.campanha_id=c.id AND d.data BETWEEN $1 AND $2),0)::int AS leads,
       coalesce((SELECT sum(cliques) FROM campanha_dias d WHERE d.campanha_id=c.id AND d.data BETWEEN $1 AND $2),0)::int AS cliques,
+      coalesce((SELECT sum(conversas) FROM campanha_dias d WHERE d.campanha_id=c.id AND d.data BETWEEN $1 AND $2),0)::int AS conversas,
+      coalesce((SELECT sum(alcance) FROM campanha_dias d WHERE d.campanha_id=c.id AND d.data BETWEEN $1 AND $2),0)::int AS alcance,
       coalesce((SELECT sum(gasto) FROM campanha_dias d WHERE d.campanha_id=c.id),0)::bigint AS gasto_total,
       (SELECT count(*) FROM orcamentos o WHERE o.campanha_id=c.id AND o.data BETWEEN $1 AND $2)::int AS orcamentos,
       coalesce((SELECT sum(valor) FROM orcamentos o WHERE o.campanha_id=c.id AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_orcado,
@@ -101,15 +104,15 @@ export async function painel(mes) {
       coalesce((SELECT sum(valor) FROM orcamentos o WHERE o.campanha_id=c.id AND o.status='ganho' AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_vendido,
       coalesce((SELECT sum(g.valor) FROM pagamentos g JOIN orcamentos o ON o.id=g.orcamento_id WHERE o.campanha_id=c.id AND o.data BETWEEN $1 AND $2),0)::bigint AS valor_recebido
     FROM campanhas c WHERE c.data_inicio <= $2 AND (c.data_fim IS NULL OR c.data_fim >= $1) ORDER BY c.ativa DESC, gasto DESC, c.id`, [de, ate]))
-    .map((c) => ({ ...c, cpl: razao(c.gasto, c.leads), custo_orcamento: razao(c.gasto, c.orcamentos), custo_venda: razao(c.gasto, c.vendas), roas: razao(c.valor_vendido, c.gasto), roas_recebido: razao(c.valor_recebido, c.gasto) }));
+    .map((c) => ({ ...c, cpl: razao(c.gasto, c.leads), custo_conversa: razao(c.gasto, c.conversas), custo_orcamento: razao(c.gasto, c.orcamentos), custo_venda: razao(c.gasto, c.vendas), roas: razao(c.valor_vendido, c.gasto), roas_recebido: razao(c.valor_recebido, c.gasto) }));
   // semana a semana (segunda a domingo)
-  const gsem = await query(`SELECT to_char(date_trunc('week', data::timestamp),'YYYY-MM-DD') AS semana, sum(gasto)::bigint AS gasto, sum(leads)::int AS leads, sum(cliques)::int AS cliques
+  const gsem = await query(`SELECT to_char(date_trunc('week', data::timestamp),'YYYY-MM-DD') AS semana, sum(gasto)::bigint AS gasto, sum(leads)::int AS leads, sum(cliques)::int AS cliques, sum(conversas)::int AS conversas, sum(alcance)::int AS alcance
     FROM campanha_dias WHERE data BETWEEN $1 AND $2 GROUP BY 1`, [de, ate]);
   const osem = await query(`SELECT to_char(date_trunc('week', data::timestamp),'YYYY-MM-DD') AS semana, count(*)::int AS orcamentos,
       coalesce(sum(valor) FILTER (WHERE status='ganho'),0)::bigint AS valor_vendido FROM orcamentos WHERE campanha_id IS NOT NULL AND data BETWEEN $1 AND $2 GROUP BY 1`, [de, ate]);
   const semanas = [...new Set([...gsem, ...osem].map((x) => x.semana))].sort().map((s) => {
     const g = gsem.find((x) => x.semana === s) || {}, o = osem.find((x) => x.semana === s) || {};
-    return { semana: s, ate: addDias(s, 6), gasto: g.gasto || 0, leads: g.leads || 0, cliques: g.cliques || 0, orcamentos: o.orcamentos || 0, valor_vendido: o.valor_vendido || 0 };
+    return { semana: s, ate: addDias(s, 6), gasto: g.gasto || 0, leads: g.leads || 0, cliques: g.cliques || 0, conversas: g.conversas || 0, alcance: g.alcance || 0, orcamentos: o.orcamentos || 0, valor_vendido: o.valor_vendido || 0 };
   });
   // de onde vêm todos os orçamentos (com ou sem campanha paga)
   const porOrigem = (await query(`SELECT coalesce(origem,'sem_origem') AS origem, count(*)::int AS qtd, coalesce(sum(valor),0)::bigint AS valor_orcado,
@@ -123,20 +126,20 @@ export async function painel(mes) {
 export async function retornoCampanha(id) {
   const c = await one('SELECT * FROM campanhas WHERE id = $1', [id]);
   if (!c) throw new ErroNegocio('Campanha não encontrada.', 404);
-  const g = await one('SELECT coalesce(sum(gasto),0)::bigint AS gasto, coalesce(sum(leads),0)::int AS leads FROM campanha_dias WHERE campanha_id = $1', [id]);
+  const g = await one('SELECT coalesce(sum(gasto),0)::bigint AS gasto, coalesce(sum(leads),0)::int AS leads, coalesce(sum(conversas),0)::int AS conversas, coalesce(sum(alcance),0)::int AS alcance, coalesce(sum(impressoes),0)::bigint AS impressoes FROM campanha_dias WHERE campanha_id = $1', [id]);
   const orcamentos = await query(`SELECT o.id, o.numero, o.data, o.valor, o.status, o.campanha_auto, o.origem, cl.nome AS cliente_nome, o.cobranca_status,
       to_char(date_trunc('week', o.data::timestamp),'YYYY-MM-DD') AS semana,
       (SELECT coalesce(sum(p.valor),0)::bigint FROM pagamentos p WHERE p.orcamento_id = o.id) AS recebido
     FROM orcamentos o JOIN clientes cl ON cl.id = o.cliente_id WHERE o.campanha_id = $1 ORDER BY o.data DESC, o.id DESC`, [id]);
   const ganhos = orcamentos.filter((o) => o.status === 'ganho');
   const t = {
-    gasto: g.gasto, leads: g.leads, orcamentos: orcamentos.length, valor_orcado: orcamentos.reduce((a, o) => a + o.valor, 0),
+    gasto: g.gasto, leads: g.leads, conversas: g.conversas, alcance: g.alcance, impressoes: g.impressoes, orcamentos: orcamentos.length, valor_orcado: orcamentos.reduce((a, o) => a + o.valor, 0),
     em_aberto: orcamentos.filter((o) => o.status === 'aberto').length, vendas: ganhos.length, valor_vendido: ganhos.reduce((a, o) => a + o.valor, 0),
     valor_recebido: orcamentos.reduce((a, o) => a + o.recebido, 0),
   };
   return {
     campanha: c,
-    totais: { ...t, a_receber: Math.max(t.valor_vendido - t.valor_recebido, 0), custo_orcamento: razao(t.gasto, t.orcamentos), custo_venda: razao(t.gasto, t.vendas), cpl: razao(t.gasto, t.leads),
+    totais: { ...t, a_receber: Math.max(t.valor_vendido - t.valor_recebido, 0), custo_orcamento: razao(t.gasto, t.orcamentos), custo_venda: razao(t.gasto, t.vendas), cpl: razao(t.gasto, t.leads), custo_conversa: razao(t.gasto, t.conversas), frequencia: razao(t.impressoes, t.alcance),
       roas: razao(t.valor_vendido, t.gasto), roas_recebido: razao(t.valor_recebido, t.gasto), conversao: razao(t.vendas * 100, t.orcamentos) },
     orcamentos,
   };
