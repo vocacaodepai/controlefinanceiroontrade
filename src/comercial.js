@@ -291,7 +291,12 @@ export async function registrarContato(id, { nota, adiar_dias, canal, resultado,
 export const cadenciaConcluida = () => query(`${BASE_ORC} WHERE o.status = 'aberto' AND o.followup_em IS NULL ORDER BY o.data, o.id`);
 
 // Só adia o aviso, sem registrar contato
-export async function adiar(id, dias) {
+export async function adiar(id, dias, usuario) {
+  // quem é do comercial não adia follow-up pendente: só retoma o que terminou a cadência (sem aviso agendado)
+  if (usuario?.papel === 'comercial') {
+    const o = await one('SELECT followup_em FROM orcamentos WHERE id = $1', [id]);
+    if (o?.followup_em) throw new ErroNegocio('Follow-up não pode ser adiado: envie a mensagem e registre o contato.', 403);
+  }
   const d = Number(dias);
   if (!Number.isInteger(d) || d < 1 || d > 60) throw new ErroNegocio('O novo prazo deve ser de 1 a 60 dias.');
   const r = await one(`UPDATE orcamentos SET followup_em = $2 WHERE id = $1 AND status = 'aberto' RETURNING id`, [id, addDias(hoje(), d)]);

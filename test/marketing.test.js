@@ -81,15 +81,17 @@ test('vínculo automático: origem Instagram/Facebook + campanha ativa no perío
   // origem sem anúncio nunca liga
   const sem = await CO.criarOrcamento({ cliente: fic('Lead Indicação'), produto_nome: 'Painel P5', valor: 100000, origem: 'indicacao' });
   assert.equal(sem.campanha_id, null);
-  // antes do início da campanha: não liga
-  const antes = await CO.criarOrcamento({ cliente: fic('Lead Antigo'), produto_nome: 'Painel P5', valor: 100000, origem: 'facebook', data: S.addDias(ini, -5) });
-  assert.ok(antes.campanha_id === null || antes.campanha_id === insta.id);
   // escolha manual continua valendo e não é marcada como automática
   const manual = await CO.criarOrcamento({ cliente: fic('Lead Manual'), produto_nome: 'Painel P5', valor: 100000, origem: 'facebook', campanha_id: fb.id });
   assert.equal(manual.campanha_id, fb.id); assert.equal(manual.campanha_auto, 0);
-  // campanha nova cobrindo o período puxa os orçamentos que ficaram sem campanha
-  const g = await MK.salvarCampanha(null, { nome: 'Antiga Retroativa', canal: 'facebook', data_inicio: S.addDias(ini, -8), data_fim: S.addDias(ini, -2) });
-  assert.equal((await CO.listarOrcamentos({ q: 'Lead Antigo' }))[0].campanha_id, g.id);
+  // YouTube: orçamento antes do início da campanha não liga; campanha criada depois puxa o que ficou sem campanha dentro do período
+  const dentro = await CO.criarOrcamento({ cliente: fic('Lead YT Dentro'), produto_nome: 'Painel P5', valor: 100000, origem: 'youtube', data: S.addDias(hoje, -4) });
+  const fora = await CO.criarOrcamento({ cliente: fic('Lead YT Fora'), produto_nome: 'Painel P5', valor: 100000, origem: 'youtube', data: S.addDias(hoje, -20) });
+  assert.equal(dentro.campanha_id, null);
+  const yt = await MK.salvarCampanha(null, { nome: 'YouTube Retroativa', canal: 'youtube', data_inicio: S.addDias(hoje, -10) });
+  assert.equal((await CO.listarOrcamentos({ q: 'Lead YT Dentro' }))[0].campanha_id, yt.id);
+  assert.equal((await CO.listarOrcamentos({ q: 'Lead YT Fora' }))[0].campanha_id, null, 'antes do início da campanha não liga');
+  assert.equal(fora.campanha_id, null);
   assert.equal(o.origem, 'instagram');
 });
 
