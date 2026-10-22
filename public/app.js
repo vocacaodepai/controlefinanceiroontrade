@@ -252,19 +252,24 @@ async function rota() {
   if (nome !== 'aovivo') { clearInterval(state.timerVivo); document.body.classList.remove('modo-tv'); }
   try { await rotas[nome](); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
   state.ultimaAtualizacao = Date.now();
+  state.digitouEm = 0;
 }
 
-// Atualização automática do dashboard inteiro a cada 15 minutos. Confere a cada minuto e só recarrega a tela atual se ela não estiver sendo usada:
-// sem pop-up aberto, sem campo em edição e fora das telas de formulário (lançar, extratos e perfil), para ninguém perder o que está digitando.
+// Atualização automática do dashboard inteiro a cada 15 minutos, para todos os perfis e sem nenhum aviso: a página é recarregada sozinha,
+// então traz dados novos e também a versão mais recente do sistema. Só espera (e tenta de novo no minuto seguinte) quando a pessoa está no meio de algo:
+// pop-up aberto, fila obrigatória de follow-up, campo em foco ou algo digitado nos últimos 10 minutos.
 const ATUALIZA_MS = 15 * 60 * 1000;
-setInterval(() => {
-  if (!state.usuario || document.hidden || state.filaAtiva || Date.now() - (state.ultimaAtualizacao || 0) < ATUALIZA_MS) return;
-  if (document.querySelector('.modal-fundo') || ['#lancar', '#extratos', '#perfil'].includes(location.hash)) return;
+document.addEventListener('input', (e) => { if ($app.contains(e.target)) state.digitouEm = Date.now(); }, true);
+function atualizaSozinho() {
+  if (!state.usuario || state.filaAtiva || Date.now() - (state.ultimaAtualizacao || 0) < ATUALIZA_MS) return;
+  if (document.querySelector('.modal-fundo')) return;
+  if (state.digitouEm && Date.now() - state.digitouEm < 10 * 60 * 1000) return;
   const ae = document.activeElement;
   if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName) && $app.contains(ae)) return;
-  state.meta = null; // recarrega também contas, categorias e equipe
-  rota();
-}, 60 * 1000);
+  location.reload();
+}
+setInterval(atualizaSozinho, 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizaSozinho(); }); // celular que ficou em segundo plano atualiza ao voltar
 addEventListener('hashchange', () => { if (location.hash !== '#extratos') state.extrato = null; rota(); });
 const recarregarMeta = async () => { state.meta = { ...(await api('/api/meta')), hoje: state.meta.hoje }; };
 
