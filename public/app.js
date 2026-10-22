@@ -902,10 +902,11 @@ function janelaContato(o, depois) {
   }, 'Contato registrado');
 }
 // Pop-up com a mensagem pronta do follow-up: copiar, abrir o WhatsApp e confirmar o envio (a pessoa assume a responsabilidade)
-function janelaFollowup(o, { pos = 0, total = 1, obrigatorio = false, aoConcluir }) {
+function janelaFollowup(o, { pos = 0, total = 1, obrigatorio = false, faltam = [], aoConcluir }) {
   const et = Math.min(o.qtd_contatos || 0, 3), E = ETAPAS_FU[et], restam = total - pos - 1;
   const m = modal(`<h2>${obrigatorio ? `Follow-up ${pos + 1} de ${total}` : 'Enviar Mensagem'}</h2>
     <p class="legenda"><b>${esc(o.cliente_nome)}</b> · orçamento ${esc(o.numero || '—')} · ${esc(o.produto)} · ${brl(o.valor)}<br>${contatoCli(o)}</p>
+    ${obrigatorio && faltam.length ? `<p class="legenda" style="margin-top:8px"><b>Ainda faltam ${faltam.length}:</b> ${faltam.slice(0, 8).map(esc).join(', ')}${faltam.length > 8 ? ` e mais ${faltam.length - 8}` : ''}. O painel só é liberado quando todos forem enviados.</p>` : ''}
     <p class="legenda" style="margin-top:8px">Mensagem ${et + 1} de ${ETAPAS_FU.length} · ${esc(E.objetivo)} · ${o.qtd_contatos ? `${o.qtd_contatos} contato(s) até agora` : 'primeiro follow-up'}</p>
     <label style="margin-top:12px">Mensagem (pode ajustar antes de enviar)</label>
     <textarea id="msg" rows="7" style="width:100%">${esc(msgOrc(o))}</textarea>
@@ -929,7 +930,7 @@ function filaFollowups(lista) {
   state.filaAtiva = true;
   const passo = (i) => {
     if (i >= lista.length) { state.filaAtiva = false; toast('Follow-ups do dia concluídos'); atualizarBadge(0); return rota(); }
-    janelaFollowup(lista[i], { pos: i, total: lista.length, obrigatorio: true, aoConcluir: () => passo(i + 1) });
+    janelaFollowup(lista[i], { pos: i, total: lista.length, obrigatorio: true, faltam: lista.slice(i + 1).map((x) => x.cliente_nome), aoConcluir: () => passo(i + 1) });
   };
   passo(0);
 }
@@ -956,32 +957,14 @@ function atualizarBadge(n) {
   a.querySelector('.badge')?.remove();
   if (n > 0) a.insertAdjacentHTML('beforeend', `<span class="badge">${n}</span>`);
 }
-async function verificarFollowups(forcar = false) {
+// Comercial: a fila de follow-up é obrigatória (um por vez, sem adiar nem "lembrar mais tarde"; só sai quando todos forem enviados ou encerrados).
+// Administração: não abre pop-up, só mostra o contador no menu e a página Follow-up.
+async function verificarFollowups() {
   if (!temArea('comercial') || document.querySelector('.modal-fundo')) return;
   const lista = await api('/api/comercial/followups').catch(() => null);
   if (!lista) return;
   state.followups = lista; atualizarBadge(lista.length);
-  const silencio = Number(sessionStorage.getItem('fu_ate') || 0);
-  if (state.usuario?.papel === 'comercial') { if (lista.length) filaFollowups(lista); return; } // obrigatório: sem "lembrar mais tarde"
-  if (lista.length && (forcar || Date.now() > silencio)) abrirFollowups(lista);
-}
-function abrirFollowups(lista) {
-  const m = modal(`<h2>Hora de retomar contato</h2>
-    <p class="legenda">${lista.length} orçamento(s) sem retorno há ${lista.length > 1 ? 'pelo menos ' : ''}3 dias. Ligue ou mande uma mensagem e registre aqui.</p>
-    <div class="fu-lista">${lista.map((o) => `<div class="fu-item" data-id="${o.id}">
-      <div><b>${esc(o.cliente_nome)}</b> <span class="mut">· ${esc(o.produto)} · ${brl(o.valor)}</span><br>
-        <small class="mut">Orçamento de ${dataBR(o.data)} · aviso desde ${dataBR(o.followup_em)}${o.qtd_contatos ? ` · ${o.qtd_contatos} contato(s)` : ''}</small><br><small>${contatoCli(o)}</small></div>
-      <div class="fu-acoes"><button class="mini" data-a="msg">Enviar Mensagem</button><button class="mini sec" data-a="contato">Registrar contato</button><button class="mini sec" data-a="encerrar">Encerrar</button><button class="mini sec" data-a="adiar">Adiar 1 dia</button></div></div>`).join('')}</div>
-    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="depois">Lembrar mais tarde</button></div>`, 640);
-  const refaz = async () => { m.fechar(); await verificarFollowups(true); if (location.hash === '#orcamentos') rota(); };
-  m.el.querySelector('#depois').onclick = () => { sessionStorage.setItem('fu_ate', String(Date.now() + 30 * 60 * 1000)); m.fechar(); };
-  m.el.querySelectorAll('.fu-item').forEach((el) => {
-    const o = lista.find((x) => x.id === +el.dataset.id);
-    el.querySelector('[data-a=msg]').onclick = () => { m.fechar(); janelaFollowup(o, { aoConcluir: refaz }); };
-    el.querySelector('[data-a=contato]').onclick = () => { m.fechar(); janelaContato(o, refaz); };
-    el.querySelector('[data-a=encerrar]').onclick = () => { m.fechar(); janelaEncerrar(o, refaz); };
-    el.querySelector('[data-a=adiar]').onclick = () => acao(async () => { await api(`/api/comercial/orcamentos/${o.id}/adiar`, { method: 'POST', body: { dias: 1 } }); await refaz(); }, 'Aviso adiado para amanhã');
-  });
+  if (state.usuario?.papel === 'comercial' && lista.length && !state.filaAtiva) filaFollowups(lista);
 }
 function iniciarFollowups() {
   clearInterval(_fuTimer);

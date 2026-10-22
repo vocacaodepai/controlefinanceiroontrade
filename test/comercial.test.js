@@ -210,3 +210,13 @@ test('numeração: 2026 continua de 0572; qualquer outro ano recomeça em 0001',
   assert.ok(Number((await CO.proximoNumero('2026-06-01')).slice(-4)) >= 572);
   assert.equal(await CO.proximoNumero('2027-01-02'), '2027-0001');
 });
+
+test('comercial não adia follow-up pendente (só retoma o que terminou a cadência); administração continua podendo', async () => {
+  const u = { id: null, nome: 'Júlia', papel: 'comercial' };
+  const o = await CO.criarOrcamento({ ...O, cliente: fic('Sem Adiar'), produto_nome: 'Painel P5', valor: 100000, data: S.addDias(hoje, -3) });
+  await assert.rejects(CO.adiar(o.id, 1, u), /não pode ser adiado/);
+  assert.equal((await CO.adiar(o.id, 1, { papel: 'admin' })).followup_em, S.addDias(hoje, 1));
+  // cadência concluída (sem aviso agendado): retomar é permitido
+  await query('UPDATE orcamentos SET followup_em = NULL WHERE id = $1', [o.id]);
+  assert.equal((await CO.adiar(o.id, 7, u)).followup_em, S.addDias(hoje, 7));
+});

@@ -164,7 +164,7 @@ app.post('/api/comercial/orcamentos', trabCom, h(async (req, res) => {
 app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json(await CO.editarOrcamento(idNum(req.params.id), req.body))));
 app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
-app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias))));
+app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias, req.usuario))));
 // ---------- estoque (administração e quem cuida do estoque) ----------
 const estq = A.exigirArea('estoque');
 app.get('/api/estoque', estq, h(async (req, res) => res.json({ itens: await ES.listarItens({ todos: req.query.todos === '1' }), movimentos: await ES.listarMovimentos(req.query) })));
