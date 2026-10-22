@@ -338,3 +338,6 @@ input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;lette
 @media(max-width:820px){
   .dt-rapida{gap:6px}.dt-rapida select{font-size:16px;min-height:38px;padding:6px 10px}.dt-rapida button.mini{min-height:38px;min-width:40px;font-size:16px}
 }
+
+/* Ao Vivo: olhinho que esconde os números */
+.oculta-numeros .kpi .v,.oculta-numeros .kpi small,.oculta-numeros .grande,.oculta-numeros td.n,.oculta-numeros .barra .val,.oculta-numeros .mk-grade small,.oculta-numeros .num,.oculta-numeros .graf{filter:blur(9px);user-select:none;-webkit-user-select:none;pointer-events:none}
