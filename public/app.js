@@ -24,6 +24,8 @@ Object.assign(ICONES, {
   zap: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   comercial: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   aovivo: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  olho: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  olhoOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/>',
   cobranca: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   acessos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   followup: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m9 10 2 2 4-4"/>',
@@ -249,7 +251,7 @@ async function rota() {
     state.dia = state.dia || state.meta.hoje;
     state.mes = state.mes || state.meta.hoje.slice(0, 7);
   }
-  if (nome !== 'aovivo') { clearInterval(state.timerVivo); document.body.classList.remove('modo-tv'); }
+  if (nome !== 'aovivo') { clearInterval(state.timerVivo); document.body.classList.remove('modo-tv'); $app.classList.remove('oculta-numeros'); }
   try { await rotas[nome](); } catch (e) { $app.innerHTML = `<div class="card neg">Erro: ${esc(e.message)}</div>`; }
   state.ultimaAtualizacao = Date.now();
   state.digitouEm = 0;
@@ -1278,7 +1280,7 @@ async function aovivo() {
   const linhaP = (rot, campo, f = String) => `<tr><td>${rot}</td>${[['semestre', 'semestre_anterior'], ['ano', 'ano_anterior']].map(([a, b]) => `<td class="n dest">${f(c[a][campo])}</td><td class="n">${f(c[b][campo])} ${variacao(c[a][campo], c[b][campo])}</td>`).join('')}</tr>`;
   const maxP = Math.max(...d.produtos.map((p) => p.valor_orcado), 1);
   $app.innerHTML = `<div class="topo-vivo"><div><h1>Ao Vivo — Comercial <i class="live-dot grande" title="Atualiza sozinho a cada 15 minutos" aria-hidden="true"></i></h1><p class="sub">${nomeMes(d.mes)} · atualizado às ${d.atualizado_em.slice(11, 16)} · atualiza sozinho a cada 15 minutos (próxima às ${(() => { const t = (+d.atualizado_em.slice(11, 13) * 60 + +d.atualizado_em.slice(14, 16) + 15) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); })()}) · use Atualizar para ver agora</p></div>
-      <div class="row" style="margin:0"><button class="mini sec" id="att">${ico('refresh')} Atualizar</button><button class="mini sec" id="tv">Tela cheia</button></div></div>
+      <div class="row" style="margin:0"><button class="mini sec" id="olho" title="Ocultar ou mostrar os números">${ico('olho')} <span>Ocultar</span></button><button class="mini sec" id="att">${ico('refresh')} Atualizar</button><button class="mini sec" id="tv">Tela cheia</button></div></div>
     ${d.followups_pendentes && temArea('comercial') ? `<div class="aviso-box">${ico('info')}<span><b>${d.followups_pendentes} orçamento(s)</b> aguardando retorno do comercial. <a href="#orcamentos">Abrir orçamentos</a></span></div>` : ''}
     <div class="grid">
       <div class="card kpi"><div class="l">Hoje — orçamentos</div><div class="v">${h.qtd}</div><small class="mut">${brl(h.valor)} orçados</small></div>
@@ -1294,7 +1296,7 @@ async function aovivo() {
         <p class="legenda" style="margin-top:10px">Revisitado = orçamento em que o comercial registrou um novo contato no mês.</p></div>
       <div class="card"><h2>Perdidos e cancelados no mês</h2>
         <div class="mk-grade"><div><div class="mut">Perdidos</div><div class="grande">${m.qtd_perdido}</div><small class="mut">${brl(m.valor_perdido)}</small></div><div><div class="mut">Cancelados</div><div class="grande">${m.qtd_cancelado}</div><small class="mut">${brl(m.valor_cancelado)}</small></div></div>
-        ${d.motivos.length ? `<div style="margin-top:12px">${d.motivos.map((x) => `<p style="margin:4px 0;font-size:13px"><span class="tag ${x.status === 'perdido' ? 'ruim' : 'aviso'}">${STATUS_ORC[x.status]}</span> ${esc(x.motivo || 'sem motivo')} <span class="mut">— ${x.qtd}x · ${brl(x.valor)}</span></p>`).join('')}</div>` : '<p class="mut" style="margin-top:10px">Nenhum no mês.</p>'}</div></div>
+        ${d.motivos.length ? `<div style="margin-top:12px">${d.motivos.map((x) => `<p style="margin:4px 0;font-size:13px"><span class="tag ${x.status === 'perdido' ? 'ruim' : 'aviso'}">${STATUS_ORC[x.status]}</span> ${esc(x.motivo || 'sem motivo')} <span class="mut num">— ${x.qtd}x · ${brl(x.valor)}</span></p>`).join('')}</div>` : '<p class="mut" style="margin-top:10px">Nenhum no mês.</p>'}</div></div>
     <div class="card"><h2>Produtos mais orçados no mês</h2>${d.produtos.length ? d.produtos.map((p) => `<div class="barra"><span class="nome" title="${esc(p.nome)}">${esc(p.nome)}</span><span class="trilho"><span class="fill" style="display:block;width:${(p.valor_orcado / maxP) * 100}%"></span></span><span class="val">${brl(p.valor_orcado)}</span><span class="val mut" style="width:90px">${p.qtd}x · ${p.qtd_ganho} vend.</span></div>`).join('') : '<p class="mut">Sem orçamentos no mês.</p>'}</div>
     <div class="card"><h2>Comparativo do mês</h2><div class="tbl"><table><thead><tr><th></th><th class="n">${nomeMes(d.mes)} (até hoje)</th><th class="n">Mês anterior (mesmo período)</th><th class="n">Mês anterior (inteiro)</th><th class="n">Mesmo mês, ano passado</th></tr></thead><tbody>
       ${linha('Orçamentos', 'qtd')}${linha('Valor orçado', 'valor', brl)}${linha('Vendas (qtd)', 'qtd_ganho')}${linha('Valor vendido', 'valor_ganho', brl)}${linha('Clientes novos', 'clientes_novos')}${linha('Clientes recorrentes', 'clientes_recorrentes')}${linha('Perdidos', 'qtd_perdido')}${linha('Cancelados', 'qtd_cancelado')}
@@ -1305,6 +1307,16 @@ async function aovivo() {
     <div class="card"><h2>Últimos 12 meses</h2>${graficoSerie(d.serie)}</div>
     <div class="card"><h2>Aprovados Recentemente</h2><p class="legenda">Venda fechada. A cobrança é feita pelo financeiro; o comercial só acompanha.</p>${d.aprovados_recentes?.length ? `<div class="tbl"><table><tbody>${d.aprovados_recentes.map((o) => `<tr><td>${esc(o.cliente_nome)}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td><span class="tag ${o.cobranca_status === 'pago' ? 'ok' : 'aviso'}">${tagCobranca(o) || 'Aprovado'}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento aprovado ainda.</p>'}</div>
     <div class="card"><h2>Orçamentos de hoje</h2>${d.recentes.length ? `<div class="tbl"><table><tbody>${d.recentes.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td><td class="mut">${esc(o.criado_por_nome || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
+  // olhinho: esconde todos os números (borrados) para mostrar a tela sem expor valores; a escolha fica guardada neste aparelho
+  const guardado = () => { try { return localStorage.getItem('vivo_oculto') === '1'; } catch { return false; } };
+  const aplicaOlho = (oculto) => {
+    $app.classList.toggle('oculta-numeros', oculto);
+    const b = document.getElementById('olho');
+    b.innerHTML = `${ico(oculto ? 'olhoOff' : 'olho')} <span>${oculto ? 'Mostrar' : 'Ocultar'}</span>`;
+    b.setAttribute('aria-pressed', oculto ? 'true' : 'false');
+  };
+  aplicaOlho(guardado());
+  document.getElementById('olho').onclick = () => { const novo = !$app.classList.contains('oculta-numeros'); try { localStorage.setItem('vivo_oculto', novo ? '1' : '0'); } catch {} aplicaOlho(novo); };
   document.getElementById('att').onclick = () => aovivo();
   document.getElementById('tv').onclick = () => { document.body.classList.toggle('modo-tv'); document.documentElement.requestFullscreen?.().catch(() => {}); };
   // Atualização automática a cada 15 minutos. Confere a cada minuto (sem pedir nada ao servidor) e só busca de novo quando passaram 15 minutos
