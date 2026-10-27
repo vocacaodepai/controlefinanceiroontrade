@@ -324,13 +324,26 @@ function cartaoPatrimonio(p) {
 }
 
 // ---------- PAINEL ----------
+// Pendências: dúvidas que a equipe precisa esclarecer; ficam no topo do painel até alguém resolver
+const blocoPendencias = (pend) => (pend.abertas.length ? `<div class="pendencias">${pend.abertas.map((x) => `<div class="aviso-box aviso-pend">${ico('info')}<div><b>${esc(x.titulo)}</b>${x.detalhe ? `<br><small>${esc(x.detalhe)}</small>` : ''}${x.lancamento_id ? `<br><small class="mut">Lançamento de ${dataBR(String(x.lancamento_data).slice(0, 10))} · ${brl(x.lancamento_valor)}${x.lancamento_descricao ? ' · ' + esc(x.lancamento_descricao) : ''}</small>` : ''}</div>${pode('operador') ? `<button class="mini sec" data-resolve="${x.id}">Resolvido</button>` : ''}</div>`).join('')}</div>` : '');
+function ligaPendencias(depois) {
+  $app.querySelectorAll('[data-resolve]').forEach((b) => (b.onclick = () => {
+    const m = modal(`<h2>Resolver Pendência</h2><p class="legenda">Conte rapidamente o que foi decidido, para ficar registrado.</p>
+      <form class="form" id="fp" style="margin-top:12px"><div class="cheio"><label>O que foi decidido</label><textarea name="resolucao" rows="3" placeholder="Ex.: era pró-labore, já reclassificado no lançamento"></textarea></div></form>
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Marcar como Resolvida</button></div>`, 480);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#ok').onclick = () => acao(async () => { await api(`/api/pendencias/${b.dataset.resolve}/resolver`, { method: 'POST', body: Object.fromEntries(new FormData(m.el.querySelector('#fp'))) }); m.fechar(); await depois(); }, 'Pendência resolvida');
+  }));
+}
 async function painel() {
   const p = await api(`/api/painel/${state.mes}`);
+  const pend = pode('leitor') ? await api('/api/pendencias').catch(() => ({ abertas: [] })) : { abertas: [] };
   const pendentes = p.recorrencias.filter((r) => !r.lancada);
   const maxSerie = Math.max(...p.serie.flatMap((s) => [s.entradas, s.saidas]), 1);
   $app.innerHTML = `
     <h1>Painel</h1><p class="sub">Visão do mês: quanto entrou (com e sem nota), quanto saiu e quem pagou.</p>
     <div class="row">${seletorMes()}<a class="btn" href="/api/export/mes/${state.mes}">${ico('download')} Emitir controle mensal (Excel)</a></div>
+    ${blocoPendencias(pend)}
     ${p.dias_abertos.length ? `<div class="aviso-box">${ico('info')}<span>${p.dias_abertos.length} dia(s) com lançamentos ainda <b>sem fechamento</b>: ${p.dias_abertos.map(dataBR).join(', ')}. <a href="#fechar">Fechar caixa</a></span></div>` : ''}
     <div class="grid">
       <div class="card kpi"><div class="l">Entradas COM nota</div><div class="v">${brl(p.entradas_com_nota)}</div></div>
@@ -355,6 +368,7 @@ async function painel() {
       ${pendentes.length ? '<p class="legenda">O valor é estimado — ajuste-o ao lançar se necessário.</p>' : ''}
     </div>`;
   ligaMes(painel);
+  ligaPendencias(painel);
   document.getElementById('atualizar-saldos')?.addEventListener('click', async (ev) => { ev.target.disabled = true; try { await painel(); toast('Saldos atualizados'); } catch (e) { toast(e.message, true); } });
   $app.querySelectorAll('[data-lancar]').forEach((b) => (b.onclick = () => lancarRecorrencia(+b.dataset.lancar, p.recorrencias, painel)));
 }
@@ -503,6 +517,7 @@ async function patrimonio() {
     <p class="sub">Tudo o que a empresa tem hoje em containers, estoque, carros e outros bens. Cada item entra em um mês e fica aqui até a baixa. Use o filtro para ver o que entrou em cada mês.</p>
     <div class="grid">
       <div class="card kpi"><div class="l">Patrimônio total</div><div class="v">${brl(g.total)}</div><small class="mut">no geral, todos os meses</small></div>
+      <div class="card kpi"><div class="l">Valorização dos ativos</div><div class="v ${cls(g.total_variacao)}">${g.total_variacao > 0 ? '+' : g.total_variacao < 0 ? '−' : ''}${brl(Math.abs(g.total_variacao))}</div><small class="mut">${g.total_inicial ? `${g.total_variacao >= 0 ? '+' : '−'}${(Math.abs(g.total_variacao) / g.total_inicial * 100).toFixed(1).replace('.', ',')}% sobre o valor inicial de ${brl(g.total_inicial)}` : 'valor atual contra o inicial'}</small></div>
       <div class="card kpi"><div class="l">Containers</div><div class="v">${brl(g.total_container)}</div></div>
       <div class="card kpi"><div class="l">Estoque</div><div class="v">${brl(g.total_estoque)}</div></div>
       <div class="card kpi"><div class="l">Carros</div><div class="v">${brl(g.total_carro)}</div></div>
@@ -513,17 +528,17 @@ async function patrimonio() {
         ${meses.map((m) => `<option value="${m}" ${f.mes === m && !f.baixados ? 'selected' : ''}>Entraram em ${nomeMes(m)}</option>`).join('')}
         <option value="baixados" ${f.baixados ? 'selected' : ''}>Com baixa (vendidos)</option></select></div></div>
     <div class="card"><h2>${titulo}</h2>
-      ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Entrou em</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor</th><th></th></tr></thead><tbody>
-        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}${i.baixa_mes ? `<br><small class="mut">baixa em ${esc(nomeMes(i.baixa_mes))}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(nomeMes(i.mes))}</td><td>${esc(i.situacao === 'outro' && i.situacao_outro ? 'Outro: ' + i.situacao_outro : d.situacoes[i.situacao])}</td><td>${i.chegada_nao_se_aplica ? '<span class="mut">Não se aplica</span>' : i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor)}</td>
-        <td class="n" style="white-space:nowrap">${adm ? `<button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-baixa="${i.id}" data-d="${i.baixa_mes ? 1 : 0}">${i.baixa_mes ? 'desfazer baixa' : 'dar baixa'}</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="5">Total${f.baixados ? '' : f.mes ? ' do que entrou no mês' : ' em ativos'}</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td></td></tr></tfoot></table></div>`
+      ${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Entrou em</th><th>Situação</th><th>Chegada prevista</th><th class="n">Valor inicial</th><th class="n">Valor atual</th><th class="n">Variação</th><th></th></tr></thead><tbody>
+        ${d.itens.map((i) => `<tr><td>${esc(i.descricao)}${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}${i.baixa_mes ? `<br><small class="mut">baixa em ${esc(nomeMes(i.baixa_mes))}</small>` : ''}</td><td><span class="tag">${esc(i.tipo === 'outro' && i.tipo_outro ? 'Outro: ' + i.tipo_outro : d.tipos[i.tipo])}</span></td><td>${esc(nomeMes(i.mes))}</td><td>${esc(i.situacao === 'outro' && i.situacao_outro ? 'Outro: ' + i.situacao_outro : d.situacoes[i.situacao])}</td><td>${i.chegada_nao_se_aplica ? '<span class="mut">Não se aplica</span>' : i.previsao_chegada ? dataBR(i.previsao_chegada) : '—'}</td><td class="n">${brl(i.valor_inicial)}</td><td class="n"><b>${brl(i.valor)}</b></td><td class="n ${cls(i.variacao)}">${i.variacao ? (i.variacao > 0 ? '+' : '−') + brl(Math.abs(i.variacao)) : '—'}${i.valor_inicial ? `<br><small>${i.variacao ? (i.variacao > 0 ? '+' : '−') + (Math.abs(i.variacao) / i.valor_inicial * 100).toFixed(1).replace('.', ',') + '%' : ''}</small>` : ''}</td>
+        <td class="n" style="white-space:nowrap"><button class="mini sec" data-hist="${i.id}">histórico</button> ${adm ? `<button class="mini" data-aval="${i.id}">atualizar valor</button> <button class="mini sec" data-edit="${i.id}">editar</button> <button class="mini sec" data-baixa="${i.id}" data-d="${i.baixa_mes ? 1 : 0}">${i.baixa_mes ? 'desfazer baixa' : 'dar baixa'}</button> <button class="mini sec" data-del="${i.id}">excluir</button>` : ''}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="5">Total${f.baixados ? '' : f.mes ? ' do que entrou no mês' : ' em ativos'}</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor_inicial, 0))}</td><td class="n">${brl(d.itens.reduce((a, i) => a + i.valor, 0))}</td><td class="n ${cls(d.itens.reduce((a, i) => a + i.variacao, 0))}">${brl(d.itens.reduce((a, i) => a + i.variacao, 0))}</td><td></td></tr></tfoot></table></div>`
         : `<p class="mut">${f.baixados ? 'Nenhum item com baixa.' : f.mes ? `Nada entrou em ${nomeMes(f.mes)}.` : 'Nenhum ativo cadastrado ainda. Adicione o primeiro abaixo.'}</p>`}
     </div>
     ${adm ? `<div class="card"><h2>Adicionar item</h2><form class="form" id="novo-item">
       <div><label>Tipo</label><select name="tipo" id="tp">${Object.entries(d.tipos).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div id="tp-outro" hidden><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" placeholder="Ex.: máquina, terreno, equipamento"></div>
       <div class="larg"><label>Descrição</label><input name="descricao" required placeholder="Ex.: Container MSKU 481920 — painéis P3.9"></div>
-      <div><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+      <div><label>Valor inicial (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
       <div><label>Mês de entrada</label><input name="mes" type="month" value="${f.mes || d.mes_atual}" required></div>
       <div><label>Situação</label><select name="situacao" id="sit">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div id="sit-outro" hidden><label>Qual a situação? *</label><input name="situacao_outro" maxlength="60" placeholder="Ex.: em uso, em manutenção, à venda"></div>
@@ -548,6 +563,27 @@ async function patrimonio() {
     if (!/^\d{4}-\d{2}$/.test(f.mes || '')) return toast('Informe o mês de entrada', true);
     salvar(null, { ...f, valor }, 'Item adicionado');
   });
+  $app.querySelectorAll('[data-aval]').forEach((b) => (b.onclick = () => {
+    const i = d.itens.find((x) => x.id === +b.dataset.aval);
+    const m = modal(`<h2>Atualizar Valor de Mercado</h2><p class="legenda">${esc(i.descricao)} · valor inicial ${brl(i.valor_inicial)} · valor atual ${brl(i.valor)}<br>Registre quanto o ativo vale hoje no mercado: o sistema mostra se ele está valorizando ou desvalorizando.</p>
+      <form class="form" id="fa" style="margin-top:12px" autocomplete="off" novalidate>
+        <div><label>Mês da avaliação ${ast}</label><input name="mes" type="month" value="${d.mes_atual}" required></div>
+        <div><label>Valor de mercado (R$) ${ast}</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+        <div class="cheio"><label>Observação</label><input name="obs" placeholder="Ex.: tabela FIPE, proposta recebida"></div></form>
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 480);
+    m.el.querySelector('#x').onclick = m.fechar;
+    m.el.querySelector('#ok').onclick = () => { const f2 = m.el.querySelector('#fa'); if (!validarObrigatorios(f2)) return; const v = Object.fromEntries(new FormData(f2)); const valor = paraCentavos(v.valor); if (!(valor >= 0)) return toast('Valor inválido', true); acao(async () => { await api(`/api/patrimonio/${i.id}/avaliacao`, { method: 'POST', body: { ...v, valor } }); m.fechar(); await patrimonio(); }, 'Valor atualizado'); };
+  }));
+  $app.querySelectorAll('[data-hist]').forEach((b) => (b.onclick = async () => {
+    const h = await api(`/api/patrimonio/${b.dataset.hist}/historico`), it = h.item;
+    const lin = (rot, v, varI, varA, obs) => `<tr><td>${rot}</td><td class="n">${brl(v)}</td><td class="n ${cls(varI)}">${varI ? (varI > 0 ? '+' : '−') + brl(Math.abs(varI)) : '—'}</td><td class="n ${cls(varA)}">${varA ? (varA > 0 ? '+' : '−') + brl(Math.abs(varA)) : '—'}</td><td>${esc(obs || '')}</td></tr>`;
+    const m = modal(`<h2>Histórico de Valor</h2><p class="legenda">${esc(it.descricao)} · entrou em ${esc(nomeMes(it.mes))}</p>
+      <div class="tbl"><table><thead><tr><th>Quando</th><th class="n">Valor</th><th class="n">Desde o início</th><th class="n">Desde a anterior</th><th>Obs.</th></tr></thead><tbody>
+      ${h.avaliacoes.map((a) => lin(esc(nomeMes(a.mes)), a.valor, a.variacao_inicial, a.variacao_anterior, a.obs)).join('')}${lin('Valor inicial', it.valor_inicial, 0, 0, '')}</tbody></table></div>
+      ${h.avaliacoes.length ? '' : '<p class="mut">Nenhuma avaliação de mercado registrada ainda. Use "atualizar valor" para acompanhar a valorização.</p>'}
+      <div class="modal-acoes"><span style="flex:1"></span><button id="x">Fechar</button></div>`, 620);
+    m.el.querySelector('#x').onclick = m.fechar;
+  }));
   $app.querySelectorAll('[data-baixa]').forEach((b) => (b.onclick = () => acao(async () => { await api(`/api/patrimonio/${b.dataset.baixa}/baixa`, { method: 'POST', body: b.dataset.d === '1' ? { desfazer: true } : {} }); await patrimonio(); }, b.dataset.d === '1' ? 'Baixa desfeita' : 'Baixa registrada')));
   $app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => confirm('Excluir este item?') && acao(async () => { await api(`/api/patrimonio/${b.dataset.del}`, { method: 'DELETE' }); await patrimonio(); }, 'Item excluído')));
   $app.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => {
@@ -556,7 +592,7 @@ async function patrimonio() {
       ${i.tipo === 'outro' ? `<div class="cheio"><label>O que é este "outro"? *</label><input name="tipo_outro" maxlength="60" value="${esc(i.tipo_outro || '')}" required></div>` : ''}
       <div class="cheio"><label>Descrição</label><input name="descricao" value="${esc(i.descricao)}" required></div>
       <div><label>Mês de entrada</label><input name="mes" type="month" value="${esc(i.mes)}" required></div>
-      <div><label>Valor (R$)</label><input name="valor" value="${(i.valor / 100).toFixed(2).replace('.', ',')}" inputmode="decimal" required></div>
+      <div><label>Valor inicial (R$)</label><input name="valor" value="${(i.valor_inicial / 100).toFixed(2).replace('.', ',')}" inputmode="decimal" required></div>
       <div><label>Situação</label><select name="situacao" id="esit">${Object.entries(d.situacoes).map(([k, v]) => `<option value="${k}" ${i.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div id="esit-outro" ${i.situacao === 'outro' ? '' : 'hidden'}><label>Qual a situação? *</label><input name="situacao_outro" maxlength="60" value="${esc(i.situacao_outro || '')}" placeholder="Ex.: em uso, em manutenção"></div>
       <div><label>Chegada prevista</label><input name="previsao_chegada" id="echg" type="date" value="${i.previsao_chegada || ''}" ${i.chegada_nao_se_aplica ? 'disabled' : ''}><label class="chk-na"><input type="checkbox" name="chegada_nao_se_aplica" id="echg-na" value="1" ${i.chegada_nao_se_aplica ? 'checked' : ''}> Não se aplica</label></div>

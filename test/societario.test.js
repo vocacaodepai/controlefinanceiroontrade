@@ -154,3 +154,23 @@ test('patrimônio: situação "outro" exige texto e chegada pode ser "não se ap
   const c = await P.salvarItem(null, { mes, tipo: 'estoque', descricao: 'Est', valor: 100, situacao: 'em_estoque', situacao_outro: 'lixo' }, null);
   assert.equal(c.situacao_outro, null);
 });
+
+test('patrimônio: valor inicial, avaliações de mercado e variação (valorização/desvalorização) ao longo dos meses', async () => {
+  const mes = '2032-01';
+  const it = await P.salvarItem(null, { mes, tipo: 'carro', descricao: 'RAM', valor: 22000000 }, { nome: 'Elisa' });
+  assert.equal(it.valor_inicial, 22000000); assert.equal(it.valor, 22000000);
+  await assert.rejects(P.avaliar(it.id, { mes: '2031-12', valor: 1 }, null), /antes do mês de entrada/);
+  await assert.rejects(P.avaliar(it.id, { mes, valor: -5 }, null), /valor de mercado/);
+  await P.avaliar(it.id, { mes: '2032-03', valor: 21000000, obs: 'FIPE' }, { nome: 'Elisa' });
+  const h = await P.avaliar(it.id, { mes: '2032-06', valor: 22500000 }, { nome: 'Elisa' });
+  assert.equal(h.item.valor, 22500000); assert.equal(h.item.variacao, 500000);
+  assert.equal(h.avaliacoes[0].mes, '2032-06'); assert.equal(h.avaliacoes[0].variacao_anterior, 1500000); assert.equal(h.avaliacoes[1].variacao_inicial, -1000000);
+  // a posição de cada mês usa a avaliação vigente naquele mês
+  const val = async (m) => (await P.posicao(m)).itens.find((x) => x.id === it.id).valor;
+  assert.equal(await val('2032-01'), 22000000); assert.equal(await val('2032-04'), 21000000); assert.equal(await val('2032-07'), 22500000);
+  const g = await P.geral();
+  assert.ok(g.total_variacao >= 500000 && g.total_inicial > 0);
+  // editar o valor inicial não mexe no valor atual quando já há avaliação
+  const e = await P.salvarItem(it.id, { mes, tipo: 'carro', descricao: 'RAM', valor: 20000000 }, null);
+  assert.equal(e.valor_inicial, 20000000); assert.equal(e.valor, 22500000);
+});

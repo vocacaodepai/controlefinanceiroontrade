@@ -273,6 +273,37 @@ CREATE INDEX IF NOT EXISTS idx_pat_mes ON patrimonio_itens(mes);
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS tipo_outro text;
 -- Patrimônio geral: o item entra em um mês (coluna mes) e fica na empresa até a baixa (vendido, baixado ou perdido)
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS baixa_mes text;
+-- Valor inicial (custo) e avaliações de mercado ao longo do tempo: mostram se o ativo valoriza ou desvaloriza
+ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS valor_inicial bigint;
+UPDATE patrimonio_itens SET valor_inicial = valor WHERE valor_inicial IS NULL;
+CREATE TABLE IF NOT EXISTS patrimonio_avaliacoes (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  item_id bigint NOT NULL REFERENCES patrimonio_itens(id) ON DELETE CASCADE,
+  mes text NOT NULL,
+  valor bigint NOT NULL CHECK (valor >= 0),
+  obs text,
+  criado_por text,
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_pataval_item ON patrimonio_avaliacoes (item_id, mes);
+ALTER TABLE patrimonio_avaliacoes ENABLE ROW LEVEL SECURITY;
+
+-- Pendências: dúvidas e coisas a descobrir, mostradas no painel até alguém resolver
+CREATE TABLE IF NOT EXISTS pendencias (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  titulo text NOT NULL,
+  detalhe text,
+  lancamento_id bigint REFERENCES lancamentos(id) ON DELETE SET NULL,
+  criada_por text,
+  criada_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo'),
+  resolvida_em timestamp,
+  resolvida_por text,
+  resolucao text
+);
+CREATE INDEX IF NOT EXISTS idx_pend_abertas ON pendencias (resolvida_em);
+CREATE INDEX IF NOT EXISTS idx_pend_lanc ON pendencias (lancamento_id);
+ALTER TABLE pendencias ENABLE ROW LEVEL SECURITY;
+
 -- Situação "outro" com texto livre e chegada prevista "não se aplica"
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS situacao_outro text;
 ALTER TABLE patrimonio_itens ADD COLUMN IF NOT EXISTS chegada_nao_se_aplica integer NOT NULL DEFAULT 0;

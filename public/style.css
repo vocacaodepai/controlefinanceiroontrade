@@ -341,3 +341,8 @@ input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;lette
 
 /* Ao Vivo: olhinho que esconde os números */
 .oculta-numeros .kpi .v,.oculta-numeros .kpi small,.oculta-numeros .grande,.oculta-numeros td.n,.oculta-numeros .barra .val,.oculta-numeros .mk-grade small,.oculta-numeros .num,.oculta-numeros .graf{filter:blur(9px);user-select:none;-webkit-user-select:none;pointer-events:none}
+
+/* pendências no painel */
+.pendencias{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.pendencias .aviso-box{margin-bottom:0;background:var(--aviso-bg);border-left-color:var(--aviso);align-items:center}
+.pendencias .aviso-box .ico{color:var(--aviso)}

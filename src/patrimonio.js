@@ -18,13 +18,16 @@ export const mesAnterior = (mes) => {
 export const mesDoAnoAnterior = (mes) => `${Number(mes.slice(0, 4)) - 1}-${mes.slice(5)}`;
 
 // Cada item "entra" em um mês (coluna mes) e continua sendo da empresa até a baixa (vendido, baixado ou perdido).
-export const itensDoMes = (mes) => query('SELECT * FROM patrimonio_itens WHERE mes = $1 ORDER BY tipo, id', [mes]);          // o que entrou neste mês
-export const itensAtivos = () => query('SELECT * FROM patrimonio_itens WHERE baixa_mes IS NULL ORDER BY mes DESC, tipo, id');   // patrimônio geral hoje
-export const itensBaixados = () => query('SELECT * FROM patrimonio_itens WHERE baixa_mes IS NOT NULL ORDER BY baixa_mes DESC, id');
+export const itensDoMes = async (mes) => (await query('SELECT * FROM patrimonio_itens WHERE mes = $1 ORDER BY tipo, id', [mes])).map(comVariacao);          // o que entrou neste mês
+export const itensAtivos = async () => (await query('SELECT * FROM patrimonio_itens WHERE baixa_mes IS NULL ORDER BY mes DESC, tipo, id')).map(comVariacao);   // patrimônio geral hoje
+export const itensBaixados = async () => (await query('SELECT * FROM patrimonio_itens WHERE baixa_mes IS NOT NULL ORDER BY baixa_mes DESC, id')).map(comVariacao);
 
+// valor = valor atual (última avaliação) ou o inicial; variação = quanto valorizou (+) ou desvalorizou (−) desde a entrada
+const comVariacao = (i) => ({ ...i, valor_inicial: i.valor_inicial ?? i.valor, variacao: i.valor - (i.valor_inicial ?? i.valor) });
 const totais = (itens) => {
   const soma = (t) => itens.filter((i) => i.tipo === t).reduce((a, i) => a + i.valor, 0);
-  return { total_container: soma('container'), total_estoque: soma('estoque'), total_carro: soma('carro'), total_outro: soma('outro'), total: itens.reduce((a, i) => a + i.valor, 0) };
+  const total = itens.reduce((a, i) => a + i.valor, 0), inicial = itens.reduce((a, i) => a + (i.valor_inicial ?? i.valor), 0);
+  return { total_container: soma('container'), total_estoque: soma('estoque'), total_carro: soma('carro'), total_outro: soma('outro'), total, total_inicial: inicial, total_variacao: total - inicial };
 };
 
 // Patrimônio geral hoje: tudo o que entrou e ainda não teve baixa
@@ -35,7 +38,9 @@ export async function geral() {
 
 // Posição ao fim de um mês: o que já tinha entrado até lá e ainda não tinha baixa
 export async function posicao(mes) {
-  const itens = await query('SELECT * FROM patrimonio_itens WHERE mes <= $1 AND (baixa_mes IS NULL OR baixa_mes > $1) ORDER BY mes, tipo, id', [mes]);
+  // cada item vale, naquele mês, a última avaliação até então (ou o valor inicial, se ainda não houve avaliação)
+  const itens = (await query(`SELECT i.*, coalesce((SELECT a.valor FROM patrimonio_avaliacoes a WHERE a.item_id = i.id AND a.mes <= $1 ORDER BY a.mes DESC, a.id DESC LIMIT 1), i.valor_inicial, i.valor) AS valor_no_mes
+    FROM patrimonio_itens i WHERE i.mes <= $1 AND (i.baixa_mes IS NULL OR i.baixa_mes > $1) ORDER BY i.mes, i.tipo, i.id`, [mes])).map(({ valor_no_mes, ...i }) => comVariacao({ ...i, valor: Number(valor_no_mes) }));
   return { mes_ref: mes, defasado: false, itens, ...totais(itens), informado: itens.length > 0 };
 }
 
@@ -93,11 +98,37 @@ function validar(b) {
 export async function salvarItem(id, b, usuario) {
   const v = validar(b);
   if (id) {
-    const r = await one(`UPDATE patrimonio_itens SET mes=$1,tipo=$2,descricao=$3,valor=$4,situacao=$5,previsao_chegada=$6,obs=$7,tipo_outro=$8,situacao_outro=$9,chegada_nao_se_aplica=$10 WHERE id=$11 RETURNING *`, [...v, id]);
+    // o valor digitado aqui é o valor inicial (custo); o valor atual só muda por avaliação, ou acompanha o inicial se ainda não houve nenhuma
+    const r = await one(`UPDATE patrimonio_itens SET mes=$1,tipo=$2,descricao=$3,valor_inicial=$4,valor=CASE WHEN EXISTS (SELECT 1 FROM patrimonio_avaliacoes a WHERE a.item_id = $11) THEN valor ELSE $4 END,situacao=$5,previsao_chegada=$6,obs=$7,tipo_outro=$8,situacao_outro=$9,chegada_nao_se_aplica=$10 WHERE id=$11 RETURNING *`, [...v, id]);
     if (!r) throw new ErroNegocio('Item não encontrado.', 404);
     return r;
   }
-  return one(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,situacao,previsao_chegada,obs,tipo_outro,situacao_outro,chegada_nao_se_aplica,criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [...v, usuario?.nome || null]);
+  return one(`INSERT INTO patrimonio_itens (mes,tipo,descricao,valor,valor_inicial,situacao,previsao_chegada,obs,tipo_outro,situacao_outro,chegada_nao_se_aplica,criado_por) VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [...v, usuario?.nome || null]);
+}
+
+// Avaliação de mercado: valor do ativo em um mês. O valor atual do item passa a ser o da avaliação mais recente.
+export async function avaliar(id, { mes, valor, obs }, usuario) {
+  const i = await one('SELECT id, mes FROM patrimonio_itens WHERE id = $1', [id]);
+  if (!i) throw new ErroNegocio('Item não encontrado.', 404);
+  if (!isMes(mes)) throw new ErroNegocio('Mês da avaliação inválido.');
+  if (mes < i.mes) throw new ErroNegocio('A avaliação não pode ser antes do mês de entrada do item.');
+  const v = Math.round(Number(valor));
+  if (!Number.isFinite(v) || v < 0) throw new ErroNegocio('Informe o valor de mercado.');
+  await query('INSERT INTO patrimonio_avaliacoes (item_id, mes, valor, obs, criado_por) VALUES ($1,$2,$3,$4,$5)', [id, mes, v, b2(obs), usuario?.nome || null]);
+  const ult = await one('SELECT valor FROM patrimonio_avaliacoes WHERE item_id = $1 ORDER BY mes DESC, id DESC LIMIT 1', [id]);
+  await query('UPDATE patrimonio_itens SET valor = $2 WHERE id = $1', [id, ult.valor]);
+  return historico(id);
+}
+const b2 = (t) => (t == null || String(t).trim() === '' ? null : String(t).trim());
+
+// Histórico do ativo: valor inicial e cada avaliação, com a variação em relação ao valor inicial e à avaliação anterior
+export async function historico(id) {
+  const i = await one('SELECT * FROM patrimonio_itens WHERE id = $1', [id]);
+  if (!i) throw new ErroNegocio('Item não encontrado.', 404);
+  const ini = i.valor_inicial ?? i.valor;
+  let ant = ini;
+  const av = (await query('SELECT * FROM patrimonio_avaliacoes WHERE item_id = $1 ORDER BY mes, id', [id])).map((a) => { const o = { ...a, variacao_inicial: a.valor - ini, variacao_anterior: a.valor - ant }; ant = a.valor; return o; });
+  return { item: comVariacao(i), avaliacoes: av.reverse() };
 }
 
 export async function excluirItem(id) {

@@ -12,6 +12,7 @@ import * as SO from './societario.js';
 import * as CO from './comercial.js';
 import * as CB from './cobranca.js';
 import * as ES from './estoque.js';
+import * as PE from './pendencias.js';
 import * as DP from './dp.js';
 import * as MK from './marketing.js';
 import { gerarPdf } from './relatorio.js';
@@ -120,6 +121,8 @@ app.get('/api/patrimonio', verPat, h(async (req, res) => {
 app.post('/api/patrimonio', admin, h(async (req, res) => res.status(201).json(await P.salvarItem(null, req.body, req.usuario))));
 app.put('/api/patrimonio/:id', admin, h(async (req, res) => res.json(await P.salvarItem(idNum(req.params.id), req.body, req.usuario))));
 app.delete('/api/patrimonio/:id', admin, h(async (req, res) => { await P.excluirItem(idNum(req.params.id)); res.status(204).end(); }));
+app.get('/api/patrimonio/:id/historico', verPat, h(async (req, res) => res.json(await P.historico(idNum(req.params.id)))));
+app.post('/api/patrimonio/:id/avaliacao', admin, h(async (req, res) => res.json(await P.avaliar(idNum(req.params.id), req.body || {}, req.usuario))));
 app.post('/api/patrimonio/:id/baixa', admin, h(async (req, res) => res.json(await P.baixar(idNum(req.params.id), req.body || {}))));
 
 // ---------- quadro societário e relatório mensal dos sócios ----------
@@ -165,6 +168,11 @@ app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json
 app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias, req.usuario))));
+// ---------- pendências: dúvidas que aparecem no painel até serem resolvidas ----------
+app.get('/api/pendencias', ler, h(async (_, res) => res.json({ abertas: await PE.abertas(), resolvidas: await PE.resolvidas() })));
+app.post('/api/pendencias', operar, h(async (req, res) => res.status(201).json(await PE.criar(req.body, req.usuario))));
+app.post('/api/pendencias/:id/resolver', operar, h(async (req, res) => res.json(await PE.resolver(idNum(req.params.id), req.body || {}, req.usuario))));
+
 // ---------- estoque (administração e quem cuida do estoque) ----------
 const estq = A.exigirArea('estoque');
 app.get('/api/estoque', estq, h(async (req, res) => res.json({ itens: await ES.listarItens({ todos: req.query.todos === '1' }), movimentos: await ES.listarMovimentos(req.query) })));
