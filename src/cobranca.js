@@ -71,7 +71,7 @@ function proximaCobranca(aprovadoEm, feitos, adiar) {
   return d <= h ? addDias(h, 2) : d;
 }
 
-export async function registrarContato(id, { nota, canal, resultado, adiar_dias, vencimento }, usuario) {
+export async function registrarContato(id, { nota, canal, resultado, adiar_dias, vencimento, mensagem }, usuario) {
   const o = await one(`SELECT id, cliente_id, cobranca_status, fechado_em::date AS aprovado, (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = orcamentos.id AND t.tipo = 'cobranca') AS feitos FROM orcamentos WHERE id = $1`, [id]);
   if (!o || !o.cobranca_status) throw new ErroNegocio('Orçamento aprovado não encontrado.', 404);
   if (o.cobranca_status === 'pago') throw new ErroNegocio('Este orçamento já está pago.');
@@ -85,10 +85,41 @@ export async function registrarContato(id, { nota, canal, resultado, adiar_dias,
   // data combinada com o cliente vira o próximo aviso (a cobrança volta no dia combinado)
   const proximo = resultado === 'combinou_data' && venc ? (venc > hoje() ? venc : addDias(hoje(), 1)) : proximaCobranca(o.aprovado || hoje(), o.feitos + 1, adiar);
   await tx(async () => {
-    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota, canal, resultado) VALUES ($1,$2,$3,'cobranca',$4,$5,$6)`, [id, o.cliente_id, usuario?.id ?? null, txt(nota), canal || null, resultado || null]);
+    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota, canal, resultado, mensagem) VALUES ($1,$2,$3,'cobranca',$4,$5,$6,$7)`, [id, o.cliente_id, usuario?.id ?? null, txt(nota), canal || null, resultado || null, txt(mensagem)]);
     await query(`UPDATE orcamentos SET cobranca_status = 'em_cobranca', cobranca_followup_em = $2, cobranca_vencimento = coalesce($3, cobranca_vencimento) WHERE id = $1`, [id, proximo, venc]);
   });
   return detalhe(id);
+}
+
+// Mensagem de cobrança enviada: mesma regra do follow-up do comercial. Quem envia confirma e assume a responsabilidade
+// (o sistema não lê o WhatsApp); a régua avança para o próximo toque.
+export async function cobrancaEnviada(id, { canal = 'whatsapp', mensagem, responsabilidade }, usuario) {
+  if (responsabilidade !== true) throw new ErroNegocio('Confirme que enviou a mensagem e que se responsabiliza pelo envio.');
+  if (!txt(mensagem)) throw new ErroNegocio('A mensagem enviada não pode ficar vazia.');
+  return registrarContato(id, { canal, mensagem, nota: `Mensagem de cobrança enviada. ${usuario?.nome || 'Usuário'} confirmou o envio e assumiu a responsabilidade.` }, usuario);
+}
+
+// Controle da cobrança (igual ao painel de follow-up do comercial): o que foi enviado, por quem, e o que vem pela frente
+export async function historico({ de, ate, por } = {}) {
+  const h = hoje();
+  const ini = de || addDias(h, -6), fim = ate || h;
+  if (!isData(ini) || !isData(fim)) throw new ErroNegocio('Período inválido.');
+  const p = [ini, fim];
+  let fp = '';
+  if (por) { p.push(Number(por)); fp = ' AND x.usuario_id = $' + p.length; }
+  const enviados = await query(`SELECT * FROM (
+      SELECT t.id, t.criado_em, t.canal, t.resultado, t.nota, t.mensagem, t.usuario_id, u.nome AS usuario_nome,
+        o.id AS orcamento_id, o.numero, o.valor, c.nome AS cliente_nome,
+        row_number() OVER (PARTITION BY t.orcamento_id ORDER BY t.id)::int AS etapa
+      FROM contatos t JOIN orcamentos o ON o.id = t.orcamento_id JOIN clientes c ON c.id = o.cliente_id
+      LEFT JOIN usuarios u ON u.id = t.usuario_id WHERE t.tipo = 'cobranca') x
+    WHERE x.criado_em::date BETWEEN $1 AND $2` + fp + ' ORDER BY x.criado_em DESC, x.id DESC LIMIT 500', p);
+  const agenda = await query(`${BASE} WHERE o.cobranca_status IN ('a_cobrar','em_cobranca') AND o.cobranca_followup_em > $1 ORDER BY o.cobranca_followup_em, o.id LIMIT 300`, [h]);
+  const dias = (d) => Math.round((new Date(String(d).slice(0, 10) + 'T12:00:00') - new Date(h + 'T12:00:00')) / 86400000);
+  const proximos = { ate_3: 0, de_4_a_7: 0, acima_7: 0 };
+  for (const o of agenda) { const n = dias(o.cobranca_followup_em); if (n <= 3) proximos.ate_3++; else if (n <= 7) proximos.de_4_a_7++; else proximos.acima_7++; }
+  const hj = await one(`SELECT count(*)::int AS n FROM contatos WHERE tipo = 'cobranca' AND criado_em::date = $1`, [h]);
+  return { de: ini, ate: fim, enviados_hoje: hj.n, enviados, agenda: agenda.map(enriquecer), proximos };
 }
 
 // Registra o recebimento (total ou parcial). Por padrão já lança a ENTRADA no caixa, na conta escolhida.

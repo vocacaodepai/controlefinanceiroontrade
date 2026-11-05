@@ -178,7 +178,7 @@ function telaLogin(e) {
     });
   };
 }
-async function sair() { clearInterval(_fuTimer); state.fuIniciado = false; state.followups = null; sessionStorage.removeItem('fu_ate'); await api('/api/auth/logout', { method: 'POST' }); state.usuario = null; state.meta = null; telaLogin(); }
+async function sair() { clearInterval(_fuTimer); clearInterval(_cbTimer); state.cbIniciado = false; state.filaAtiva = false; state.fuIniciado = false; state.followups = null; sessionStorage.removeItem('fu_ate'); await api('/api/auth/logout', { method: 'POST' }); state.usuario = null; state.meta = null; telaLogin(); }
 document.getElementById('sair').onclick = sair;
 
 // ---------- roteamento ----------
@@ -238,6 +238,7 @@ async function rota() {
   document.getElementById('quem').innerHTML = `<a href="#perfil" class="quem quem-link" title="Abrir meu perfil: foto e senha">${avatar(state.usuario, 40)}<div><b>${esc(state.usuario.nome)}</b><small>${PAPEL_NOME[state.usuario.papel]}</small></div></a>`;
   renderMenu();
   atualizarBadgeCobranca();
+  if (!state.cbIniciado) { state.cbIniciado = true; setTimeout(iniciarCobrancas, 600); }
   if (!state.fuIniciado) { state.fuIniciado = true; iniciarFollowups(); } else if (state.followups) atualizarBadge(state.followups.length);
   const permitidas = rotasPermitidas();
   let nome = location.hash.slice(1) || permitidas[0] || 'painel';
@@ -1686,12 +1687,12 @@ async function acessos() {
 const RESULT_COBR = { sem_resposta: 'Não respondeu', combinou_data: 'Combinou data de pagamento', enviou_comprovante: 'Enviou comprovante', dificuldade: 'Pediu condição / dificuldade' };
 const ETAPAS_COBR = ['Enviar dados de pagamento e confirmar o recebimento', 'Lembrar com cordialidade e oferecer ajuda', 'Reforçar o prazo combinado e perguntar o que trava', 'Última tentativa antes de levar à gestão'];
 const msgCobr = (o) => {
-  const n = primeiroNome(o.cliente_nome), v = brl(o.saldo), e = Math.min(o.qtd_cobrancas || 0, 3);
+  const n = primeiroNome(o.cliente_nome), v = brl(o.saldo), e = Math.min(o.qtd_cobrancas || 0, 3), eu = primeiroNome(state.usuario?.nome) || 'a equipe', nr = o.numero ? ` nº ${o.numero}` : '';
   return [
-    `Olá, ${n}! Aqui é do financeiro da OnTrade. Obrigado por aprovar o orçamento ${o.numero || ''} de ${o.produto}. Segue o valor de ${v} e os dados para pagamento. Qualquer dúvida, estou à disposição.`,
-    `Olá, ${n}! Tudo bem? Passando para lembrar do pagamento de ${v} referente ao orçamento ${o.numero || ''}. Posso ajudar com algo?`,
-    `Olá, ${n}! Ainda não identificamos o pagamento de ${v} do orçamento ${o.numero || ''}. Há algo que esteja dificultando? Podemos combinar a melhor data.`,
-    `Olá, ${n}! Precisamos regularizar o pagamento de ${v} do orçamento ${o.numero || ''} para manter a produção. Consegue confirmar a data de hoje?`,
+    `Olá, ${n}! Aqui é ${eu}, do financeiro da OnTrade. Obrigado por aprovar o orçamento${nr} de ${o.produto}. O valor é ${v}; já te envio os dados para pagamento. Qualquer dúvida, estou à disposição.`,
+    `Oi, ${n}, tudo bem? ${eu} do financeiro da OnTrade. Passando para lembrar do pagamento de ${v} referente ao orçamento${nr}. Posso ajudar com algo para facilitar?`,
+    `Oi, ${n}! ${eu} da OnTrade aqui. Ainda não identificamos o pagamento de ${v} do orçamento${nr}. Tem algo dificultando? Podemos combinar a melhor data para você.`,
+    `Oi, ${n}, ${eu} do financeiro da OnTrade. Precisamos regularizar o pagamento de ${v} do orçamento${nr} para seguir com a produção e a entrega. Consegue me confirmar hoje a data do pagamento?`,
   ][e];
 };
 const tagSitCobr = (o) => o.cobranca_status === 'pago' ? '<span class="tag ok">Pago</span>' : o.escalar ? '<span class="tag ruim">Levar à gestão</span>' : o.atrasado || o.vencido ? '<span class="tag ruim">Atrasado</span>' : `<span class="tag aviso">${o.cobranca_status === 'em_cobranca' ? 'Em cobrança' : 'A cobrar'}</span>`;
@@ -1712,13 +1713,78 @@ async function cobranca() {
         <td class="n">${brl(o.valor)}</td><td class="n">${brl(o.recebido)}</td><td class="n">${brl(o.saldo)}</td>
         <td>${tagSitCobr(o)}${o.cobranca_vencimento ? `<br><small class="mut">vence ${dataBR(o.cobranca_vencimento)}</small>` : ''}</td>
         <td>${o.cobranca_status === 'pago' ? '<span class="mut">—</span>' : o.cobranca_followup_em ? `<span class="${o.vence_hoje_ou_antes ? 'neg' : ''}">${dataBR(o.cobranca_followup_em)}</span><br><small class="mut">toque ${Math.min(o.qtd_cobrancas + 1, 4)} de 4</small>` : '<span class="neg">Sem aviso</span>'}</td>
-        <td class="n" style="white-space:nowrap">${o.cobranca_status === 'pago' ? `<button class="mini sec" data-h="${o.id}">Histórico</button>` : `${botaoZap(o.cliente_telefone, msgCobr(o), '')}<button class="mini" data-c="${o.id}">Cobrança</button> <button class="mini" data-p="${o.id}">Recebido</button> <button class="mini sec" data-h="${o.id}">Histórico</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento aprovado nesta lista.</p>'}</div>`;
+        <td class="n" style="white-space:nowrap">${o.cobranca_status === 'pago' ? `<button class="mini sec" data-h="${o.id}">Histórico</button>` : `<button class="mini" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Cobrança</button> <button class="mini" data-p="${o.id}">Recebido</button> <button class="mini sec" data-h="${o.id}">Histórico</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento aprovado nesta lista.</p>'}</div>`;
+  // controle de envios (igual ao Follow-up do comercial): o que foi enviado, por quem e o que vem pela frente
+  const hf = state.filtroHistCobr || (state.filtroHistCobr = { de: '', ate: '', por: '' });
+  const hq = new URLSearchParams(Object.entries(hf).filter(([, v]) => v));
+  const hist = await api('/api/cobranca/historico?' + hq).catch(() => null);
+  if (hist) $app.insertAdjacentHTML('beforeend', `<div class="card"><h2>Controle de Cobranças</h2>
+    <div class="grid" style="margin-top:6px">
+      <div class="card kpi"><div class="l">Enviadas hoje</div><div class="v">${hist.enviados_hoje}</div></div>
+      <div class="card kpi"><div class="l">Próximos 3 dias</div><div class="v">${hist.proximos.ate_3}</div></div>
+      <div class="card kpi"><div class="l">Em 4 a 7 dias</div><div class="v">${hist.proximos.de_4_a_7}</div></div>
+      <div class="card kpi"><div class="l">Depois disso</div><div class="v">${hist.proximos.acima_7}</div></div>
+    </div>
+    <div class="row"><div><label>De</label><input type="date" id="hde" value="${hist.de}"></div><div><label>Até</label><input type="date" id="hate" value="${hist.ate}"></div>
+      <div><label>Enviado por</label><select id="hpor"><option value="">Todos</option>${(state.meta?.equipe || []).filter((u) => ['admin', 'operador', 'financeiro'].includes(u.papel)).map((u) => `<option value="${u.id}" ${String(hf.por) === String(u.id) ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></div></div>
+    ${hist.enviados.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Orçamento</th><th>Cliente</th><th>Toque</th><th>Enviado por</th><th>Canal</th></tr></thead><tbody>
+      ${hist.enviados.map((e) => `<tr><td>${dataBR(String(e.criado_em).slice(0, 10))} ${String(e.criado_em).slice(11, 16)}</td><td>${esc(e.numero || '—')}<br><small class="mut">${brl(e.valor)}</small></td><td>${esc(e.cliente_nome)}</td><td>${e.etapa}º de 4</td><td>${esc(e.usuario_nome || '—')}</td><td>${esc(({ whatsapp: 'WhatsApp', ligacao: 'Ligação', email: 'E-mail', presencial: 'Presencial' })[e.canal] || '—')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhuma cobrança enviada neste período.</p>'}</div>`);
+  const mh = (k) => (e) => { hf[k] = e.target.value; cobranca(); };
+  document.getElementById('hde')?.addEventListener('change', mh('de')); document.getElementById('hate')?.addEventListener('change', mh('ate')); document.getElementById('hpor')?.addEventListener('change', mh('por'));
   const recarrega = async () => { await cobranca(); atualizarBadgeCobranca(); };
   document.getElementById('fs').onchange = (e) => { state.filtroCobr = e.target.value; cobranca(); };
   const achar = (id) => d.lista.find((o) => o.id === +id);
+  $app.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => janelaMsgCobranca(achar(b.dataset.m), { aoConcluir: recarrega })));
   $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaCobranca(achar(b.dataset.c), recarrega)));
   $app.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => janelaRecebimento(achar(b.dataset.p), recarrega)));
   $app.querySelectorAll('[data-h]').forEach((b) => (b.onclick = () => janelaHistoricoCobranca(achar(b.dataset.h))));
+}
+// Mesma lógica do follow-up do comercial: mensagem pronta (copiar / abrir WhatsApp) e confirmação de envio com responsabilidade.
+// Na fila obrigatória, sem adiar: a pessoa só sai quando enviar a todos ou registrar o recebimento.
+function janelaMsgCobranca(o, { pos = 0, total = 1, obrigatorio = false, faltam = [], aoConcluir }) {
+  const et = Math.min(o.qtd_cobrancas || 0, 3), restam = total - pos - 1;
+  const m = modal(`<h2>${obrigatorio ? `Cobrança ${pos + 1} de ${total}` : 'Enviar Cobrança'}</h2>
+    <p class="legenda"><b>${esc(o.cliente_nome)}</b> · orçamento ${esc(o.numero || '—')} · ${esc(o.produto)} · falta receber ${brl(o.saldo)}<br>${contatoCli(o)}</p>
+    ${obrigatorio && faltam.length ? `<p class="legenda" style="margin-top:8px"><b>Ainda faltam ${faltam.length}:</b> ${faltam.slice(0, 8).map(esc).join(', ')}${faltam.length > 8 ? ` e mais ${faltam.length - 8}` : ''}. O painel só é liberado quando todas forem enviadas.</p>` : ''}
+    <p class="legenda" style="margin-top:8px">Toque ${et + 1} de 4 · ${esc(ETAPAS_COBR[et])}${o.escalar ? ' · <b class="neg">régua esgotada: leve à gestão</b>' : ''}</p>
+    <label style="margin-top:12px">Mensagem (pode ajustar antes de enviar)</label>
+    <textarea id="msg" rows="7" style="width:100%">${esc(msgCobr(o))}</textarea>
+    <div class="row" style="margin:10px 0 0"><button class="sec" id="cp">Copiar mensagem</button>${zap(o.cliente_telefone) ? '<button class="sec" id="zap">Abrir WhatsApp</button>' : '<small class="mut">Cliente sem WhatsApp cadastrado: ligue ou envie por e-mail.</small>'}
+      <div><label>Canal</label><select id="canal"><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option></select></div></div>
+    <label class="check-resp" style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;text-transform:none;font-size:13.5px"><input type="checkbox" id="resp" style="margin-top:3px"><span>Enviei esta mensagem ao cliente e me responsabilizo pelo envio desta cobrança.</span></label>
+    <div class="modal-acoes">${obrigatorio ? '' : '<button class="sec" id="x">Fechar</button>'}<button class="sec" id="rec">Registrar Recebimento</button><span style="flex:1"></span><button id="ok" disabled>${obrigatorio ? (restam > 0 ? `Confirmar e Ir para a Próxima (${restam})` : 'Confirmar e Concluir') : 'Confirmar Envio'}</button></div>`, 600, obrigatorio);
+  const msg = m.el.querySelector('#msg'), resp = m.el.querySelector('#resp'), ok = m.el.querySelector('#ok');
+  resp.onchange = () => { ok.disabled = !resp.checked; };
+  m.el.querySelector('#cp').onclick = async () => { try { await navigator.clipboard.writeText(msg.value); } catch { msg.select(); document.execCommand('copy'); } toast('Mensagem copiada: é só colar na conversa'); };
+  const z = m.el.querySelector('#zap'); if (z) z.onclick = () => window.open(`${zap(o.cliente_telefone)}?text=${encodeURIComponent(msg.value)}`, '_blank', 'noopener');
+  m.el.querySelector('#x')?.addEventListener('click', m.fechar);
+  m.el.querySelector('#rec').onclick = () => janelaRecebimento(o, async () => { m.fechar(); await aoConcluir(); });
+  ok.onclick = () => acao(async () => {
+    await api(`/api/cobranca/${o.id}/enviado`, { method: 'POST', body: { canal: m.el.querySelector('#canal').value, mensagem: msg.value, responsabilidade: true } });
+    m.fechar(); await aoConcluir();
+  }, 'Cobrança registrada');
+}
+function filaCobrancas(lista) {
+  state.filaAtiva = true;
+  const passo = (i) => {
+    if (i >= lista.length) { state.filaAtiva = false; toast('Cobranças do dia concluídas'); atualizarBadgeCobranca(); return rota(); }
+    janelaMsgCobranca(lista[i], { pos: i, total: lista.length, obrigatorio: true, faltam: lista.slice(i + 1).map((x) => x.cliente_nome), aoConcluir: () => passo(i + 1) });
+  };
+  passo(0);
+}
+// Financeiro (Daiane, operadores): fila obrigatória ao entrar, como o follow-up do comercial. Administração: só o contador no menu.
+let _cbTimer = null;
+async function verificarCobrancas() {
+  if (!temArea('cobranca') || !['financeiro', 'operador'].includes(state.usuario?.papel) || document.querySelector('.modal-fundo') || state.filaAtiva) return;
+  const lista = await api('/api/cobranca/pendentes').catch(() => null);
+  if (!lista) return;
+  atualizarBadgeCobranca();
+  if (lista.length && !document.querySelector('.modal-fundo') && !state.filaAtiva) filaCobrancas(lista);
+}
+function iniciarCobrancas() {
+  clearInterval(_cbTimer);
+  if (!temArea('cobranca') || !['financeiro', 'operador'].includes(state.usuario?.papel)) return;
+  verificarCobrancas(); _cbTimer = setInterval(() => verificarCobrancas(), 5 * 60 * 1000);
 }
 function janelaCobranca(o, depois) {
   const et = Math.min(o.qtd_cobrancas || 0, 3);

@@ -86,3 +86,24 @@ test('permissões: financeiro e admin acessam a cobrança; comercial não', () =
   assert.ok(!AREAS.comercial.includes('cobranca'));
   assert.ok(!AREAS.socio.includes('cobranca'));
 });
+
+test('fila do financeiro: envio exige responsabilidade, guarda a mensagem e aparece no controle', async () => {
+  const o = await novo('Fila Fin', 800000, { numero: 'FF-1' });
+  await CO.mudarStatus(o.id, { status: 'ganho' }, null);
+  const u = await one(`INSERT INTO usuarios (nome, email, senha_hash, papel) VALUES ('Daiane Teste', 'dt@x.com', 'x', 'financeiro') RETURNING id, nome`);
+  await assert.rejects(CB.cobrancaEnviada(o.id, { mensagem: 'oi' }, u), /responsabiliza/);
+  await assert.rejects(CB.cobrancaEnviada(o.id, { mensagem: '  ', responsabilidade: true }, u), /vazia/);
+  const d = await CB.cobrancaEnviada(o.id, { canal: 'whatsapp', mensagem: 'Olá, pagamento do FF-1', responsabilidade: true }, u);
+  assert.equal(d.qtd_cobrancas, 1);
+  assert.equal(d.cobranca_status, 'em_cobranca');
+  assert.equal(d.cobranca_followup_em, S.addDias(hoje, 3));
+  const h = await CB.historico({ por: u.id });
+  const e = h.enviados.find((x) => x.orcamento_id === o.id);
+  assert.equal(e.mensagem, 'Olá, pagamento do FF-1');
+  assert.equal(e.etapa, 1);
+  assert.equal(e.usuario_nome, u.nome);
+  assert.ok(h.enviados_hoje >= 1);
+  assert.ok(h.agenda.some((x) => x.id === o.id));
+  assert.ok(h.proximos.ate_3 >= 1);
+  assert.ok(AREAS.financeiro.includes('cobranca'));
+});
