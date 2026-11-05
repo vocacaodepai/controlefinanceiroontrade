@@ -5,12 +5,12 @@ process.env.DB_PATH = ':memory:';
 const { seed } = await import('../src/seed.js');
 const { iniciar } = await import('../src/db.js');
 const ES = await import('../src/estoque.js');
-const { classificar, montaBusca } = await import('../src/estoque-catalogo.js');
+const { classificar, montaBusca, nomePadrao } = await import('../src/estoque-catalogo.js');
 await iniciar(seed);
 
 test('catálogo: entende tipo, pitch, uso, medida e lote pelo nome', () => {
-  assert.deepEqual(classificar('Painel de led P3.9 Indoor Magnético gabinete alumínio 0,50x1(lote 09) Fash lock'), { tipo: 'gabinete', pitch: 'P3.9', ambiente: 'indoor', dimensao: '100x50 cm', lote: '09' });
-  assert.deepEqual(classificar('Módulo painel de led P5 outdoor 320x160mm (lote 04)'), { tipo: 'modulo', pitch: 'P5', ambiente: 'outdoor', dimensao: '32x16 cm', lote: '04' });
+  assert.deepEqual(classificar('Painel de led P3.9 Indoor Magnético gabinete alumínio 0,50x1(lote 09) Fash lock'), { tipo: 'gabinete', pitch: 'P3.9', ambiente: 'indoor', dimensao: '100x50 cm', lote: '09', variante: 'Magnético, Alumínio, Fast lock' });
+  assert.deepEqual(classificar('Módulo painel de led P5 outdoor 320x160mm (lote 04)'), { tipo: 'modulo', pitch: 'P5', ambiente: 'outdoor', dimensao: '32x16 cm', lote: '04', variante: '' });
   assert.equal(classificar('P5 0UTDOOR 960X960 (Lote 07)').dimensao, '96x96 cm');
   assert.equal(classificar('Painel P3.9 gabinete 1x0,50 Outdoor (Lote 08)').dimensao, '100x50 cm');
   assert.equal(classificar('Painel de led P3.9 Outdoor gabinete 50x1000 ( Lote 06)').dimensao, '100x50 cm');
@@ -51,4 +51,36 @@ test('itens gravados por fora (importação) são completados com tipo, pitch, m
   const it = (await ES.listarItens({ q: 'p5 96x96 lote 8' }))[0];
   assert.equal(it.codigo, 'MIC9047'); assert.equal(it.tipo, 'gabinete'); assert.equal(it.lote, '08');
   assert.equal(await ES.completarCatalogo(), 0);
+});
+
+test('nome padronizado e variações: mesmo pitch, tipo e medida ficam no mesmo formato', () => {
+  const np = (n) => nomePadrao({ nome: n, ...classificar(n) });
+  assert.equal(np('Painel de led P3.91 outdoor gabinete 500x1000mm(lote 04)'), 'Gabinete P3.9 Outdoor 100x50 cm');
+  assert.equal(np('Painel P3.9 Outdoor Frontal 50x1M (Lote 07)'), 'Gabinete P3.9 Outdoor 100x50 cm · Frontal');
+  assert.equal(np('Módulo painel de led P3.91 indoor magnético 0,25x0,25m (lote 02)'), 'Módulo P3.9 Indoor 25x25 cm · Magnético');
+  assert.equal(np('Painel de led P3.9 Indoor Magnético Gabinete Ferro 0,50x1 (lote 09)'), 'Gabinete P3.9 Indoor 100x50 cm · Magnético, Ferro');
+  assert.equal(classificar('Painel 3.9').pitch, 'P3.9');
+  assert.equal(np('Receiver MRV208-1'), 'Receiver MRV208-1');
+  assert.equal(classificar('Painel P3.9 Magnético montado (7680 Hz)').variante, 'Magnético, Montado, Alta taxa (7680 Hz)');
+});
+
+test('filtro em degraus: pitch → tipo → uso, medida, variação e lote, com contagem de itens e unidades', async () => {
+  const ids = {};
+  for (const n of ['Painel P2.97 Indoor Magnético 50cm X 1M(Lote 06)', 'Painel P2.97 Indoor Gab Alumínio 50X1M (Lote 07)', 'PCB P2.97', 'Monitor vertical 65 polegadas (Totem touch)'])
+    ids[n] = await ES.salvarItem(null, { nome: n });
+  await ES.registrarMovimento({ item_id: ids['Painel P2.97 Indoor Magnético 50cm X 1M(Lote 06)'], tipo: 'entrada', quantidade: 10 }, null);
+  let r = await ES.navegar({});
+  const p297 = r.facetas.pitch.find((x) => x.v === 'P2.97');
+  assert.equal(p297.itens, 3); assert.equal(p297.unidades, 10);
+  assert.equal(r.facetas.pitch.at(-1).v, '-', 'itens sem pitch ficam por último, em "Outros"');
+  assert.ok(r.facetas.pitch.findIndex((x) => x.v === 'P2.97') < r.facetas.pitch.findIndex((x) => x.v === 'P3.9'), 'pitch em ordem numérica');
+  r = await ES.navegar({ pitch: 'P2.97' });
+  assert.deepEqual(r.facetas.tipo.map((x) => [x.v, x.itens]), [['gabinete', 2], ['pcb', 1]]);
+  r = await ES.navegar({ pitch: 'P2.97', tipo: 'gabinete' });
+  assert.deepEqual(r.facetas.variante.map((x) => x.v).sort(), ['Alumínio', 'Magnético']);
+  assert.deepEqual(r.facetas.lote.map((x) => x.v), ['07', '06']);
+  r = await ES.navegar({ pitch: 'P2.97', tipo: 'gabinete', variante: 'Magnético' });
+  assert.equal(r.itens.length, 1); assert.equal(r.itens[0].nome_padrao, 'Gabinete P2.97 Indoor 100x50 cm · Magnético');
+  r = await ES.navegar({ pitch: '-' });
+  assert.ok(r.itens.some((i) => i.tipo === 'totem') && r.itens.every((i) => !i.pitch));
 });

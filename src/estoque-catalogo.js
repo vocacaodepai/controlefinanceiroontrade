@@ -35,8 +35,9 @@ export function classificar(nome) {
 
   let pitch = null;
   const m = n.match(/\bp\s?(\d{1,2}(?:\.\d{1,2})?)\s?(?:mm)?\b/) || (tipo === 'totem' && n.match(/\b(\d\.\d{1,2})\b/));
-  if (m) {
-    const v = m[1];
+  const m2 = !m && /^(gabinete|modulo|pcb)$/.test(tipo) && n.match(/(?:painel|modulo|gabinete)\s+([1-9]\.\d{1,2})\b/); // "Painel 3.9", sem o P
+  if (m || m2) {
+    const v = (m || m2)[1];
     pitch = v === '3.91' ? 'P3.9' : `P${v}`; // P3.9 e P3.91 são o mesmo pitch (3,91 mm)
   }
   const ambiente = /outdoor/.test(n) ? 'outdoor' : /indoor/.test(n) ? 'indoor' : null;
@@ -54,12 +55,28 @@ export function classificar(nome) {
   if (l) lote = l[1].padStart(2, '0');
   const linha = /onpro/.test(n) ? 'ONPRO' : /bsl light/.test(n) ? 'BSL Light' : null;
   if (linha) lote = lote ? `${lote} (${linha})` : linha;
-  return { tipo, pitch, ambiente, dimensao, lote };
+  const variante = VARIANTES.filter(([re]) => re.test(n)).map(([, r]) => r).join(', ');
+  return { tipo, pitch, ambiente, dimensao, lote, variante };
+}
+
+// Características que diferenciam itens do mesmo pitch, tipo e medida (vão para o filtro "Variação")
+export const VARIANTES = [
+  [/magnetic/, 'Magnético'], [/frontal/, 'Frontal'], [/blindad/, 'Blindado'], [/alumini/, 'Alumínio'], [/\bferro\b/, 'Ferro'],
+  [/fa(s|sh|st) ?lock/, 'Fast lock'], [/reposic/, 'Reposição'], [/montad/, 'Montado'], [/\b(\d{4}) ?hz\b/, 'Alta taxa (7680 Hz)'],
+];
+const TIPO_CURTO = { gabinete: 'Gabinete', modulo: 'Módulo', pcb: 'PCB', totem: 'Totem' };
+
+// Nome padronizado para a lista: "Gabinete P3.9 Outdoor 100x50 cm · Magnético, Alumínio". O lote fica em coluna própria.
+// Peças, receivers e processadores (sem pitch ou tipo padronizável) mantêm o nome original.
+export function nomePadrao(i) {
+  if (!i.pitch || !TIPO_CURTO[i.tipo]) return i.nome;
+  const base = [TIPO_CURTO[i.tipo], i.pitch, AMBIENTES[i.ambiente], i.dimensao].filter(Boolean).join(' ');
+  return i.variante ? `${base} · ${i.variante}` : base;
 }
 
 // Texto de busca: nome, código, tipo, pitch com variações (p3.9, p3.91, 3.9, p39...), uso, medida nas duas ordens, lote e marca, com sinônimos
 export function montaBusca(i) {
-  const partes = [i.nome, i.codigo, TIPOS[i.tipo], i.tipo, AMBIENTES[i.ambiente], i.marca, i.lote && `lote ${i.lote}`];
+  const partes = [i.nome, i.codigo, TIPOS[i.tipo], i.tipo, AMBIENTES[i.ambiente], i.marca, i.lote && `lote ${i.lote}`, i.variante];
   if (i.pitch) {
     const v = i.pitch.replace(/^p/i, '');
     partes.push(`p${v}`, v, `p${v.replace('.', '')}`);

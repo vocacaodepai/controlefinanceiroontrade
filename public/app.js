@@ -1526,17 +1526,36 @@ async function comercial() {
 // =====================================================================
 const qtdFmt = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 async function estoque() {
-  const f = state.filtroEst || (state.filtroEst = { q: '', tipo: '', pitch: '', ambiente: '', lote: '', saldo: '', item_id: '', mov_tipo: '', de: '', ate: '' });
+  const f = state.filtroEst || (state.filtroEst = { q: '', tipo: '', pitch: '', ambiente: '', dimensao: '', variante: '', lote: '', saldo: '', item_id: '', mov_tipo: '', de: '', ate: '' });
   const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
   const d = await api('/api/estoque?' + qs);
   const adm = state.usuario.papel === 'admin';
-  const F = d.filtros;
+  const F = d.filtros, FC = d.facetas;
   const baixos = d.itens.filter((i) => i.abaixo_minimo);
   const unidades = d.itens.reduce((a, i) => a + Math.max(i.saldo, 0), 0);
   const valor = d.itens.reduce((a, i) => a + i.valor_estoque, 0);
   const zerados = d.itens.filter((i) => i.saldo <= 0).length;
   const opt = (lista, atual, rot = (x) => x) => lista.map((v) => `<option value="${esc(v)}" ${String(atual) === String(v) ? 'selected' : ''}>${esc(rot(v))}</option>`).join('');
-  const filtrando = f.q || f.tipo || f.pitch || f.ambiente || f.lote || f.saldo;
+  const filtrando = f.q || f.tipo || f.pitch || f.ambiente || f.dimensao || f.variante || f.lote || f.saldo;
+  // Filtro em degraus: pitch → tipo → uso, medida, variação e lote. Cada opção mostra itens e unidades na seleção atual.
+  const ROT = { pitch: 'Pitch', tipo: 'Tipo', ambiente: 'Uso', dimensao: 'Medida', variante: 'Variação', lote: 'Lote' };
+  const rotuloDe = (k, v) => (FC[k].find((x) => x.v === v) || { rotulo: v }).rotulo;
+  const chips = (k) => {
+    const op = FC[k];
+    if (!f[k] && op.length < 2) return '';
+    return `<div class="faceta"><span class="faceta-t">${ROT[k]}</span><div class="chips">${op.map((o) => `<button type="button" class="chip ${f[k] === o.v ? 'on' : ''}" data-fk="${k}" data-fv="${esc(o.v)}">${esc(o.rotulo)}<small>${o.itens} ${o.itens === 1 ? 'item' : 'itens'} · ${qtdFmt(o.unidades)} un</small></button>`).join('')}</div></div>`;
+  };
+  const trilha = ['pitch', 'tipo', 'ambiente', 'dimensao', 'variante', 'lote'].filter((k) => f[k]);
+  const degraus = `<div class="trilha"><button type="button" class="elo" data-volta="-1">Todo o estoque</button>${trilha.map((k, n) => `<span class="sep">›</span><button type="button" class="elo ${n === trilha.length - 1 ? 'atual' : ''}" data-volta="${n}">${esc(rotuloDe(k, f[k]))}</button>`).join('')}</div>
+    ${chips('pitch')}${f.pitch ? chips('tipo') : ''}${f.pitch && f.tipo ? chips('ambiente') + chips('dimensao') + chips('variante') + chips('lote') : ''}
+    ${f.pitch && !f.tipo && FC.tipo.length > 1 ? '<p class="legenda" style="margin-top:6px">Escolha o tipo para ver os filtros de uso, medida, variação e lote.</p>' : ''}`;
+  // lista agrupada por pitch e tipo, com subtotal de unidades
+  const grupos = [];
+  for (const i of d.itens) {
+    const g = `${i.pitch || 'Outros'} · ${F.tipos[i.tipo] || 'Sem tipo'}`;
+    if (!grupos.length || grupos.at(-1).g !== g) grupos.push({ g, itens: [] });
+    grupos.at(-1).itens.push(i);
+  }
   $app.innerHTML = `<h1>Estoque</h1><p class="sub">Painéis, módulos, PCBs, placas receptoras e processadores. Busque por qualquer parte do nome, código, pitch, medida ou lote. Toda saída precisa dizer para onde foi.</p>
     ${baixos.length ? `<div class="aviso-box">${ico('info')}<span>Estoque baixo: ${baixos.map((i) => `<b>${esc(i.nome)}</b> (${qtdFmt(i.saldo)} ${esc(i.unidade)})`).join(', ')}</span></div>` : ''}
     <div class="row"><button id="entrada">Registrar Entrada</button><button id="saida" class="sec">Registrar Saída</button><button id="novo-item" class="sec">Novo Item</button></div>
@@ -1547,19 +1566,17 @@ async function estoque() {
     </div>
     <div class="card">
       <div class="busca-estoque"><input id="eq" type="search" value="${esc(f.q)}" placeholder="Buscar: P3.9 outdoor lote 9, módulo 25x25, MIC9065, receiver..." autocomplete="off"></div>
+      <div class="degraus">${degraus}</div>
       <div class="row" style="margin:12px 0 0">
-        <div><label>Tipo</label><select id="ftp"><option value="">Todos</option>${opt(Object.keys(F.tipos), f.tipo, (k) => F.tipos[k])}</select></div>
-        <div><label>Pitch</label><select id="fpi"><option value="">Todos</option>${opt(F.pitches, f.pitch)}</select></div>
-        <div><label>Uso</label><select id="fam"><option value="">Todos</option>${opt(Object.keys(F.ambientes), f.ambiente, (k) => F.ambientes[k])}</select></div>
-        <div><label>Lote</label><select id="flo"><option value="">Todos</option>${opt(F.lotes, f.lote, (l) => `Lote ${l}`)}</select></div>
         <div><label>Saldo</label><select id="fsa"><option value="">Todos</option><option value="com" ${f.saldo === 'com' ? 'selected' : ''}>Com saldo</option><option value="zerado" ${f.saldo === 'zerado' ? 'selected' : ''}>Zerados</option></select></div>
         ${filtrando ? '<button class="sec" id="limpa">Limpar filtros</button>' : ''}
       </div></div>
-    <div class="card"><h2>Saldo Atual</h2>${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Pitch</th><th>Uso</th><th>Medida</th><th>Lote</th><th class="n">Saldo</th><th class="n">Preço ref.</th><th></th></tr></thead><tbody>
-      ${d.itens.map((i) => `<tr><td><b>${esc(i.nome)}</b><br><small class="mut">${i.codigo ? 'cód. ' + esc(i.codigo) : 'sem código'}${i.marca ? ' · ' + esc(i.marca) : ''}</small>${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td>
-        <td>${esc(F.tipos[i.tipo] || '—')}</td><td>${esc(i.pitch || '—')}</td><td>${esc(F.ambientes[i.ambiente] || '—')}</td><td>${esc(i.dimensao || '—')}</td><td>${i.lote ? esc(i.lote) : '—'}</td>
+    <div class="card"><h2>Saldo Atual</h2>${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Lote</th><th class="n">Saldo</th><th class="n">Preço ref.</th><th></th></tr></thead><tbody>
+      ${grupos.map((g) => `<tr class="grupo-est"><td colspan="3">${esc(g.g)} <small class="mut">· ${g.itens.length} ${g.itens.length === 1 ? 'item' : 'itens'}</small></td><td class="n" colspan="2"><small class="mut">${qtdFmt(g.itens.reduce((a, i) => a + Math.max(i.saldo, 0), 0))} un</small></td></tr>
+      ${g.itens.map((i) => `<tr><td><b>${esc(i.nome_padrao)}</b><br><small class="mut">${i.nome_padrao !== i.nome ? esc(i.nome) + ' · ' : ''}${i.codigo ? 'cód. ' + esc(i.codigo) : 'sem código'}${i.marca ? ' · ' + esc(i.marca) : ''}</small>${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td>
+        <td>${i.lote ? esc(i.lote) : '—'}</td>
         <td class="n ${i.abaixo_minimo || i.saldo <= 0 ? 'neg' : ''}"><b>${qtdFmt(i.saldo)}</b> ${esc(i.unidade)}</td><td class="n">${i.preco ? brl(i.preco) : '—'}</td>
-        <td class="n" style="white-space:nowrap"><button class="mini sec" data-mov="${i.id}">Movimentos</button> <button class="mini sec" data-ed="${i.id}">Editar</button></td></tr>`).join('')}</tbody></table></div>`
+        <td class="n" style="white-space:nowrap"><button class="mini sec" data-mov="${i.id}">Movimentos</button> <button class="mini sec" data-ed="${i.id}">Editar</button></td></tr>`).join('')}`).join('')}</tbody></table></div>`
       : `<p class="mut">${filtrando ? 'Nenhum item com essa busca. Tente menos palavras ou limpe os filtros.' : 'Nenhum item cadastrado. Clique em Novo Item para começar.'}</p>`}</div>
     <div class="row"><div><label>Movimentos do item</label><select id="fi"><option value="">Todos</option>${d.itens.map((i) => `<option value="${i.id}" ${String(f.item_id) === String(i.id) ? 'selected' : ''}>${esc(i.nome)}</option>`).join('')}</select></div>
       <div><label>Tipo</label><select id="ft"><option value="">Todos</option><option value="entrada" ${f.mov_tipo === 'entrada' ? 'selected' : ''}>Entradas</option><option value="saida" ${f.mov_tipo === 'saida' ? 'selected' : ''}>Saídas</option></select></div>
@@ -1570,15 +1587,28 @@ async function estoque() {
         ${adm ? `<td class="n"><button class="mini sec" data-del="${m.id}">Excluir</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhuma movimentação neste filtro.</p>'}</div>`;
   const recarrega = () => estoque();
   const filtro = (id, k) => { document.getElementById(id).onchange = (e) => { f[k] = e.target.value; estoque(); }; };
-  filtro('ftp', 'tipo'); filtro('fpi', 'pitch'); filtro('fam', 'ambiente'); filtro('flo', 'lote'); filtro('fsa', 'saldo');
+  filtro('fsa', 'saldo');
+  // clicar num chip escolhe (ou desfaz) o degrau; trocar pitch ou tipo limpa os subfiltros, que dependem deles
+  const ABAIXO = { pitch: ['tipo', 'ambiente', 'dimensao', 'variante', 'lote'], tipo: ['ambiente', 'dimensao', 'variante', 'lote'] };
+  $app.querySelectorAll('[data-fk]').forEach((b) => (b.onclick = () => {
+    const k = b.dataset.fk, v = b.dataset.fv;
+    f[k] = f[k] === v ? '' : v;
+    (ABAIXO[k] || []).forEach((x) => (f[x] = ''));
+    estoque();
+  }));
+  $app.querySelectorAll('[data-volta]').forEach((b) => (b.onclick = () => {
+    const n = +b.dataset.volta;
+    trilha.slice(n + 1).forEach((k) => (f[k] = ''));
+    estoque();
+  }));
   filtro('fi', 'item_id'); filtro('ft', 'mov_tipo'); filtro('fde', 'de'); filtro('fate', 'ate');
-  document.getElementById('limpa')?.addEventListener('click', () => { Object.assign(f, { q: '', tipo: '', pitch: '', ambiente: '', lote: '', saldo: '' }); estoque(); });
+  document.getElementById('limpa')?.addEventListener('click', () => { Object.assign(f, { q: '', tipo: '', pitch: '', ambiente: '', dimensao: '', variante: '', lote: '', saldo: '' }); estoque(); });
   let t; document.getElementById('eq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; estoque().then(() => { const i = document.getElementById('eq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
   $app.querySelectorAll('[data-mov]').forEach((b) => (b.onclick = () => { f.item_id = b.dataset.mov; estoque().then(() => document.getElementById('fi')?.scrollIntoView({ behavior: 'smooth' })); }));
   const janelaMov = async (tipo) => {
     const todos = (await api('/api/estoque')).itens; // a lista completa, independente do filtro da tela
     if (!todos.length) return toast('Cadastre um item primeiro (Novo Item)', true);
-    const rotulo = (i) => `${i.nome}${i.codigo ? ' · ' + i.codigo : ''} (saldo ${qtdFmt(i.saldo)} ${i.unidade})`;
+    const rotulo = (i) => `${i.nome_padrao}${i.lote ? ' · Lote ' + i.lote : ''}${i.codigo ? ' · ' + i.codigo : ''} (saldo ${qtdFmt(i.saldo)} ${i.unidade})`;
     const m = modal(`<h2>${tipo === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}</h2>
       <form class="form" id="fm" style="margin-top:12px" autocomplete="off" novalidate>
         <div class="cheio"><label>Item ${ast}</label><input id="bi" type="search" placeholder="Filtrar: digite pitch, lote, código..." style="margin-bottom:6px"><select name="item_id" required><option value="">Escolha o item</option>${todos.map((i) => `<option value="${i.id}">${esc(rotulo(i))}</option>`).join('')}</select></div>
@@ -1591,7 +1621,7 @@ async function estoque() {
     const sel = m.el.querySelector('[name=item_id]');
     m.el.querySelector('#bi').oninput = (e) => {
       const termos = e.target.value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2').split(/\s+/).filter(Boolean);
-      const vis = todos.filter((i) => termos.every((tt) => (i.busca_txt ??= (rotulo(i) + ' ' + [i.pitch, i.lote && 'lote ' + i.lote, i.dimensao, i.ambiente].join(' ')).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2')).includes(tt)));
+      const vis = todos.filter((i) => termos.every((tt) => (i.busca_txt ??= (rotulo(i) + ' ' + [i.nome, i.pitch, i.lote && 'lote ' + i.lote, i.dimensao, i.ambiente, i.variante].join(' ')).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2')).includes(tt)));
       sel.innerHTML = `<option value="">${vis.length ? `Escolha o item (${vis.length})` : 'Nenhum item com essa busca'}</option>${vis.map((i) => `<option value="${i.id}">${esc(rotulo(i))}</option>`).join('')}`;
       if (vis.length === 1) sel.value = String(vis[0].id);
     };
@@ -1980,7 +2010,7 @@ const SEL_TITULOS = 'h1, h2, h3, #nav a span, .abas button, button, a.zap, a.btn
 function ajustaTitulos(raiz) {
   const alvos = raiz.nodeType === 1 ? [...(raiz.matches?.(SEL_TITULOS) ? [raiz] : []), ...raiz.querySelectorAll(SEL_TITULOS)] : [];
   for (const el of alvos) {
-    if (el.closest('.tema')) continue;
+    if (el.closest('.tema, .chips, .trilha')) continue; // valores do estoque (medidas, lotes) ficam como estão
     const ehBotao = el.matches('button, a.zap, a.btn');
     for (const n of el.childNodes) {
       if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;
