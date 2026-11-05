@@ -241,6 +241,17 @@ CREATE TABLE IF NOT EXISTS estoque_movimentos (
 CREATE INDEX IF NOT EXISTS idx_estmov_item ON estoque_movimentos (item_id, data);
 CREATE INDEX IF NOT EXISTS idx_estmov_usuario ON estoque_movimentos (usuario_id);
 ALTER TABLE estoque_itens ENABLE ROW LEVEL SECURITY;
+-- Catálogo para busca: código, tipo, pitch, uso, medida, lote, marca, preço de referência e o texto de busca já normalizado
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS codigo text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS tipo text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS pitch text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS ambiente text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS dimensao text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS lote text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS marca text;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS preco bigint;
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS busca text;
+CREATE INDEX IF NOT EXISTS idx_estitem_codigo ON estoque_itens (codigo);
 ALTER TABLE estoque_movimentos ENABLE ROW LEVEL SECURITY;
 
 -- ---------- Quadro societário e patrimônio em ativos ----------

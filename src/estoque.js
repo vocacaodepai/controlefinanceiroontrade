@@ -1,31 +1,75 @@
 // Estoque: itens e movimentos (entrada e saída). O saldo é sempre a soma das entradas menos as saídas.
 import { query, one, tx } from './db.js';
 import { ErroNegocio, isData, hoje } from './services.js';
+import { TIPOS, AMBIENTES, classificar, montaBusca, termosBusca } from './estoque-catalogo.js';
+export { TIPOS, AMBIENTES };
 
 const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
 const num = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN; };
 const SALDO = `(SELECT coalesce(sum(CASE WHEN m.tipo = 'entrada' THEN m.quantidade ELSE -m.quantidade END), 0)::float8 FROM estoque_movimentos m WHERE m.item_id = i.id)`;
 
-export async function listarItens({ todos } = {}) {
-  const l = await query(`SELECT i.id, i.nome, i.unidade, i.minimo::float8 AS minimo, i.obs, i.ativo, ${SALDO} AS saldo,
+// Lista com busca e filtros. A busca aceita várias palavras em qualquer ordem, sem acento e com variações de pitch e medida
+// (ex.: "p3.9 outdoor lote 9", "391 indoor modulo", "50x1", "MIC9065").
+export async function listarItens({ todos, q, tipo, pitch, ambiente, lote, saldo } = {}) {
+  const w = [], p = [];
+  const add = (sql, v) => { p.push(v); w.push(sql.replaceAll('?', '$' + p.length)); };
+  if (!todos) w.push('i.ativo = 1');
+  for (const t of termosBusca(q)) add(`coalesce(i.busca, lower(i.nome)) LIKE ?`, `%${t}%`);
+  if (tipo) add('i.tipo = ?', tipo);
+  if (pitch) add('i.pitch = ?', pitch);
+  if (ambiente) add('i.ambiente = ?', ambiente);
+  if (lote) add('i.lote = ?', lote);
+  if (saldo === 'com') w.push(`${SALDO} > 0`);
+  if (saldo === 'zerado') w.push(`${SALDO} <= 0`);
+  const l = await query(`SELECT i.id, i.nome, i.codigo, i.tipo, i.pitch, i.ambiente, i.dimensao, i.lote, i.marca, i.preco, i.unidade, i.minimo::float8 AS minimo, i.obs, i.ativo, ${SALDO} AS saldo,
       (SELECT max(m.criado_em) FROM estoque_movimentos m WHERE m.item_id = i.id) AS ultima_movimentacao
-    FROM estoque_itens i ${todos ? '' : 'WHERE i.ativo = 1'} ORDER BY i.ativo DESC, lower(i.nome)`);
-  return l.map((i) => ({ ...i, abaixo_minimo: i.ativo === 1 && i.minimo > 0 && i.saldo <= i.minimo }));
+    FROM estoque_itens i ${w.length ? 'WHERE ' + w.join(' AND ') : ''}
+    ORDER BY i.ativo DESC, i.pitch NULLS LAST, i.tipo NULLS LAST, i.ambiente NULLS LAST, i.lote DESC NULLS LAST, lower(i.nome)`, p);
+  return l.map((i) => ({ ...i, abaixo_minimo: i.ativo === 1 && i.minimo > 0 && i.saldo <= i.minimo, valor_estoque: i.preco && i.saldo > 0 ? Math.round(i.preco * i.saldo) : 0 }));
 }
 
+// Itens cadastrados por fora (importação, versões antigas) sem tipo/pitch/medida/lote ou sem texto de busca são completados aqui
+export async function completarCatalogo() {
+  const faltam = await query('SELECT id, nome, codigo, tipo, pitch, ambiente, dimensao, lote, marca FROM estoque_itens WHERE busca IS NULL OR tipo IS NULL');
+  for (const i of faltam) {
+    const a = classificar(i.nome);
+    const c = { ...i, tipo: i.tipo || a.tipo, pitch: i.pitch || a.pitch, ambiente: i.ambiente || a.ambiente, dimensao: i.dimensao || a.dimensao, lote: i.lote || a.lote };
+    await query('UPDATE estoque_itens SET tipo=$2, pitch=$3, ambiente=$4, dimensao=$5, lote=$6, busca=$7 WHERE id=$1', [i.id, c.tipo, c.pitch, c.ambiente, c.dimensao, c.lote, montaBusca(c)]);
+  }
+  return faltam.length;
+}
+
+// Valores que existem no catálogo, para montar os filtros da tela
+export async function filtros() {
+  const col = async (c) => (await query(`SELECT DISTINCT ${c} AS v FROM estoque_itens WHERE ativo = 1 AND ${c} IS NOT NULL ORDER BY 1`)).map((r) => r.v);
+  return { tipos: TIPOS, ambientes: AMBIENTES, pitches: await col('pitch'), lotes: (await col('lote')).sort((a, b) => b.localeCompare(a, 'pt-BR', { numeric: true })) };
+}
+
+// Campos de catálogo deixados em branco são preenchidos pelo próprio nome (tipo, pitch, uso, medida e lote)
 export async function salvarItem(id, b) {
   const nome = txt(b.nome);
   if (!nome) throw new ErroNegocio('Informe o nome do item.');
   const unidade = txt(b.unidade) || 'un';
   const minimo = b.minimo == null || b.minimo === '' ? 0 : num(b.minimo);
   if (!(minimo >= 0)) throw new ErroNegocio('O estoque mínimo deve ser zero ou mais.');
+  const auto = classificar(nome);
+  const tipo = txt(b.tipo) || auto.tipo;
+  if (!TIPOS[tipo]) throw new ErroNegocio('Tipo inválido.');
+  const ambiente = txt(b.ambiente) || auto.ambiente;
+  if (ambiente && !AMBIENTES[ambiente]) throw new ErroNegocio('Uso inválido: escolha indoor ou outdoor.');
+  const preco = b.preco == null || b.preco === '' ? null : Math.round(Number(b.preco));
+  if (preco != null && (!Number.isFinite(preco) || preco < 0)) throw new ErroNegocio('Preço inválido.');
+  const c = { nome, codigo: txt(b.codigo), tipo, pitch: txt(b.pitch) || auto.pitch, ambiente, dimensao: txt(b.dimensao) || auto.dimensao, lote: txt(b.lote) || auto.lote, marca: txt(b.marca) };
+  const busca = montaBusca(c);
+  const v = [nome, unidade, minimo, txt(b.obs), c.codigo, c.tipo, c.pitch, c.ambiente, c.dimensao, c.lote, c.marca, preco, busca];
   try {
     if (id) {
-      const r = await one('UPDATE estoque_itens SET nome=$2, unidade=$3, minimo=$4, obs=$5, ativo=$6 WHERE id=$1 RETURNING id', [id, nome, unidade, minimo, txt(b.obs), b.ativo === 0 || b.ativo === false ? 0 : 1]);
+      const r = await one('UPDATE estoque_itens SET nome=$2, unidade=$3, minimo=$4, obs=$5, codigo=$6, tipo=$7, pitch=$8, ambiente=$9, dimensao=$10, lote=$11, marca=$12, preco=$13, busca=$14, ativo=$15 WHERE id=$1 RETURNING id',
+        [id, ...v, b.ativo === 0 || b.ativo === false ? 0 : 1]);
       if (!r) throw new ErroNegocio('Item não encontrado.', 404);
       return id;
     }
-    return (await one('INSERT INTO estoque_itens (nome, unidade, minimo, obs) VALUES ($1,$2,$3,$4) RETURNING id', [nome, unidade, minimo, txt(b.obs)])).id;
+    return (await one('INSERT INTO estoque_itens (nome, unidade, minimo, obs, codigo, tipo, pitch, ambiente, dimensao, lote, marca, preco, busca) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id', v)).id;
   } catch (e) {
     if (e.code === '23505') throw new ErroNegocio('Já existe um item com este nome.', 409);
     throw e;

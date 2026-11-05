@@ -175,7 +175,7 @@ app.post('/api/pendencias/:id/resolver', operar, h(async (req, res) => res.json(
 
 // ---------- estoque (administração e quem cuida do estoque) ----------
 const estq = A.exigirArea('estoque');
-app.get('/api/estoque', estq, h(async (req, res) => res.json({ itens: await ES.listarItens({ todos: req.query.todos === '1' }), movimentos: await ES.listarMovimentos(req.query) })));
+app.get('/api/estoque', estq, h(async (req, res) => (await ES.completarCatalogo(), res.json({ itens: await ES.listarItens({ ...req.query, todos: req.query.todos === '1' }), filtros: await ES.filtros(), movimentos: await ES.listarMovimentos({ item_id: req.query.item_id, tipo: req.query.mov_tipo, de: req.query.de, ate: req.query.ate }) }))));
 app.get('/api/estoque/movimentos', estq, h(async (req, res) => res.json(await ES.listarMovimentos(req.query))));
 app.post('/api/estoque/itens', estq, h(async (req, res) => res.status(201).json({ id: await ES.salvarItem(null, req.body) })));
 app.put('/api/estoque/itens/:id', estq, h(async (req, res) => res.json({ id: await ES.salvarItem(idNum(req.params.id), req.body) })));

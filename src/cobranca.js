@@ -1,7 +1,7 @@
 // Cobrança dos orçamentos aprovados: o comercial vende, o FINANCEIRO cobra e registra o recebimento.
 // Quando um orçamento é marcado como ganho (aprovado) ele sai do follow-up comercial e entra aqui.
 import { query, one, tx } from './db.js';
-import { ErroNegocio, isData, hoje, addDias, criarLancamento } from './services.js';
+import { ErroNegocio, isData, hoje, addDias, criarLancamento, intervaloMes } from './services.js';
 import { CANAIS_CONTATO } from './comercial.js';
 
 // Régua de cobrança (padrão de mercado): primeiro contato 1 dia depois da aprovação (enviar dados de pagamento e confirmar),
@@ -48,7 +48,8 @@ export async function resumo() {
       count(*) FILTER (WHERE cobranca_status IN ('a_cobrar','em_cobranca') AND cobranca_followup_em <= $1)::int AS para_hoje,
       count(*) FILTER (WHERE cobranca_status = 'pago')::int AS pagos
     FROM orcamentos WHERE cobranca_status IS NOT NULL`, [h]);
-  const mes = await one(`SELECT coalesce(sum(valor),0)::bigint AS recebido_mes FROM pagamentos WHERE data >= $1 AND data <= $2`, [h.slice(0, 7) + '-01', h.slice(0, 7) + '-31']);
+  const { de, ate } = intervaloMes(h.slice(0, 7)); // último dia real do mês (30/31, fevereiro etc.)
+  const mes = await one(`SELECT coalesce(sum(valor),0)::bigint AS recebido_mes FROM pagamentos WHERE data >= $1 AND data <= $2`, [de, ate]);
   return { ...r, ...mes };
 }
 

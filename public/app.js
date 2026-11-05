@@ -1525,19 +1525,43 @@ async function comercial() {
 // =====================================================================
 const qtdFmt = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 async function estoque() {
-  const f = state.filtroEst || (state.filtroEst = { item_id: '', tipo: '', de: '', ate: '' });
+  const f = state.filtroEst || (state.filtroEst = { q: '', tipo: '', pitch: '', ambiente: '', lote: '', saldo: '', item_id: '', mov_tipo: '', de: '', ate: '' });
   const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
   const d = await api('/api/estoque?' + qs);
   const adm = state.usuario.papel === 'admin';
+  const F = d.filtros;
   const baixos = d.itens.filter((i) => i.abaixo_minimo);
-  $app.innerHTML = `<h1>Estoque</h1><p class="sub">Controle de entrada e saída dos produtos. Toda saída precisa dizer para onde foi.</p>
+  const unidades = d.itens.reduce((a, i) => a + Math.max(i.saldo, 0), 0);
+  const valor = d.itens.reduce((a, i) => a + i.valor_estoque, 0);
+  const zerados = d.itens.filter((i) => i.saldo <= 0).length;
+  const opt = (lista, atual, rot = (x) => x) => lista.map((v) => `<option value="${esc(v)}" ${String(atual) === String(v) ? 'selected' : ''}>${esc(rot(v))}</option>`).join('');
+  const filtrando = f.q || f.tipo || f.pitch || f.ambiente || f.lote || f.saldo;
+  $app.innerHTML = `<h1>Estoque</h1><p class="sub">Painéis, módulos, PCBs, placas receptoras e processadores. Busque por qualquer parte do nome, código, pitch, medida ou lote. Toda saída precisa dizer para onde foi.</p>
     ${baixos.length ? `<div class="aviso-box">${ico('info')}<span>Estoque baixo: ${baixos.map((i) => `<b>${esc(i.nome)}</b> (${qtdFmt(i.saldo)} ${esc(i.unidade)})`).join(', ')}</span></div>` : ''}
     <div class="row"><button id="entrada">Registrar Entrada</button><button id="saida" class="sec">Registrar Saída</button><button id="novo-item" class="sec">Novo Item</button></div>
-    <div class="card"><h2>Saldo Atual</h2>${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th class="n">Saldo</th><th class="n">Mínimo</th><th>Última movimentação</th><th></th></tr></thead><tbody>
-      ${d.itens.map((i) => `<tr><td><b>${esc(i.nome)}</b>${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td><td class="n ${i.abaixo_minimo ? 'neg' : ''}"><b>${qtdFmt(i.saldo)}</b> ${esc(i.unidade)}</td><td class="n">${i.minimo ? qtdFmt(i.minimo) : '—'}</td>
-        <td>${i.ultima_movimentacao ? quandoAcesso(i.ultima_movimentacao) : '<span class="mut">sem movimento</span>'}</td><td class="n"><button class="mini sec" data-ed="${i.id}">Editar</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum item cadastrado. Clique em Novo Item para começar.</p>'}</div>
-    <div class="row"><div><label>Item</label><select id="fi"><option value="">Todos</option>${d.itens.map((i) => `<option value="${i.id}" ${String(f.item_id) === String(i.id) ? 'selected' : ''}>${esc(i.nome)}</option>`).join('')}</select></div>
-      <div><label>Tipo</label><select id="ft"><option value="">Todos</option><option value="entrada" ${f.tipo === 'entrada' ? 'selected' : ''}>Entradas</option><option value="saida" ${f.tipo === 'saida' ? 'selected' : ''}>Saídas</option></select></div>
+    <div class="grid">
+      <div class="card kpi"><div class="l">Itens ${filtrando ? 'encontrados' : 'cadastrados'}</div><div class="v">${d.itens.length}</div><small class="mut">${zerados} sem saldo</small></div>
+      <div class="card kpi"><div class="l">Unidades em estoque</div><div class="v">${qtdFmt(unidades)}</div><small class="mut">${filtrando ? 'no filtro atual' : 'todas as peças'}</small></div>
+      <div class="card kpi"><div class="l">Valor de referência</div><div class="v">${brl(valor)}</div><small class="mut">saldo × preço de tabela</small></div>
+    </div>
+    <div class="card">
+      <div class="busca-estoque"><input id="eq" type="search" value="${esc(f.q)}" placeholder="Buscar: P3.9 outdoor lote 9, módulo 25x25, MIC9065, receiver..." autocomplete="off"></div>
+      <div class="row" style="margin:12px 0 0">
+        <div><label>Tipo</label><select id="ftp"><option value="">Todos</option>${opt(Object.keys(F.tipos), f.tipo, (k) => F.tipos[k])}</select></div>
+        <div><label>Pitch</label><select id="fpi"><option value="">Todos</option>${opt(F.pitches, f.pitch)}</select></div>
+        <div><label>Uso</label><select id="fam"><option value="">Todos</option>${opt(Object.keys(F.ambientes), f.ambiente, (k) => F.ambientes[k])}</select></div>
+        <div><label>Lote</label><select id="flo"><option value="">Todos</option>${opt(F.lotes, f.lote, (l) => `Lote ${l}`)}</select></div>
+        <div><label>Saldo</label><select id="fsa"><option value="">Todos</option><option value="com" ${f.saldo === 'com' ? 'selected' : ''}>Com saldo</option><option value="zerado" ${f.saldo === 'zerado' ? 'selected' : ''}>Zerados</option></select></div>
+        ${filtrando ? '<button class="sec" id="limpa">Limpar filtros</button>' : ''}
+      </div></div>
+    <div class="card"><h2>Saldo Atual</h2>${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Tipo</th><th>Pitch</th><th>Uso</th><th>Medida</th><th>Lote</th><th class="n">Saldo</th><th class="n">Preço ref.</th><th></th></tr></thead><tbody>
+      ${d.itens.map((i) => `<tr><td><b>${esc(i.nome)}</b><br><small class="mut">${i.codigo ? 'cód. ' + esc(i.codigo) : 'sem código'}${i.marca ? ' · ' + esc(i.marca) : ''}</small>${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td>
+        <td>${esc(F.tipos[i.tipo] || '—')}</td><td>${esc(i.pitch || '—')}</td><td>${esc(F.ambientes[i.ambiente] || '—')}</td><td>${esc(i.dimensao || '—')}</td><td>${i.lote ? esc(i.lote) : '—'}</td>
+        <td class="n ${i.abaixo_minimo || i.saldo <= 0 ? 'neg' : ''}"><b>${qtdFmt(i.saldo)}</b> ${esc(i.unidade)}</td><td class="n">${i.preco ? brl(i.preco) : '—'}</td>
+        <td class="n" style="white-space:nowrap"><button class="mini sec" data-mov="${i.id}">Movimentos</button> <button class="mini sec" data-ed="${i.id}">Editar</button></td></tr>`).join('')}</tbody></table></div>`
+      : `<p class="mut">${filtrando ? 'Nenhum item com essa busca. Tente menos palavras ou limpe os filtros.' : 'Nenhum item cadastrado. Clique em Novo Item para começar.'}</p>`}</div>
+    <div class="row"><div><label>Movimentos do item</label><select id="fi"><option value="">Todos</option>${d.itens.map((i) => `<option value="${i.id}" ${String(f.item_id) === String(i.id) ? 'selected' : ''}>${esc(i.nome)}</option>`).join('')}</select></div>
+      <div><label>Tipo</label><select id="ft"><option value="">Todos</option><option value="entrada" ${f.mov_tipo === 'entrada' ? 'selected' : ''}>Entradas</option><option value="saida" ${f.mov_tipo === 'saida' ? 'selected' : ''}>Saídas</option></select></div>
       <div><label>De</label><input type="date" id="fde" value="${esc(f.de)}"></div><div><label>Até</label><input type="date" id="fate" value="${esc(f.ate)}"></div></div>
     <div class="card"><h2>Movimentações</h2>${d.movimentos.length ? `<div class="tbl"><table><thead><tr><th>Data</th><th>Tipo</th><th>Item</th><th class="n">Quantidade</th><th>Origem / Destino</th><th>Registrado por</th>${adm ? '<th></th>' : ''}</tr></thead><tbody>
       ${d.movimentos.map((m) => `<tr><td>${dataBR(String(m.data).slice(0, 10))}</td><td><span class="tag ${m.tipo === 'entrada' ? 'ok' : 'aviso'}">${m.tipo === 'entrada' ? 'Entrada' : 'Saída'}</span></td><td>${esc(m.item_nome)}</td><td class="n">${m.tipo === 'entrada' ? '+' : '−'}${qtdFmt(m.quantidade)} ${esc(m.unidade)}</td>
@@ -1545,35 +1569,60 @@ async function estoque() {
         ${adm ? `<td class="n"><button class="mini sec" data-del="${m.id}">Excluir</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhuma movimentação neste filtro.</p>'}</div>`;
   const recarrega = () => estoque();
   const filtro = (id, k) => { document.getElementById(id).onchange = (e) => { f[k] = e.target.value; estoque(); }; };
-  filtro('fi', 'item_id'); filtro('ft', 'tipo'); filtro('fde', 'de'); filtro('fate', 'ate');
-  const janelaMov = (tipo) => {
-    const ativos = d.itens;
-    if (!ativos.length) return toast('Cadastre um item primeiro (Novo Item)', true);
+  filtro('ftp', 'tipo'); filtro('fpi', 'pitch'); filtro('fam', 'ambiente'); filtro('flo', 'lote'); filtro('fsa', 'saldo');
+  filtro('fi', 'item_id'); filtro('ft', 'mov_tipo'); filtro('fde', 'de'); filtro('fate', 'ate');
+  document.getElementById('limpa')?.addEventListener('click', () => { Object.assign(f, { q: '', tipo: '', pitch: '', ambiente: '', lote: '', saldo: '' }); estoque(); });
+  let t; document.getElementById('eq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; estoque().then(() => { const i = document.getElementById('eq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
+  $app.querySelectorAll('[data-mov]').forEach((b) => (b.onclick = () => { f.item_id = b.dataset.mov; estoque().then(() => document.getElementById('fi')?.scrollIntoView({ behavior: 'smooth' })); }));
+  const janelaMov = async (tipo) => {
+    const todos = (await api('/api/estoque')).itens; // a lista completa, independente do filtro da tela
+    if (!todos.length) return toast('Cadastre um item primeiro (Novo Item)', true);
+    const rotulo = (i) => `${i.nome}${i.codigo ? ' · ' + i.codigo : ''} (saldo ${qtdFmt(i.saldo)} ${i.unidade})`;
     const m = modal(`<h2>${tipo === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}</h2>
       <form class="form" id="fm" style="margin-top:12px" autocomplete="off" novalidate>
-        <div class="cheio"><label>Item ${ast}</label><select name="item_id" required><option value="">Escolha o item</option>${ativos.map((i) => `<option value="${i.id}">${esc(i.nome)} (saldo ${qtdFmt(i.saldo)} ${esc(i.unidade)})</option>`).join('')}</select></div>
+        <div class="cheio"><label>Item ${ast}</label><input id="bi" type="search" placeholder="Filtrar: digite pitch, lote, código..." style="margin-bottom:6px"><select name="item_id" required><option value="">Escolha o item</option>${todos.map((i) => `<option value="${i.id}">${esc(rotulo(i))}</option>`).join('')}</select></div>
         <div><label>Quantidade ${ast}</label><input name="quantidade" inputmode="decimal" required></div>
         <div><label>Data ${ast}</label><input name="data" type="date" value="${hojeISO()}" max="${hojeISO()}" required></div>
         <div class="cheio"><label>${tipo === 'entrada' ? 'Fornecedor ou nota (opcional)' : `Para onde foi: cliente, obra ou motivo ${ast}`}</label><input name="referencia" ${tipo === 'saida' ? 'required' : ''} placeholder="${tipo === 'entrada' ? 'Ex.: Fornecedor X, NF 1234' : 'Ex.: Cliente Maria, instalação em Niterói'}"></div>
         ${tipo === 'saida' ? '<div><label>Nº do orçamento (opcional)</label><input name="orcamento_numero" placeholder="Ex.: 2026-0573"></div>' : ''}
         <div class="cheio"><label>Observação</label><input name="obs" placeholder="Opcional"></div></form>
-      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Confirmar</button></div>`, 520);
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Confirmar</button></div>`, 560);
+    const sel = m.el.querySelector('[name=item_id]');
+    m.el.querySelector('#bi').oninput = (e) => {
+      const termos = e.target.value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2').split(/\s+/).filter(Boolean);
+      const vis = todos.filter((i) => termos.every((tt) => (i.busca_txt ??= (rotulo(i) + ' ' + [i.pitch, i.lote && 'lote ' + i.lote, i.dimensao, i.ambiente].join(' ')).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2')).includes(tt)));
+      sel.innerHTML = `<option value="">${vis.length ? `Escolha o item (${vis.length})` : 'Nenhum item com essa busca'}</option>${vis.map((i) => `<option value="${i.id}">${esc(rotulo(i))}</option>`).join('')}`;
+      if (vis.length === 1) sel.value = String(vis[0].id);
+    };
     m.el.querySelector('#x').onclick = m.fechar;
     m.el.querySelector('#ok').onclick = () => { const fm = m.el.querySelector('#fm'); if (!validarObrigatorios(fm)) return; acao(async () => { await api('/api/estoque/movimentos', { method: 'POST', body: { ...Object.fromEntries(new FormData(fm)), tipo } }); m.fechar(); await recarrega(); }, tipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada'); };
   };
   document.getElementById('entrada').onclick = () => janelaMov('entrada');
   document.getElementById('saida').onclick = () => janelaMov('saida');
   const janelaItem = (it) => {
-    const m = modal(`<h2>${it ? 'Editar Item' : 'Novo Item'}</h2>
+    const m = modal(`<h2>${it ? 'Editar Item' : 'Novo Item'}</h2><p class="legenda">Tipo, pitch, uso, medida e lote em branco são preenchidos automaticamente a partir do nome.</p>
       <form class="form" id="fi2" style="margin-top:12px" autocomplete="off" novalidate>
-        <div class="cheio"><label>Nome ${ast}</label><input name="nome" value="${esc(it?.nome || '')}" required></div>
-        <div><label>Unidade</label><input name="unidade" value="${esc(it?.unidade || 'un')}" placeholder="un, m, kg, caixa"></div>
+        <div class="cheio"><label>Nome ${ast}</label><input name="nome" value="${esc(it?.nome || '')}" required placeholder="Ex.: Painel de led P3.9 Outdoor gabinete 0,50x1 (lote 09)"></div>
+        <div><label>Código</label><input name="codigo" value="${esc(it?.codigo || '')}"></div>
+        <div><label>Tipo</label><select name="tipo"><option value="">Automático</option>${opt(Object.keys(F.tipos), it?.tipo || '', (k) => F.tipos[k])}</select></div>
+        <div><label>Pitch</label><input name="pitch" value="${esc(it?.pitch || '')}" placeholder="Ex.: P3.9"></div>
+        <div><label>Uso</label><select name="ambiente"><option value="">Automático</option>${opt(Object.keys(F.ambientes), it?.ambiente || '', (k) => F.ambientes[k])}</select></div>
+        <div><label>Medida</label><input name="dimensao" value="${esc(it?.dimensao || '')}" placeholder="Ex.: 100x50 cm"></div>
+        <div><label>Lote</label><input name="lote" value="${esc(it?.lote || '')}" placeholder="Ex.: 09"></div>
+        <div><label>Marca</label><input name="marca" value="${esc(it?.marca || '')}"></div>
+        <div><label>Preço de referência (R$)</label><input name="preco" inputmode="decimal" value="${it?.preco ? brlInput(it.preco) : ''}"></div>
+        <div><label>Unidade</label><input name="unidade" value="${esc(it?.unidade || 'un')}" placeholder="un, m², caixa"></div>
         <div><label>Estoque mínimo</label><input name="minimo" inputmode="decimal" value="${it ? it.minimo : 0}"></div>
         <div class="cheio"><label>Observação</label><input name="obs" value="${esc(it?.obs || '')}"></div>
         ${it ? `<div><label>Situação</label><select name="ativo"><option value="1" ${it.ativo ? 'selected' : ''}>Ativo</option><option value="0" ${it.ativo ? '' : 'selected'}>Desativado</option></select></div>` : ''}</form>
-      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 480);
+      <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Salvar</button></div>`, 620);
     m.el.querySelector('#x').onclick = m.fechar;
-    m.el.querySelector('#ok').onclick = () => { const fm = m.el.querySelector('#fi2'); if (!validarObrigatorios(fm)) return; const v = Object.fromEntries(new FormData(fm)); if (v.ativo != null) v.ativo = Number(v.ativo); acao(async () => { await api(it ? `/api/estoque/itens/${it.id}` : '/api/estoque/itens', { method: it ? 'PUT' : 'POST', body: v }); m.fechar(); await recarrega(); }, 'Item salvo'); };
+    m.el.querySelector('#ok').onclick = () => {
+      const fm = m.el.querySelector('#fi2'); if (!validarObrigatorios(fm)) return;
+      const v = Object.fromEntries(new FormData(fm)); if (v.ativo != null) v.ativo = Number(v.ativo);
+      if (v.preco) { const c = paraCentavos(v.preco); if (!(c >= 0)) return toast('Preço inválido', true); v.preco = c; }
+      acao(async () => { await api(it ? `/api/estoque/itens/${it.id}` : '/api/estoque/itens', { method: it ? 'PUT' : 'POST', body: v }); m.fechar(); await recarrega(); }, 'Item salvo');
+    };
   };
   document.getElementById('novo-item').onclick = () => janelaItem(null);
   $app.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => janelaItem(d.itens.find((i) => i.id === +b.dataset.ed))));
