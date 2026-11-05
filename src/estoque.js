@@ -1,7 +1,7 @@
 // Estoque: itens e movimentos (entrada e saída). O saldo é sempre a soma das entradas menos as saídas.
 import { query, one, tx } from './db.js';
 import { ErroNegocio, isData, hoje } from './services.js';
-import { TIPOS, AMBIENTES, classificar, montaBusca, termosBusca } from './estoque-catalogo.js';
+import { TIPOS, AMBIENTES, classificar, montaBusca, termosBusca, nomePadrao } from './estoque-catalogo.js';
 export { TIPOS, AMBIENTES };
 
 const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
@@ -10,33 +10,73 @@ const SALDO = `(SELECT coalesce(sum(CASE WHEN m.tipo = 'entrada' THEN m.quantida
 
 // Lista com busca e filtros. A busca aceita várias palavras em qualquer ordem, sem acento e com variações de pitch e medida
 // (ex.: "p3.9 outdoor lote 9", "391 indoor modulo", "50x1", "MIC9065").
-export async function listarItens({ todos, q, tipo, pitch, ambiente, lote, saldo } = {}) {
+// Nos filtros, '-' quer dizer "não informado" (sem pitch, sem uso ou sem medida).
+export async function listarItens({ todos, q, tipo, pitch, ambiente, lote, saldo, dimensao, variante } = {}) {
   const w = [], p = [];
   const add = (sql, v) => { p.push(v); w.push(sql.replaceAll('?', '$' + p.length)); };
   if (!todos) w.push('i.ativo = 1');
   for (const t of termosBusca(q)) add(`coalesce(i.busca, lower(i.nome)) LIKE ?`, `%${t}%`);
   if (tipo) add('i.tipo = ?', tipo);
-  if (pitch) add('i.pitch = ?', pitch);
-  if (ambiente) add('i.ambiente = ?', ambiente);
+  const campo = (col, v) => { if (v === '-') w.push(`i.${col} IS NULL`); else if (v) add(`i.${col} = ?`, v); };
+  campo('pitch', pitch); campo('ambiente', ambiente); campo('dimensao', dimensao);
   if (lote) add('i.lote = ?', lote);
+  if (variante) add(`(', ' || coalesce(i.variante, '') || ',') LIKE ?`, `%, ${variante},%`);
   if (saldo === 'com') w.push(`${SALDO} > 0`);
   if (saldo === 'zerado') w.push(`${SALDO} <= 0`);
-  const l = await query(`SELECT i.id, i.nome, i.codigo, i.tipo, i.pitch, i.ambiente, i.dimensao, i.lote, i.marca, i.preco, i.unidade, i.minimo::float8 AS minimo, i.obs, i.ativo, ${SALDO} AS saldo,
+  const l = await query(`SELECT i.id, i.nome, i.codigo, i.tipo, i.pitch, i.ambiente, i.dimensao, i.lote, i.variante, i.marca, i.preco, i.unidade, i.minimo::float8 AS minimo, i.obs, i.ativo, ${SALDO} AS saldo,
       (SELECT max(m.criado_em) FROM estoque_movimentos m WHERE m.item_id = i.id) AS ultima_movimentacao
     FROM estoque_itens i ${w.length ? 'WHERE ' + w.join(' AND ') : ''}
     ORDER BY i.ativo DESC, i.pitch NULLS LAST, i.tipo NULLS LAST, i.ambiente NULLS LAST, i.lote DESC NULLS LAST, lower(i.nome)`, p);
-  return l.map((i) => ({ ...i, abaixo_minimo: i.ativo === 1 && i.minimo > 0 && i.saldo <= i.minimo, valor_estoque: i.preco && i.saldo > 0 ? Math.round(i.preco * i.saldo) : 0 }));
+  return l.map((i) => ({ ...i, nome_padrao: nomePadrao(i), abaixo_minimo: i.ativo === 1 && i.minimo > 0 && i.saldo <= i.minimo, valor_estoque: i.preco && i.saldo > 0 ? Math.round(i.preco * i.saldo) : 0 }));
 }
 
 // Itens cadastrados por fora (importação, versões antigas) sem tipo/pitch/medida/lote ou sem texto de busca são completados aqui
 export async function completarCatalogo() {
-  const faltam = await query('SELECT id, nome, codigo, tipo, pitch, ambiente, dimensao, lote, marca FROM estoque_itens WHERE busca IS NULL OR tipo IS NULL');
+  const faltam = await query('SELECT id, nome, codigo, tipo, pitch, ambiente, dimensao, lote, marca FROM estoque_itens WHERE busca IS NULL OR tipo IS NULL OR variante IS NULL');
   for (const i of faltam) {
     const a = classificar(i.nome);
-    const c = { ...i, tipo: i.tipo || a.tipo, pitch: i.pitch || a.pitch, ambiente: i.ambiente || a.ambiente, dimensao: i.dimensao || a.dimensao, lote: i.lote || a.lote };
-    await query('UPDATE estoque_itens SET tipo=$2, pitch=$3, ambiente=$4, dimensao=$5, lote=$6, busca=$7 WHERE id=$1', [i.id, c.tipo, c.pitch, c.ambiente, c.dimensao, c.lote, montaBusca(c)]);
+    const c = { ...i, tipo: i.tipo || a.tipo, pitch: i.pitch || a.pitch, ambiente: i.ambiente || a.ambiente, dimensao: i.dimensao || a.dimensao, lote: i.lote || a.lote, variante: a.variante };
+    await query('UPDATE estoque_itens SET tipo=$2, pitch=$3, ambiente=$4, dimensao=$5, lote=$6, variante=$7, busca=$8 WHERE id=$1', [i.id, c.tipo, c.pitch, c.ambiente, c.dimensao, c.lote, c.variante, montaBusca(c)]);
   }
   return faltam.length;
+}
+
+// Filtro em degraus: 1) pitch, 2) tipo, 3) uso, medida, variação e lote. Cada degrau mostra só as opções que existem
+// com os outros filtros já escolhidos, com a quantidade de itens e de unidades. A lista sai agrupada por pitch e tipo.
+const FACETAS = ['pitch', 'tipo', 'ambiente', 'dimensao', 'variante', 'lote'];
+const numPitch = (p) => Number(String(p).replace(/^p/i, '')) || 0;
+const area = (d) => { const [x, y] = String(d).replace(' cm', '').split('x').map(Number); return [x || 0, y || 0]; };
+const ORDEM = {
+  pitch: (a, b) => (a.v === '-') - (b.v === '-') || numPitch(a.v) - numPitch(b.v),
+  tipo: (a, b) => Object.keys(TIPOS).indexOf(a.v) - Object.keys(TIPOS).indexOf(b.v),
+  ambiente: (a, b) => (a.v === '-') - (b.v === '-') || a.v.localeCompare(b.v),
+  dimensao: (a, b) => (a.v === '-') - (b.v === '-') || area(b.v)[0] - area(a.v)[0] || area(b.v)[1] - area(a.v)[1],
+  variante: (a, b) => b.itens - a.itens || a.v.localeCompare(b.v),
+  lote: (a, b) => b.v.localeCompare(a.v, 'pt-BR', { numeric: true }),
+};
+const valores = (i, k) => {
+  if (k === 'variante') return (i.variante || '').split(', ').filter(Boolean);
+  if (k === 'lote') return i.lote ? [i.lote] : [];
+  return [i[k] ?? '-'];
+};
+const ROTULO = {
+  pitch: (v) => (v === '-' ? 'Outros (sem pitch)' : v), tipo: (v) => TIPOS[v] || v,
+  ambiente: (v) => (v === '-' ? 'Não informado' : AMBIENTES[v]), dimensao: (v) => (v === '-' ? 'Medida não informada' : v),
+  variante: (v) => v, lote: (v) => `Lote ${v}`,
+};
+export async function navegar(f = {}) {
+  const base = await listarItens({ todos: f.todos, q: f.q, saldo: f.saldo });
+  const passa = (i, ignorar) => FACETAS.every((k) => k === ignorar || !f[k] || valores(i, k).includes(f[k]));
+  const facetas = {};
+  for (const k of FACETAS) {
+    const m = new Map();
+    for (const i of base) if (passa(i, k)) for (const v of valores(i, k)) {
+      const e = m.get(v) || { v, rotulo: ROTULO[k](v), itens: 0, unidades: 0 };
+      e.itens++; e.unidades += Math.max(i.saldo, 0); m.set(v, e);
+    }
+    facetas[k] = [...m.values()].sort(ORDEM[k]);
+  }
+  return { itens: base.filter((i) => passa(i)), facetas };
 }
 
 // Valores que existem no catálogo, para montar os filtros da tela
@@ -59,17 +99,17 @@ export async function salvarItem(id, b) {
   if (ambiente && !AMBIENTES[ambiente]) throw new ErroNegocio('Uso inválido: escolha indoor ou outdoor.');
   const preco = b.preco == null || b.preco === '' ? null : Math.round(Number(b.preco));
   if (preco != null && (!Number.isFinite(preco) || preco < 0)) throw new ErroNegocio('Preço inválido.');
-  const c = { nome, codigo: txt(b.codigo), tipo, pitch: txt(b.pitch) || auto.pitch, ambiente, dimensao: txt(b.dimensao) || auto.dimensao, lote: txt(b.lote) || auto.lote, marca: txt(b.marca) };
+  const c = { nome, codigo: txt(b.codigo), tipo, pitch: txt(b.pitch) || auto.pitch, ambiente, dimensao: txt(b.dimensao) || auto.dimensao, lote: txt(b.lote) || auto.lote, marca: txt(b.marca), variante: auto.variante };
   const busca = montaBusca(c);
-  const v = [nome, unidade, minimo, txt(b.obs), c.codigo, c.tipo, c.pitch, c.ambiente, c.dimensao, c.lote, c.marca, preco, busca];
+  const v = [nome, unidade, minimo, txt(b.obs), c.codigo, c.tipo, c.pitch, c.ambiente, c.dimensao, c.lote, c.marca, preco, busca, c.variante];
   try {
     if (id) {
-      const r = await one('UPDATE estoque_itens SET nome=$2, unidade=$3, minimo=$4, obs=$5, codigo=$6, tipo=$7, pitch=$8, ambiente=$9, dimensao=$10, lote=$11, marca=$12, preco=$13, busca=$14, ativo=$15 WHERE id=$1 RETURNING id',
+      const r = await one('UPDATE estoque_itens SET nome=$2, unidade=$3, minimo=$4, obs=$5, codigo=$6, tipo=$7, pitch=$8, ambiente=$9, dimensao=$10, lote=$11, marca=$12, preco=$13, busca=$14, variante=$15, ativo=$16 WHERE id=$1 RETURNING id',
         [id, ...v, b.ativo === 0 || b.ativo === false ? 0 : 1]);
       if (!r) throw new ErroNegocio('Item não encontrado.', 404);
       return id;
     }
-    return (await one('INSERT INTO estoque_itens (nome, unidade, minimo, obs, codigo, tipo, pitch, ambiente, dimensao, lote, marca, preco, busca) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id', v)).id;
+    return (await one('INSERT INTO estoque_itens (nome, unidade, minimo, obs, codigo, tipo, pitch, ambiente, dimensao, lote, marca, preco, busca, variante) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id', v)).id;
   } catch (e) {
     if (e.code === '23505') throw new ErroNegocio('Já existe um item com este nome.', 409);
     throw e;

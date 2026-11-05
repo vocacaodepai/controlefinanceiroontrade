@@ -248,6 +248,8 @@ ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS pitch text;
 ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS ambiente text;
 ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS dimensao text;
 ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS lote text;
+-- Variação (magnético, frontal, blindado...) para o filtro em degraus; '' quando o item não tem nenhuma
+ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS variante text;
 ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS marca text;
 ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS preco bigint;
 ALTER TABLE estoque_itens ADD COLUMN IF NOT EXISTS busca text;
