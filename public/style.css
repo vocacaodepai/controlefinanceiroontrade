@@ -346,3 +346,6 @@ input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;lette
 .pendencias{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
 .pendencias .aviso-box{margin-bottom:0;background:var(--aviso-bg);border-left-color:var(--aviso);align-items:center}
 .pendencias .aviso-box .ico{color:var(--aviso)}
+
+/* estoque: campo de busca em destaque */
+.busca-estoque input{font-size:15px;padding:12px 14px}
