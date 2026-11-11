@@ -1342,7 +1342,7 @@ async function orcamentos() {
         <td>${tagOrc(o.status)}${o.status === 'ganho' && o.cobranca_status ? `<br><small class="mut">${tagCobranca(o)}</small>` : ''}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
         <td>${o.status === 'aberto' ? (o.followup_em ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span><br><small class="mut">follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4</small>` : '<span class="neg">Cadência concluída</span><br><small class="mut">decidir: encerrar ou retomar</small>') : '<span class="mut">—</span>'}</td>
         <td><small>${esc(o.criado_por_nome || '—')}<br><span class="mut">${quandoLancou(o.criado_em)}</span></small></td>
-        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-ap="${o.id}">Aprovado: Enviar ao Financeiro</button> <button class="mini sec" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
+        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-ap="${o.id}">Aprovado: Enviar ao Financeiro</button> <button class="mini sec" data-pdf="${o.id}">Proposta PDF</button> <button class="mini sec" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
           <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="3">${lista.length} orçamento(s)</td><td class="n">${brl(soma)}</td><td colspan="3"></td></tr></tfoot></table></div>` : '<p class="mut">Nenhum orçamento com este filtro.</p>'}</div>`;
   const recarrega = async () => { await orcamentos(); verificarFollowups(); };
@@ -1357,6 +1357,8 @@ async function orcamentos() {
   $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaContato(achar(b.dataset.c), recarrega)));
   $app.querySelectorAll('[data-e]').forEach((b) => (b.onclick = () => janelaEncerrar(achar(b.dataset.e), recarrega)));
   $app.querySelectorAll('[data-ap]').forEach((b) => (b.onclick = () => janelaAprovar(achar(b.dataset.ap), recarrega)));
+  // proposta em PDF no modelo Black Friday (módulo carregado só quando usado)
+  $app.querySelectorAll('[data-pdf]').forEach((b) => (b.onclick = () => acao(async () => { const P = await import('./proposta.js'); await P.abrir(achar(b.dataset.pdf), { modal, api, toast, acao, zap, primeiroNome, esc }); })));
   $app.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => confirm('Reabrir este orçamento? O aviso volta em 3 dias.') && acao(async () => { await api(`/api/comercial/orcamentos/${b.dataset.r}/status`, { method: 'POST', body: { status: 'aberto' } }); await recarrega(); }, 'Orçamento reaberto')));
   $app.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => {
     const o = achar(b.dataset.ed);
@@ -2124,9 +2126,10 @@ function iniciaisMaiusculas(txt) {
 }
 const SEL_TITULOS = 'h1, h2, h3, #nav a span, .abas button, button, a.zap, a.btn';
 function ajustaTitulos(raiz) {
+  if (!raiz) return; // texto que já saiu da página
   const alvos = raiz.nodeType === 1 ? [...(raiz.matches?.(SEL_TITULOS) ? [raiz] : []), ...raiz.querySelectorAll(SEL_TITULOS)] : [];
   for (const el of alvos) {
-    if (el.closest('.tema, .chips, .trilha')) continue; // valores do estoque (medidas, lotes) ficam como estão
+    if (el.closest('.tema, .chips, .trilha, .pp-pg')) continue; // a proposta em PDF tem os textos do modelo // valores do estoque (medidas, lotes) ficam como estão
     const ehBotao = el.matches('button, a.zap, a.btn');
     for (const n of el.childNodes) {
       if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;

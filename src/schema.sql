@@ -608,3 +608,16 @@ ALTER TABLE pagamentos ENABLE ROW LEVEL SECURITY;
 -- orçamentos que já estavam ganhos entram na fila de cobrança do financeiro
 UPDATE orcamentos SET cobranca_status = 'a_cobrar', cobranca_followup_em = (coalesce(fechado_em::date, data) + 1)
 WHERE status = 'ganho' AND cobranca_status IS NULL;
+
+-- ---------- Propostas em PDF (modelo Black Friday): o que o comercial preencheu, para reabrir e emitir de novo ----------
+CREATE TABLE IF NOT EXISTS propostas (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  orcamento_id bigint NOT NULL REFERENCES orcamentos(id) ON DELETE CASCADE,
+  modelo text NOT NULL DEFAULT 'black_friday',
+  dados jsonb NOT NULL,
+  total_vista bigint,
+  usuario_id bigint REFERENCES usuarios(id),
+  criado_em timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'America/Sao_Paulo')
+);
+CREATE INDEX IF NOT EXISTS idx_prop_orc ON propostas (orcamento_id, id DESC);
+ALTER TABLE propostas ENABLE ROW LEVEL SECURITY;
