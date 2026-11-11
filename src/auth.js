@@ -9,13 +9,13 @@ const perfilValido = (p) => Object.hasOwn(PAPEIS, p);
 
 // Áreas do site que cada perfil pode abrir. O servidor confere em cada rota; o menu só mostra o que o perfil acessa.
 export const AREAS = {
-  admin: ['acessos', 'painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'cobranca', 'estoque', 'fluxo', 'cadastros', 'roadmap'],
+  admin: ['acessos', 'painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'aovivo', 'comercial', 'marketing', 'societario', 'dp', 'cobranca', 'estoque', 'fornecedores', 'fluxo', 'cadastros', 'roadmap'],
   operador: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'cobranca', 'fluxo', 'cadastros', 'roadmap'],
   // financeiro: só o painel financeiro (lançar, fechar o dia, extratos, controle mensal, patrimônio e cobrança), sem cadastros nem o resto
   financeiro: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'cobranca'],
   estoque: ['estoque'],
   leitor: ['painel', 'lancar', 'fechar', 'extratos', 'mensal', 'patrimonio', 'fluxo', 'cadastros'],
-  socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'marketing', 'societario', 'fluxo'],
+  socio: ['painel', 'mensal', 'patrimonio', 'aovivo', 'marketing', 'societario', 'fornecedores', 'fluxo'],
   comercial: ['comercial'],
   marketing: ['marketing'],
 };

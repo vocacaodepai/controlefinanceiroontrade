@@ -12,6 +12,7 @@ import * as SO from './societario.js';
 import * as CO from './comercial.js';
 import * as CB from './cobranca.js';
 import * as ES from './estoque.js';
+import * as FO from './fornecedores.js';
 import * as PE from './pendencias.js';
 import * as DP from './dp.js';
 import * as MK from './marketing.js';
@@ -190,6 +191,15 @@ app.post('/api/estoque/movimentos', estq, h(async (req, res) => res.status(201).
 app.delete('/api/estoque/movimentos/:id', admin, h(async (req, res) => { await ES.excluirMovimento(idNum(req.params.id)); res.status(204).end(); }));
 
 // ---------- cobrança dos orçamentos aprovados (financeiro) ----------
+// ---------- fornecedores (Feira de Cantão) ----------
+const forn = A.exigirArea('fornecedores');
+app.get('/api/fornecedores', forn, h(async (_, res) => res.json(FO.listar())));
+app.get('/api/fornecedores/foto/:pasta/:arquivo', forn, h(async (req, res) => {
+  const p = FO.caminhoFoto(req.params.pasta, req.params.arquivo);
+  if (!p) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
+  res.sendFile(p);
+}));
 const cobr = A.exigirArea('cobranca');
 app.get('/api/cobranca', cobr, h(async (req, res) => res.json({ resumo: await CB.resumo(), lista: await CB.listar(req.query), cadencia: CB.CADENCIA_COBRANCA, resultados: CB.RESULTADOS_COBRANCA })));
 app.get('/api/cobranca/pendentes', cobr, h(async (_, res) => res.json(await CB.pendentes())));

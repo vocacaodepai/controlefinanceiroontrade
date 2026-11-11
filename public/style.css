@@ -377,3 +377,47 @@ input.numero-auto{background:var(--chip);color:var(--navy);font-weight:600;lette
 tr.linha-lote{cursor:pointer}tr.linha-lote:hover td{background:var(--tint)}tr.linha-lote.on td{background:var(--tint)}tr.linha-lote.on td:first-child{box-shadow:inset 3px 0 0 var(--azul)}
 tr.grupo-est td{background:var(--tint);color:var(--navy);font-weight:600;font-size:13px;padding-top:8px;padding-bottom:8px}
 @media(max-width:820px){.faceta{flex-direction:column;gap:6px}.faceta-t{flex:none;padding-top:0}.chips{flex-wrap:nowrap;overflow-x:auto;width:100%;padding-bottom:4px;scrollbar-width:none}.chip{flex:0 0 auto}}
+
+/* ---------- Fornecedores: cartões digitais com as cores do cartão original ---------- */
+.fc-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.fc-idioma{flex:none}
+.fc-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:18px}
+.fc-card{position:relative;aspect-ratio:1.75/1;background:var(--fc-fundo);color:var(--fc-texto);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 18px rgba(8,20,40,.10);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s;border:1px solid rgba(0,0,0,.06)}
+.fc-card:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(0,0,0,.08),0 12px 26px rgba(8,20,40,.16)}
+.fc-card.grande{aspect-ratio:auto;min-height:250px;cursor:default}.fc-card.grande:hover{transform:none}
+.fc-barra{position:absolute;background:var(--fc-dest)}
+.fc-faixa-topo .fc-barra{left:0;right:0;top:0;height:7px}
+.fc-faixa-base .fc-barra{left:0;right:0;bottom:0;height:8px;background:linear-gradient(90deg,var(--fc-dest) 0 62%,var(--fc-sec) 62%)}
+.fc-faixa-lateral .fc-barra{left:0;top:0;bottom:0;width:8px}
+.fc-faixa-nenhuma .fc-barra{display:none}
+.fc-corpo{flex:1;padding:16px 18px 6px 20px;display:flex;flex-direction:column;gap:5px;min-height:0}
+.fc-centro .fc-corpo{align-items:center;text-align:center}
+.fc-logo{font:800 16px/1.15 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--fc-dest);letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.fc-serif .fc-logo,.fc-serif .fc-pessoa b{font-family:Georgia,"Times New Roman",serif}
+.fc-emp{font-size:11.5px;line-height:1.3;opacity:.85;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fc-emp small{display:block;opacity:.8}
+.fc-pessoa{margin-top:3px;line-height:1.25}.fc-pessoa b{font-size:14px;display:block}.fc-pessoa span{font-size:11px;opacity:.8;margin-right:6px}
+.fc-pessoa .fc-mais{color:var(--fc-dest);opacity:1;font-weight:600}
+.fc-cont{list-style:none;margin:auto 0 0;padding:0;display:grid;gap:2px;font-size:11.2px;width:100%}
+.fc-cont li{display:flex;align-items:center;gap:6px;min-width:0}.fc-cont li span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-centro .fc-cont li{justify-content:center}
+.fc-card svg{width:12px;height:12px;flex:none;fill:none;stroke:var(--fc-dest);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.fc-rod{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 18px 12px 20px;font-size:10.5px;opacity:.9}
+.fc-faixa-base .fc-rod{padding-bottom:16px}
+.fc-rod>span:first-child{display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-setor{background:color-mix(in srgb,var(--fc-dest) 14%,transparent);color:var(--fc-texto);border-radius:20px;padding:2px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:58%;font-weight:600}
+.fc-ficha-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.fc-ficha-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;margin-top:14px}
+.fc-acoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.fc-acoes .btn{font-size:12.5px;padding:7px 12px}
+.fc-resumo{margin:0 0 10px;font-size:14px}
+.fc-dados{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}.fc-dados span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}.fc-dados b{font-size:13.5px}.fc-dados small{display:block;color:var(--mut)}
+.fc-bloco{margin-top:14px}.fc-bloco h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);margin:0 0 6px}
+.fc-bloco ul{margin:0;padding-left:18px;font-size:13px}.fc-bloco li{margin:2px 0}.fc-bloco p{margin:0;font-size:13px}
+.fc-pes{font-size:13px;margin:4px 0}
+.fc-conferir h3{color:var(--aviso)}
+.fc-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.fc-foto{padding:0;border:1px solid var(--bd);border-radius:8px;overflow:hidden;background:var(--card);cursor:pointer;display:flex;flex-direction:column;min-height:0}
+.fc-foto:hover{background:var(--card);border-color:var(--azul)}
+.fc-foto img{width:100%;height:110px;object-fit:cover;display:block}.fc-foto span{font-size:11.5px;color:var(--mut);padding:5px 8px;text-align:left}
+.fc-visor img{display:block;max-width:100%;max-height:72vh;margin:0 auto;border-radius:6px}
+@media(max-width:820px){.fc-ficha-grid{grid-template-columns:1fr}.fc-grade{grid-template-columns:1fr}.fc-dados{grid-template-columns:1fr}}
