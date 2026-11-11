@@ -170,6 +170,8 @@ app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => 
   if (req.body?.status === 'ganho') throw new S.ErroNegocio('Para aprovar, use o botão "Aprovado: Enviar ao Financeiro".');
   res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario));
 }));
+app.get('/api/comercial/orcamentos/:id/proposta', trabCom, h(async (req, res) => res.json(await CO.ultimaProposta(idNum(req.params.id)))));
+app.post('/api/comercial/orcamentos/:id/proposta', trabCom, h(async (req, res) => res.status(201).json(await CO.salvarProposta(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/aprovar', trabCom, h(async (req, res) => res.json(await CO.aprovarOrcamento(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias, req.usuario))));

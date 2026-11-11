@@ -262,6 +262,21 @@ export async function mudarStatus(id, { status, motivo }, usuario) {
   return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
 }
 
+// ---------- Proposta em PDF (modelo Black Friday) ----------
+// O PDF é montado no navegador; aqui fica guardado o que foi preenchido, para reabrir e emitir de novo.
+export async function ultimaProposta(orcamentoId) {
+  return one(`SELECT p.id, p.dados, p.total_vista, p.criado_em, u.nome AS usuario_nome FROM propostas p LEFT JOIN usuarios u ON u.id = p.usuario_id WHERE p.orcamento_id = $1 ORDER BY p.id DESC LIMIT 1`, [orcamentoId]);
+}
+export async function salvarProposta(orcamentoId, { dados, total_vista }, usuario) {
+  const o = await one('SELECT id FROM orcamentos WHERE id = $1', [orcamentoId]);
+  if (!o) throw new ErroNegocio('Orçamento não encontrado.', 404);
+  if (!dados || typeof dados !== 'object' || !Array.isArray(dados.itens) || !dados.itens.length) throw new ErroNegocio('A proposta precisa ter pelo menos um item.');
+  if (JSON.stringify(dados).length > 200000) throw new ErroNegocio('Proposta grande demais (fotos muito pesadas?).');
+  const t = total_vista == null ? null : Math.round(Number(total_vista));
+  if (t != null && (!Number.isFinite(t) || t < 0)) throw new ErroNegocio('Valor à vista inválido.');
+  return one('INSERT INTO propostas (orcamento_id, dados, total_vista, usuario_id) VALUES ($1,$2,$3,$4) RETURNING id, criado_em', [orcamentoId, JSON.stringify(dados), t, usuario?.id ?? null]);
+}
+
 // ---------- Orçamento aprovado: enviar ao financeiro ----------
 // Quem aprova confirma que o cliente fechou o contrato e informa o valor fechado (com o desconto, se houver),
 // a condição de pagamento e, durante a Black Friday, qual opção da promoção. O financeiro passa a cobrar o valor fechado.

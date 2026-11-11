@@ -264,3 +264,13 @@ test('Aprovado: Enviar ao Financeiro exige confirmação e o financeiro cobra o 
   const r = (await CO.listarOrcamentos({})).find((x) => x.id === o.id);
   assert.equal(r.status, 'aberto'); assert.equal(r.cobranca_status, null);
 });
+
+test('proposta em PDF: guarda o que foi preenchido e devolve a última para reemitir', async () => {
+  const o = await CO.criarOrcamento({ ...O, cliente: fic('Cliente Proposta'), produto_nome: 'Painel P5', valor: 32020000 });
+  assert.equal(await CO.ultimaProposta(o.id), undefined);
+  await assert.rejects(CO.salvarProposta(o.id, { dados: { itens: [] } }, null), /pelo menos um item/);
+  await CO.salvarProposta(o.id, { dados: { modelo: 'p5_out', colunas: 10, linhas: 5, itens: [{ desc: 'Gabinete', qtd: 50, unit: 600000 }] }, total_vista: 30520000 }, null);
+  await CO.salvarProposta(o.id, { dados: { modelo: 'p5_out', colunas: 8, linhas: 4, itens: [{ desc: 'Gabinete', qtd: 32, unit: 600000 }] }, total_vista: 19200000 }, null);
+  const u = await CO.ultimaProposta(o.id);
+  assert.equal(u.dados.colunas, 8); assert.equal(Number(u.total_vista), 19200000);
+});
