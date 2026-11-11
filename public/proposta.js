@@ -17,11 +17,11 @@ const MODELOS = {
     gabinete: [['Tamanho', '0,96 × 0,96 m'], ['Quantidade', '{qtd} unidades'], ['Densidade', '40.000 pontos/m²'], ['Material', 'Alumínio fundido'], ['Peso', '27 kg/un.'], ['Manutenção', 'Traseira'], ['Consumo médio', '330 W/m²'], ['Consumo máximo', '550 W/m²']],
     tela: [['Brilho', '6.500 a 7.500 cd/m²'], ['Ângulo de visão', '160° H · 120° V'], ['Distância ideal', '5 a 100 m'], ['Atualização', '7.680 Hz'], ['Quadros', '≥ 60 Hz'], ['Vida útil (MTBF)', '≥ 10.000 h'], ['Tensão', 'AC 220/110 V ±10%'], ['Frequência da rede', '50/60 Hz'], ['Proteção', 'IP65'], ['Operação', '−20 °C a +50 °C'], ['Armazenagem', '−35 °C a +85 °C'], ['Sistema de controle', 'NovaStar']],
   },
-  p39_out: { nome: 'P3.9 Outdoor', titulo: 'Painel LED P3.9 Outdoor', ficha: 'P3.9 Outdoor LED Display', pitch: 3.91, gab: [1, 0.5], gabDesc: 'Gabinete 0,50 m × 1,00 m', protecao: 'IP65' },
-  p39_in: { nome: 'P3.9 Indoor', titulo: 'Painel LED P3.9 Indoor', ficha: 'P3.9 Indoor LED Display', pitch: 3.91, gab: [1, 0.5], gabDesc: 'Gabinete 0,50 m × 1,00 m' },
-  p297_in: { nome: 'P2.97 Indoor', titulo: 'Painel LED P2.97 Indoor', ficha: 'P2.97 Indoor LED Display', pitch: 2.97, gab: [1, 0.5], gabDesc: 'Gabinete 0,50 m × 1,00 m' },
-  p291_out: { nome: 'P2.91 Outdoor', titulo: 'Painel LED P2.91 Outdoor', ficha: 'P2.91 Outdoor LED Display', pitch: 2.91, gab: [1, 0.5], gabDesc: 'Gabinete 0,50 m × 1,00 m', protecao: 'IP65' },
-  p19_in: { nome: 'P1.9 Indoor', titulo: 'Painel LED P1.9 Indoor', ficha: 'P1.9 Indoor LED Display', pitch: 1.9, gab: [1, 0.5], gabDesc: 'Gabinete 0,50 m × 1,00 m' },
+  p39_out: { nome: 'P3.9 Outdoor', titulo: 'Painel LED P3.9 Outdoor', ficha: 'P3.9 Outdoor LED Display', pitch: 3.91, gab: [0.5, 1], gabDesc: 'Gabinete 0,50 m × 1,00 m', protecao: 'IP65' },
+  p39_in: { nome: 'P3.9 Indoor', titulo: 'Painel LED P3.9 Indoor', ficha: 'P3.9 Indoor LED Display', pitch: 3.91, gab: [0.5, 1], gabDesc: 'Gabinete 0,50 m × 1,00 m' },
+  p297_in: { nome: 'P2.97 Indoor', titulo: 'Painel LED P2.97 Indoor', ficha: 'P2.97 Indoor LED Display', pitch: 2.97, gab: [0.5, 1], gabDesc: 'Gabinete 0,50 m × 1,00 m' },
+  p291_out: { nome: 'P2.91 Outdoor', titulo: 'Painel LED P2.91 Outdoor', ficha: 'P2.91 Outdoor LED Display', pitch: 2.91, gab: [0.5, 1], gabDesc: 'Gabinete 0,50 m × 1,00 m', protecao: 'IP65' },
+  p19_in: { nome: 'P1.9 Indoor', titulo: 'Painel LED P1.9 Indoor', ficha: 'P1.9 Indoor LED Display', pitch: 1.9, gab: [0.5, 1], gabDesc: 'Gabinete 0,50 m × 1,00 m' },
 };
 // sugere o modelo pelo produto do orçamento
 const modeloDoProduto = (p) => {
@@ -41,11 +41,14 @@ const inteiro = (n) => Math.round(n).toLocaleString('pt-BR');
 const hojeBR = () => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 const h = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-// medidas do painel a partir de colunas × linhas de gabinetes
+// medidas do painel: o comercial informa largura × altura em metros e o sistema calcula os gabinetes
+// (gab = [largura, altura] do gabinete; nos de 0,50 × 1,00 m o gabinete fica em pé)
 function medidas(d) {
-  const M = MODELOS[d.modelo], [gw, gh] = M.gab, c = Math.max(1, Math.round(num(d.colunas))), l = Math.max(1, Math.round(num(d.linhas)));
+  const M = MODELOS[d.modelo], [gw, gh] = M.gab;
+  const c = Math.max(1, Math.round(num(d.largura) / gw)), l = Math.max(1, Math.round(num(d.altura) / gh));
   const pxW = Math.round((gw * 1000) / M.pitch), pxH = Math.round((gh * 1000) / M.pitch);
-  return { c, l, qtd: c * l, larg: c * gw, alt: l * gh, area: c * gw * l * gh, resW: c * pxW, resH: l * pxH, densidade: Math.round((1000 / M.pitch) ** 2), gw, gh };
+  const larg = c * gw, alt = l * gh, exata = Math.abs(larg - num(d.largura)) < 0.005 && Math.abs(alt - num(d.altura)) < 0.005;
+  return { c, l, qtd: c * l, larg, alt, area: larg * alt, resW: c * pxW, resH: l * pxH, densidade: Math.round((1000 / M.pitch) ** 2), gw, gh, exata };
 }
 function contas(d) {
   const sub = d.itens.reduce((a, i) => a + (i.gratis ? 0 : Math.round(num(i.qtd) * i.unit)), 0);
@@ -60,7 +63,7 @@ function contas(d) {
 function itensPadrao(d, antigos = []) {
   const M = MODELOS[d.modelo], m = medidas(d), preco = (chave) => antigos.find((i) => i.chave === chave)?.unit || 0;
   const base = [
-    { chave: 'gabinete', desc: `Gabinete Painel LED ${M.nome}`, det: M.gabDesc, qtd: m.qtd, unit: preco('gabinete') },
+    { chave: 'gabinete', desc: `Painel LED ${M.nome}`, det: M.gabDesc, qtd: m.qtd, unit: preco('gabinete') },
     { chave: 'controladora', desc: 'Controladora TB60', det: 'Sistema de controle NovaStar', qtd: 1, unit: preco('controladora') },
   ];
   if (d.promocao === 'bf_completo') return [...base,
@@ -148,7 +151,7 @@ function paginaProposta(d) {
   const freteGratis = d.itens.some((i) => i.chave === 'frete' && i.gratis);
   // "Desconto especial de R$ X, com Fire Stick, estrutura, instalação e frete grátis no RJ"
   const CURTO = { firestick: 'Fire Stick', estrutura: 'estrutura', instalacao: 'instalação' };
-  const gratis = d.itens.filter((i) => i.gratis && i.chave !== 'frete').map((i) => CURTO[i.chave] || i.desc.toLowerCase());
+  const gratis = d.itens.filter((i) => i.gratis && i.chave !== 'frete').map((i) => CURTO[i.chave] || i.desc.trim()); // itens digitados ficam como escritos (ex.: Controladora TB 20)
   if (freteGratis) gratis.push('frete');
   const listaGratis = gratis.length > 1 ? `${gratis.slice(0, -1).join(', ')} e ${gratis.at(-1)}` : gratis[0] || '';
   const gratisTxt = listaGratis ? `${listaGratis} grátis${freteGratis ? ' no RJ' : ''}` : '';
@@ -156,7 +159,7 @@ function paginaProposta(d) {
   return moldura(`${cabecalho('PROPOSTA COMERCIAL', d.titulo || M.titulo, `Emitida em ${d.emitida}`)}
     <div class="pp-barra"><b>BLACK FRIDAY · CONDIÇÃO ESPECIAL</b><span>Proposta válida até o fim da Black Friday, <em>${VALIDADE.txt}</em></span></div>
     <div class="pp-cp"><div><div class="pp-lbl">CLIENTE</div><b>${h(cliente)}</b></div>
-      <div><div class="pp-lbl">PROJETO</div><b>Painel de LED ${m.c} × ${m.l}</b><small>Medida real ${metros(m.larg)} m × ${metros(m.alt)} m · ${m.qtd} gabinetes de ${metros(m.gw)} m × ${metros(m.gh)} m</small></div></div>
+      <div><div class="pp-lbl">PROJETO</div><b>Painel de LED ${metros(m.larg).replace(',00', '')} × ${metros(m.alt).replace(',00', '')} m</b><small>Medida real ${metros(m.larg)} m × ${metros(m.alt)} m · ${m.qtd} gabinetes de ${metros(m.gw)} m × ${metros(m.gh)} m</small></div></div>
     <table class="pp-tab"><thead><tr><th style="width:36px"></th><th>DESCRIÇÃO</th><th class="c" style="width:60px">QTD.</th><th class="n" style="width:130px">VALOR UNITÁRIO</th><th class="n" style="width:120px">TOTAL</th></tr></thead><tbody>
       ${d.itens.map((i, k) => `<tr><td><div class="pp-num">${String(k + 1).padStart(2, '0')}</div></td><td><b>${h(i.desc)}</b>${i.det ? `<small>${h(i.det)}</small>` : ''}</td>
         <td class="c">${h(i.qtd)}</td><td class="n">${i.gratis ? '—' : reais(i.unit)}</td><td class="n">${i.gratis ? '<span class="pp-gratis">Grátis</span>' : reais(Math.round(num(i.qtd) * i.unit))}</td></tr>`).join('')}
@@ -224,10 +227,14 @@ export async function abrir(o, U) {
   const { modal, api, toast, acao, zap, primeiroNome, esc } = U;
   const salvo = await api(`/api/comercial/orcamentos/${o.id}/proposta`).catch(() => null);
   const d = salvo?.dados ? { ...salvo.dados, emitida: hojeBR() } : {
-    tratamento: 'Sr.', cliente: o.cliente_nome, telefone: o.cliente_telefone || '', modelo: modeloDoProduto(o.produto), colunas: 10, linhas: 5,
+    tratamento: 'Sr.', cliente: o.cliente_nome, telefone: o.cliente_telefone || '', modelo: modeloDoProduto(o.produto), largura: '', altura: '',
     promocao: 'bf_completo', titulo: '', desconto: 0, desc_vista: 20, parcelas: 12, desc_cartao: 5,
     garantia: 'Garantia de 1 ano contra defeitos de fabricação.', condicao_extra: '', brilho: '', protecao: '', emitida: hojeBR(),
   };
+  // propostas salvas antes da mudança: "colunas × linhas" foram digitados como metros (ex.: 4 × 2)
+  if (d.largura == null && d.colunas != null) { d.largura = d.colunas; d.altura = d.linhas; delete d.colunas; delete d.linhas; }
+  // o item do painel não leva mais a palavra "Gabinete" no nome
+  for (const i of d.itens || []) if (i.chave === 'gabinete') i.desc = String(i.desc).replace(/^Gabinete\s+/i, '');
   if (!d.itens) { const M = MODELOS[d.modelo]; d.titulo ||= M.titulo; d.brilho ||= M.brilho || ''; d.protecao ||= M.protecao || ''; d.itens = itensPadrao(d); }
   d.fotos = [];
   const linhaItem = (i, k) => `<tr data-k="${k}"><td><input data-f="desc" value="${esc(i.desc)}"><input data-f="det" value="${esc(i.det || '')}" placeholder="Detalhe (opcional)" style="margin-top:4px;font-size:12.5px"></td>
@@ -240,8 +247,8 @@ export async function abrir(o, U) {
       <div><label>Cliente</label><input name="cliente" value="${esc(d.cliente)}"></div>
       <div><label>WhatsApp do cliente</label><input name="telefone" value="${esc(d.telefone)}"></div>
       <div><label>Modelo do painel</label><select name="modelo">${Object.entries(MODELOS).map(([k, M]) => `<option value="${k}" ${d.modelo === k ? 'selected' : ''}>${M.nome}</option>`).join('')}</select></div>
-      <div><label>Gabinetes na largura</label><input name="colunas" value="${esc(d.colunas)}" inputmode="numeric"></div>
-      <div><label>Gabinetes na altura</label><input name="linhas" value="${esc(d.linhas)}" inputmode="numeric"></div>
+      <div><label>Largura do painel (m)</label><input name="largura" value="${esc(String(d.largura ?? '').replace('.', ','))}" inputmode="decimal" placeholder="Ex.: 4"></div>
+      <div><label>Altura do painel (m)</label><input name="altura" value="${esc(String(d.altura ?? '').replace('.', ','))}" inputmode="decimal" placeholder="Ex.: 2"></div>
       <div class="cheio"><small class="mut" id="med"></small></div>
       <div class="cheio"><label>Título da proposta</label><input name="titulo" value="${esc(d.titulo)}"></div>
       <div class="cheio"><label>Opção da Black Friday</label><select name="promocao"><option value="bf_completo" ${d.promocao === 'bf_completo' ? 'selected' : ''}>Opção 1: Painel Completo (Fire Stick, estrutura, instalação e frete grátis)</option><option value="bf_painel" ${d.promocao === 'bf_painel' ? 'selected' : ''}>Opção 2: Só o Painel (apenas o desconto)</option></select></div>
@@ -267,7 +274,7 @@ export async function abrir(o, U) {
   const desenhaItens = () => { tb.innerHTML = d.itens.map(linhaItem).join(''); };
   // lê o formulário para "d" e atualiza medidas e totais
   const ler = () => {
-    for (const n of ['tratamento', 'cliente', 'telefone', 'modelo', 'colunas', 'linhas', 'titulo', 'promocao']) d[n] = val(f1, n);
+    for (const n of ['tratamento', 'cliente', 'telefone', 'modelo', 'largura', 'altura', 'titulo', 'promocao']) d[n] = val(f1, n);
     for (const n of ['desc_vista', 'parcelas', 'desc_cartao', 'garantia', 'condicao_extra', 'brilho', 'protecao']) d[n] = val(f2, n);
     tb.querySelectorAll('tr').forEach((tr) => {
       const i = d.itens[+tr.dataset.k], g = (k) => tr.querySelector(`[data-f=${k}]`);
@@ -278,7 +285,7 @@ export async function abrir(o, U) {
   };
   const resumo = () => {
     const M = MODELOS[d.modelo], md = medidas(d), c = contas(d);
-    m.el.querySelector('#med').textContent = `Medida real ${metros(md.larg)} m × ${metros(md.alt)} m · ${md.qtd} gabinetes de ${metros(md.gw)} × ${metros(md.gh)} m · ${metros(md.area)} m² · ${md.resW} × ${md.resH} px`;
+    m.el.querySelector('#med').innerHTML = `${md.c} × ${md.l} gabinetes de ${metros(md.gw)} × ${metros(md.gh)} m (largura × altura) = <b>${md.qtd} gabinetes</b> · medida real ${metros(md.larg)} × ${metros(md.alt)} m · ${metros(md.area)} m² · ${md.resW} × ${md.resH} px${num(d.largura) && num(d.altura) && !md.exata ? ` · <b class="neg">a medida pedida não fecha com os gabinetes: o painel fica com ${metros(md.larg)} × ${metros(md.alt)} m</b>` : ''}`;
     m.el.querySelector('#tot').innerHTML = `<span>Subtotal <b>${reais(c.sub)}</b></span><span>À vista <b>${reais(c.vista)}</b></span><span>Cartão <b>${c.n}x de ${reais(c.parcela)}</b></span>`;
     m.el.querySelector('#extra-ficha').style.display = M.modulo ? 'none' : 'grid';
   };
@@ -288,7 +295,7 @@ export async function abrir(o, U) {
     const n = e?.target?.name;
     if (n === 'modelo') { const M = MODELOS[d.modelo]; d.titulo = M.titulo; f1.querySelector('[name=titulo]').value = d.titulo; d.brilho = M.brilho || ''; d.protecao = M.protecao || ''; f2.querySelector('[name=brilho]').value = d.brilho; f2.querySelector('[name=protecao]').value = d.protecao; }
     if (['modelo', 'promocao'].includes(n)) { d.itens = itensPadrao(d, d.itens); desenhaItens(); }
-    if (['colunas', 'linhas'].includes(n)) { const g = d.itens.find((i) => i.chave === 'gabinete'); if (g) { g.qtd = medidas(d).qtd; desenhaItens(); } }
+    if (['largura', 'altura', 'modelo'].includes(n)) { const g = d.itens.find((i) => i.chave === 'gabinete'); if (g) { g.qtd = medidas(d).qtd; desenhaItens(); } }
     if (n === 'desconto') { const sub = contas({ ...d, desconto: 0 }).sub; f2.querySelector('[name=desc_vista]').value = sub ? String(Math.round((d.desconto / sub) * 1000) / 10).replace('.', ',') : ''; }
     else if (!(e?.target?.dataset?.f === 'det' || e?.target?.dataset?.f === 'desc')) descontoPorPct();
     ler(); resumo();
@@ -306,6 +313,7 @@ export async function abrir(o, U) {
   const validar = () => {
     ler();
     if (!d.cliente.trim()) return toast('Informe o nome do cliente', true), false;
+    if (!(num(d.largura) > 0) || !(num(d.altura) > 0)) return toast('Informe a largura e a altura do painel em metros', true), false;
     if (!d.itens.length || d.itens.some((i) => !i.desc.trim())) return toast('Todo item precisa de descrição', true), false;
     if (contas(d).sub <= 0) return toast('Informe o valor dos itens', true), false;
     return true;
