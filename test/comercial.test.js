@@ -220,3 +220,28 @@ test('comercial não adia follow-up pendente (só retoma o que terminou a cadên
   await query('UPDATE orcamentos SET followup_em = NULL WHERE id = $1', [o.id]);
   assert.equal((await CO.adiar(o.id, 7, u)).followup_em, S.addDias(hoje, 7));
 });
+
+test('Black Friday: envio avulso uma vez por orçamento, não conta como toque e não reinicia o follow-up', async () => {
+  const dOrc = hoje < '2026-11-06' ? S.addDias(hoje, -5) : '2026-11-05'; // orçamento de antes da campanha
+  const ju = (await query(`INSERT INTO usuarios (nome, email, senha_hash, papel) VALUES ('Júlia BF', 'jubf@x.com', 'x', 'comercial') RETURNING id, nome, papel`)).rows?.[0]
+    ?? (await query(`SELECT id, nome, papel FROM usuarios WHERE email = 'jubf@x.com'`))[0];
+  const o = await CO.criarOrcamento({ ...O, cliente: fic('Cliente BF'), produto_nome: 'Painel P3.9', valor: 2000000, data: dOrc }, ju);
+  await CO.followupEnviado(o.id, { mensagem: '1º toque', responsabilidade: true }, ju);
+  const antes = (await CO.listarOrcamentos({})).find((x) => x.id === o.id);
+  const dia = '2026-11-12';
+  assert.ok((await CO.blackFridayPendentes(ju, dia)).some((x) => x.id === o.id));
+  assert.deepEqual(await CO.blackFridayPendentes(ju, '2026-11-28'), [], 'depois da campanha o pop-up some');
+  await assert.rejects(CO.blackFridayEnviada(o.id, { mensagem: 'oi' }, ju), /responsabiliza/);
+  const d = await CO.blackFridayEnviada(o.id, { mensagem: 'Promo BF', responsabilidade: true }, ju);
+  assert.equal(d.qtd_contatos, antes.qtd_contatos, 'não conta como toque do follow-up');
+  const minimo = S.addDias(hoje, 3), ant = String(antes.followup_em).slice(0, 10);
+  assert.equal(String(d.followup_em).slice(0, 10), ant > minimo ? ant : minimo, 'o próximo toque fica para no mínimo 3 dias depois da Black Friday');
+  assert.ok(!(await CO.blackFridayPendentes(ju, dia)).some((x) => x.id === o.id));
+  await assert.rejects(CO.blackFridayEnviada(o.id, { mensagem: 'de novo', responsabilidade: true }, ju), /já foi enviada/);
+  const r = await CO.blackFridayResumo();
+  assert.ok(r.enviados >= 1 && r.total >= r.enviados);
+  assert.ok(r.por_pessoa.some((p) => p.nome === 'Júlia BF' && p.n === 1));
+  // orçamento novo, de dentro da campanha, não recebe o envio avulso (já usa as mensagens temporárias)
+  const novo = await CO.criarOrcamento({ ...O, cliente: fic('Cliente Novo BF'), produto_nome: 'Painel P5', valor: 900000 }, ju);
+  if (hoje >= '2026-11-11') assert.ok(!(await CO.blackFridayPendentes(ju, dia)).some((x) => x.id === novo.id));
+});
