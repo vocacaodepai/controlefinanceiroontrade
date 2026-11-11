@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const FO = await import('../src/fornecedores.js');
-const { AREAS } = await import('../src/auth.js');
+// perfis lidos do código (importar auth.js abre conexão e prende o teste)
+const AUTH = readFileSync(new URL('../src/auth.js', import.meta.url), 'utf8');
+const area = (papel) => (AUTH.match(new RegExp(`\\n  ${papel}: \\[([^\\]]*)\\]`)) || [])[1] || '';
 const { _interno: UI } = await import('../public/fornecedores.js');
 
 test('fornecedores: lista com tradução, cores e fotos existentes', () => {
@@ -24,8 +26,8 @@ test('fornecedores: fotos só por nome simples (sem sair da pasta) e acesso só 
   assert.equal(FO.caminhoFoto('f', 'nao-existe.jpg'), null);
   const p = FO.caminhoFoto('f', 'img-8868.jpg');
   assert.ok(p && existsSync(p));
-  assert.ok(AREAS.admin.includes('fornecedores') && AREAS.socio.includes('fornecedores'));
-  assert.ok(!AREAS.comercial.includes('fornecedores') && !AREAS.financeiro.includes('fornecedores'));
+  assert.ok(area('admin').includes("'fornecedores'") && area('socio').includes("'fornecedores'"));
+  assert.ok(area('comercial') && !area('comercial').includes('fornecedores') && !area('financeiro').includes('fornecedores'));
 });
 
 test('fornecedores: WhatsApp só com número de verdade (celular chinês ganha +86)', () => {
