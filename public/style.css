@@ -382,7 +382,7 @@ tr.grupo-est td{background:var(--tint);color:var(--navy);font-weight:600;font-si
 .fc-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
 .fc-idioma{flex:none}
 .fc-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:18px}
-.fc-card{position:relative;aspect-ratio:1.75/1;background:var(--fc-fundo);color:var(--fc-texto);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 18px rgba(8,20,40,.10);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s;border:1px solid rgba(0,0,0,.06)}
+.fc-card{position:relative;min-height:188px;background:var(--fc-fundo);color:var(--fc-texto);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 18px rgba(8,20,40,.10);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s;border:1px solid rgba(0,0,0,.06)}
 .fc-card:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(0,0,0,.08),0 12px 26px rgba(8,20,40,.16)}
 .fc-card.grande{aspect-ratio:auto;min-height:250px;cursor:default}.fc-card.grande:hover{transform:none}
 .fc-barra{position:absolute;background:var(--fc-dest)}
@@ -390,7 +390,7 @@ tr.grupo-est td{background:var(--tint);color:var(--navy);font-weight:600;font-si
 .fc-faixa-base .fc-barra{left:0;right:0;bottom:0;height:8px;background:linear-gradient(90deg,var(--fc-dest) 0 62%,var(--fc-sec) 62%)}
 .fc-faixa-lateral .fc-barra{left:0;top:0;bottom:0;width:8px}
 .fc-faixa-nenhuma .fc-barra{display:none}
-.fc-corpo{flex:1;padding:16px 18px 6px 20px;display:flex;flex-direction:column;gap:5px;min-height:0}
+.fc-corpo{flex:1;padding:16px 18px 6px 20px;display:flex;flex-direction:column;gap:5px}.fc-corpo>*{flex-shrink:0}
 .fc-centro .fc-corpo{align-items:center;text-align:center}
 .fc-logo{font:800 16px/1.15 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--fc-dest);letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .fc-serif .fc-logo,.fc-serif .fc-pessoa b{font-family:Georgia,"Times New Roman",serif}
