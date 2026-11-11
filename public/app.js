@@ -1545,9 +1545,9 @@ async function estoque() {
     if (!f[k] && op.length < 2) return '';
     return `<div class="faceta"><span class="faceta-t">${ROT[k]}</span><div class="chips">${op.map((o) => `<button type="button" class="chip ${f[k] === o.v ? 'on' : ''}" data-fk="${k}" data-fv="${esc(o.v)}">${esc(o.rotulo)}<small>${o.itens} ${o.itens === 1 ? 'item' : 'itens'} · ${qtdFmt(o.unidades)} un</small></button>`).join('')}</div></div>`;
   };
-  const trilha = ['pitch', 'tipo', 'ambiente', 'dimensao', 'variante', 'lote'].filter((k) => f[k]);
+  const trilha = ['pitch', 'lote', 'tipo', 'ambiente', 'dimensao', 'variante'].filter((k) => f[k]);
   const degraus = `<div class="trilha"><button type="button" class="elo" data-volta="-1">Todo o estoque</button>${trilha.map((k, n) => `<span class="sep">›</span><button type="button" class="elo ${n === trilha.length - 1 ? 'atual' : ''}" data-volta="${n}">${esc(rotuloDe(k, f[k]))}</button>`).join('')}</div>
-    ${chips('pitch')}${f.pitch ? chips('tipo') : ''}${f.pitch && f.tipo ? chips('ambiente') + chips('dimensao') + chips('variante') + chips('lote') : ''}
+    ${chips('pitch')}${chips('lote')}${f.pitch ? chips('tipo') : ''}${f.pitch && f.tipo ? chips('ambiente') + chips('dimensao') + chips('variante') : ''}
     ${f.pitch && !f.tipo && FC.tipo.length > 1 ? '<p class="legenda" style="margin-top:6px">Escolha o tipo para ver os filtros de uso, medida, variação e lote.</p>' : ''}`;
   // lista agrupada por pitch e tipo, com subtotal de unidades
   const grupos = [];
@@ -1571,6 +1571,10 @@ async function estoque() {
         <div><label>Saldo</label><select id="fsa"><option value="">Todos</option><option value="com" ${f.saldo === 'com' ? 'selected' : ''}>Com saldo</option><option value="zerado" ${f.saldo === 'zerado' ? 'selected' : ''}>Zerados</option></select></div>
         ${filtrando ? '<button class="sec" id="limpa">Limpar filtros</button>' : ''}
       </div></div>
+    ${d.por_lote?.length ? `<div class="card"><h2>Resumo por Lote</h2><p class="legenda">Quanto ainda há em cada lote. Clique em um lote para ver os itens dele.</p>
+      <div class="tbl"><table><thead><tr><th>Lote</th><th class="n">Itens com saldo</th><th class="n">Unidades</th><th>Composição</th></tr></thead><tbody>
+      ${d.por_lote.map((l) => `<tr class="linha-lote ${f.lote === l.v ? 'on' : ''}" data-lote="${esc(l.v)}"><td><b>${esc(l.rotulo)}</b></td><td class="n">${l.com_saldo} <small class="mut">de ${l.itens}</small></td><td class="n"><b>${qtdFmt(l.unidades)}</b> un</td>
+        <td><small>${l.composicao.length ? l.composicao.map((c) => `${esc(c.nome)} <b>${qtdFmt(c.un)}</b>`).join(' · ') : '<span class="mut">sem saldo</span>'}</small></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="card"><h2>Saldo Atual</h2>${d.itens.length ? `<div class="tbl"><table><thead><tr><th>Item</th><th>Lote</th><th class="n">Saldo</th><th class="n">Preço ref.</th><th></th></tr></thead><tbody>
       ${grupos.map((g) => `<tr class="grupo-est"><td colspan="3">${esc(g.g)} <small class="mut">· ${g.itens.length} ${g.itens.length === 1 ? 'item' : 'itens'}</small></td><td class="n" colspan="2"><small class="mut">${qtdFmt(g.itens.reduce((a, i) => a + Math.max(i.saldo, 0), 0))} un</small></td></tr>
       ${g.itens.map((i) => `<tr><td><b>${esc(i.nome_padrao)}</b><br><small class="mut">${i.nome_padrao !== i.nome ? esc(i.nome) + ' · ' : ''}${i.codigo ? 'cód. ' + esc(i.codigo) : 'sem código'}${i.marca ? ' · ' + esc(i.marca) : ''}</small>${i.obs ? `<br><small class="mut">${esc(i.obs)}</small>` : ''}</td>
@@ -1589,7 +1593,13 @@ async function estoque() {
   const filtro = (id, k) => { document.getElementById(id).onchange = (e) => { f[k] = e.target.value; estoque(); }; };
   filtro('fsa', 'saldo');
   // clicar num chip escolhe (ou desfaz) o degrau; trocar pitch ou tipo limpa os subfiltros, que dependem deles
-  const ABAIXO = { pitch: ['tipo', 'ambiente', 'dimensao', 'variante', 'lote'], tipo: ['ambiente', 'dimensao', 'variante', 'lote'] };
+  const ABAIXO = { pitch: ['tipo', 'ambiente', 'dimensao', 'variante'], tipo: ['ambiente', 'dimensao', 'variante'] };
+  // clicar num lote do resumo mostra só aquele lote (os outros filtros são limpos) e leva à lista
+  $app.querySelectorAll('[data-lote]').forEach((tr) => (tr.onclick = () => {
+    const v = tr.dataset.lote;
+    Object.assign(f, { pitch: '', tipo: '', ambiente: '', dimensao: '', variante: '', lote: f.lote === v ? '' : v });
+    estoque().then(() => document.querySelector('.degraus')?.scrollIntoView({ behavior: 'smooth' }));
+  }));
   $app.querySelectorAll('[data-fk]').forEach((b) => (b.onclick = () => {
     const k = b.dataset.fk, v = b.dataset.fv;
     f[k] = f[k] === v ? '' : v;

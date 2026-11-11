@@ -19,7 +19,7 @@ export async function listarItens({ todos, q, tipo, pitch, ambiente, lote, saldo
   if (tipo) add('i.tipo = ?', tipo);
   const campo = (col, v) => { if (v === '-') w.push(`i.${col} IS NULL`); else if (v) add(`i.${col} = ?`, v); };
   campo('pitch', pitch); campo('ambiente', ambiente); campo('dimensao', dimensao);
-  if (lote) add('i.lote = ?', lote);
+  campo('lote', lote);
   if (variante) add(`(', ' || coalesce(i.variante, '') || ',') LIKE ?`, `%, ${variante},%`);
   if (saldo === 'com') w.push(`${SALDO} > 0`);
   if (saldo === 'zerado') w.push(`${SALDO} <= 0`);
@@ -44,6 +44,7 @@ export async function completarCatalogo() {
 // Filtro em degraus: 1) pitch, 2) tipo, 3) uso, medida, variação e lote. Cada degrau mostra só as opções que existem
 // com os outros filtros já escolhidos, com a quantidade de itens e de unidades. A lista sai agrupada por pitch e tipo.
 const FACETAS = ['pitch', 'tipo', 'ambiente', 'dimensao', 'variante', 'lote'];
+const numLote = (l) => { const m = String(l).match(/^\d+/); return m ? Number(m[0]) : null; };
 const numPitch = (p) => Number(String(p).replace(/^p/i, '')) || 0;
 const area = (d) => { const [x, y] = String(d).replace(' cm', '').split('x').map(Number); return [x || 0, y || 0]; };
 const ORDEM = {
@@ -52,17 +53,17 @@ const ORDEM = {
   ambiente: (a, b) => (a.v === '-') - (b.v === '-') || a.v.localeCompare(b.v),
   dimensao: (a, b) => (a.v === '-') - (b.v === '-') || area(b.v)[0] - area(a.v)[0] || area(b.v)[1] - area(a.v)[1],
   variante: (a, b) => b.itens - a.itens || a.v.localeCompare(b.v),
-  lote: (a, b) => b.v.localeCompare(a.v, 'pt-BR', { numeric: true }),
+  // do lote mais novo para o mais antigo; lotes sem número (ex.: "BSL Light") e depois "Sem lote" no fim
+  lote: (a, b) => (a.v === '-') - (b.v === '-') || (numLote(b.v) ?? -1) - (numLote(a.v) ?? -1) || a.v.localeCompare(b.v, 'pt-BR'),
 };
 const valores = (i, k) => {
   if (k === 'variante') return (i.variante || '').split(', ').filter(Boolean);
-  if (k === 'lote') return i.lote ? [i.lote] : [];
   return [i[k] ?? '-'];
 };
 const ROTULO = {
   pitch: (v) => (v === '-' ? 'Outros (sem pitch)' : v), tipo: (v) => TIPOS[v] || v,
   ambiente: (v) => (v === '-' ? 'Não informado' : AMBIENTES[v]), dimensao: (v) => (v === '-' ? 'Medida não informada' : v),
-  variante: (v) => v, lote: (v) => `Lote ${v}`,
+  variante: (v) => v, lote: (v) => (v === '-' ? 'Sem lote' : `Lote ${v}`),
 };
 export async function navegar(f = {}) {
   const base = await listarItens({ todos: f.todos, q: f.q, saldo: f.saldo });
@@ -76,7 +77,22 @@ export async function navegar(f = {}) {
     }
     facetas[k] = [...m.values()].sort(ORDEM[k]);
   }
-  return { itens: base.filter((i) => passa(i)), facetas };
+  // Resumo por lote: quantos itens ainda têm saldo em cada lote, unidades e a composição (pitch + tipo), sem os outros filtros
+  const lotes = new Map();
+  for (const i of base) {
+    const v = i.lote ?? '-';
+    const e = lotes.get(v) || { v, rotulo: ROTULO.lote(v), itens: 0, com_saldo: 0, unidades: 0, valor: 0, comp: new Map() };
+    e.itens++;
+    if (i.saldo > 0) {
+      e.com_saldo++; e.unidades += i.saldo; e.valor += i.valor_estoque;
+      const tp = TIPOS[i.tipo]?.split(' (')[0] || 'Outro';
+      const c = i.pitch ? `${i.pitch} ${tp}` : tp;
+      e.comp.set(c, (e.comp.get(c) || 0) + i.saldo);
+    }
+    lotes.set(v, e);
+  }
+  const por_lote = [...lotes.values()].sort(ORDEM.lote).map(({ comp, ...e }) => ({ ...e, composicao: [...comp].sort((a, b) => b[1] - a[1]).map(([nome, un]) => ({ nome, un })) }));
+  return { itens: base.filter((i) => passa(i)), facetas, por_lote };
 }
 
 // Valores que existem no catálogo, para montar os filtros da tela

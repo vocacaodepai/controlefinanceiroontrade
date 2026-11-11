@@ -84,3 +84,20 @@ test('filtro em degraus: pitch → tipo → uso, medida, variação e lote, com 
   r = await ES.navegar({ pitch: '-' });
   assert.ok(r.itens.some((i) => i.tipo === 'totem') && r.itens.every((i) => !i.pitch));
 });
+
+test('resumo por lote: itens com saldo, unidades e composição; filtro por lote direto e "Sem lote"', async () => {
+  const a = await ES.salvarItem(null, { nome: 'Painel P3.9 Outdoor gabinete 50x1M (Lote 11)' });
+  const b = await ES.salvarItem(null, { nome: 'Módulo P3.9 Outdoor 25x25 (Lote 11)' });
+  await ES.salvarItem(null, { nome: 'Painel P5 Outdoor 96x96 (Lote 11)' });
+  await ES.registrarMovimento({ item_id: a, tipo: 'entrada', quantidade: 30 }, null);
+  await ES.registrarMovimento({ item_id: b, tipo: 'entrada', quantidade: 200 }, null);
+  const r = await ES.navegar({});
+  const l11 = r.por_lote.find((l) => l.v === '11');
+  assert.equal(l11.itens, 3); assert.equal(l11.com_saldo, 2); assert.equal(l11.unidades, 230);
+  assert.deepEqual(l11.composicao, [{ nome: 'P3.9 Módulo', un: 200 }, { nome: 'P3.9 Gabinete', un: 30 }]);
+  assert.equal(r.por_lote[0].v, '11', 'lote mais novo primeiro');
+  assert.equal(r.por_lote.at(-1).v, '-', '"Sem lote" por último');
+  assert.equal((await ES.navegar({ lote: '11' })).itens.length, 3);
+  assert.ok((await ES.navegar({ lote: '-' })).itens.every((i) => !i.lote));
+  assert.ok(r.facetas.lote.some((x) => x.v === '-' && x.rotulo === 'Sem lote'));
+});
