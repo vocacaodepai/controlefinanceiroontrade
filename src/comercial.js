@@ -425,6 +425,47 @@ export async function followupEnviado(id, { canal = 'whatsapp', mensagem, respon
   return registrarContato(id, { canal, mensagem, nota: `Mensagem enviada. ${usuario?.nome || 'Usuário'} confirmou o envio e assumiu a responsabilidade.` }, usuario);
 }
 
+// ---------- Black Friday 2026 ----------
+// Envio avulso, uma vez por orçamento, para quem já tinha orçamento em aberto antes da campanha começar.
+// Fica gravado como contato do tipo 'black_friday', que NÃO conta como toque do follow-up: a cadência segue de onde estava.
+// Durante a campanha, as mensagens de primeiro contato e de follow-up usam as versões temporárias (public/app.js).
+export const CAMPANHA_BF = { nome: 'Black Friday', inicio: '2026-11-11', fim: '2026-11-27' };
+export const bfAtiva = (d = hoje()) => d >= CAMPANHA_BF.inicio && d <= CAMPANHA_BF.fim;
+const BF_ELEGIVEIS = `o.status = 'aberto' AND o.data < '${CAMPANHA_BF.inicio}'`;
+const BF_ENVIADO = `EXISTS (SELECT 1 FROM contatos t WHERE t.orcamento_id = o.id AND t.tipo = 'black_friday')`;
+
+// Quem ainda não recebeu. A pessoa do comercial responde pelos orçamentos que ela mesma lançou; administração vê todos.
+export async function blackFridayPendentes(usuario, dia = hoje()) {
+  if (!bfAtiva(dia)) return [];
+  const dono = usuario?.papel === 'comercial';
+  return query(`${BASE_ORC} WHERE ${BF_ELEGIVEIS} AND NOT ${BF_ENVIADO}${dono ? ' AND o.criado_por_id = $1' : ''} ORDER BY o.data, o.id`, dono ? [usuario.id] : []);
+}
+
+export async function blackFridayEnviada(id, { canal = 'whatsapp', mensagem, responsabilidade }, usuario) {
+  if (responsabilidade !== true) throw new ErroNegocio('Confirme que enviou a mensagem e que se responsabiliza pelo envio.');
+  if (!txt(mensagem)) throw new ErroNegocio('A mensagem enviada não pode ficar vazia.');
+  if (canal && !CANAIS_CONTATO[canal]) throw new ErroNegocio('Canal de contato inválido.');
+  const o = await one(`SELECT o.id, o.cliente_id, o.status, ${BF_ENVIADO} AS enviado FROM orcamentos o WHERE o.id = $1`, [id]);
+  if (!o) throw new ErroNegocio('Orçamento não encontrado.', 404);
+  if (o.status !== 'aberto') throw new ErroNegocio('Este orçamento já foi encerrado.');
+  if (o.enviado) throw new ErroNegocio('A mensagem de Black Friday já foi enviada para este orçamento.', 409);
+  await tx(async () => {
+    await query(`INSERT INTO contatos (orcamento_id, cliente_id, usuario_id, tipo, nota, canal, mensagem) VALUES ($1,$2,$3,'black_friday',$4,$5,$6)`,
+      [id, o.cliente_id, usuario?.id ?? null, `Black Friday: mensagem da promoção enviada. ${usuario?.nome || 'Usuário'} confirmou o envio e assumiu a responsabilidade.`, canal || null, txt(mensagem)]);
+    // o toque do follow-up não muda (não reinicia nem avança); só não deixa o próximo cair junto com esta mensagem:
+    // ele fica para no mínimo 3 dias depois do envio da Black Friday
+    await query(`UPDATE orcamentos SET followup_em = GREATEST(followup_em, $2::date) WHERE id = $1 AND followup_em IS NOT NULL`, [id, addDias(hoje(), PRAZO_FOLLOWUP)]);
+  });
+  return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
+}
+
+// Acompanhamento para a administração: quantos dos orçamentos da campanha já receberam, e por quem
+export async function blackFridayResumo() {
+  const t = await one(`SELECT count(*)::int AS total, count(*) FILTER (WHERE ${BF_ENVIADO})::int AS enviados FROM orcamentos o WHERE o.data < $1 AND (o.status = 'aberto' OR ${BF_ENVIADO})`, [CAMPANHA_BF.inicio]);
+  const por = await query(`SELECT coalesce(u.nome, '—') AS nome, count(*)::int AS n, max(t.criado_em) AS ultimo FROM contatos t LEFT JOIN usuarios u ON u.id = t.usuario_id WHERE t.tipo = 'black_friday' GROUP BY 1 ORDER BY 2 DESC`);
+  return { ...CAMPANHA_BF, ativa: bfAtiva(), total: t.total, enviados: t.enviados, faltam: Math.max(t.total - t.enviados, 0), por_pessoa: por };
+}
+
 // Controle de follow-up: o que foi enviado (quem, quando, qual orçamento) e o que vem pela frente
 export async function painelFollowup({ de, ate, por } = {}) {
   const h = hoje();

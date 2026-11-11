@@ -193,6 +193,8 @@ app.post('/api/cobranca/:id/contato', cobr, h(async (req, res) => res.json(await
 app.post('/api/cobranca/:id/pagamento', cobr, h(async (req, res) => res.json(await CB.registrarPagamento(idNum(req.params.id), req.body, req.usuario))));
 
 app.get('/api/comercial/followups', trabCom, h(async (req, res) => res.json(await CO.followupsPendentes(req.usuario))));
+app.get('/api/comercial/black-friday', trabCom, h(async (req, res) => res.json({ pendentes: await CO.blackFridayPendentes(req.usuario), resumo: await CO.blackFridayResumo() })));
+app.post('/api/comercial/orcamentos/:id/black-friday', trabCom, h(async (req, res) => res.json(await CO.blackFridayEnviada(idNum(req.params.id), req.body, req.usuario))));
 app.get('/api/comercial/followup-painel', trabCom, h(async (req, res) => res.json(await CO.painelFollowup(req.query))));
 app.post('/api/comercial/orcamentos/:id/followup-enviado', trabCom, h(async (req, res) => res.json(await CO.followupEnviado(idNum(req.params.id), req.body, req.usuario))));
 

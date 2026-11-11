@@ -912,8 +912,27 @@ const ETAPAS_FU = [
   { dia: 14, objetivo: 'Criar urgência saudável: validade e disponibilidade', canal: 'E-mail ou WhatsApp' },
   { dia: 21, objetivo: 'Último contato: encerrar com educação', canal: 'WhatsApp' },
 ];
+// ---- Black Friday 2026: mensagens temporárias (primeiro contato e os 4 toques do follow-up) ----
+// Valem de CAMPANHA_BF.inicio a CAMPANHA_BF.fim; no dia seguinte as mensagens normais voltam sozinhas.
+// Mesmas datas de src/comercial.js (CAMPANHA_BF).
+const CAMPANHA_BF = { inicio: '2026-11-11', fim: '2026-11-27', fimTxt: '27/11, sexta-feira da Black Friday' };
+const bfAtiva = () => { const h = hojeISO(); return h >= CAMPANHA_BF.inicio && h <= CAMPANHA_BF.fim; };
+const BF_OPCOES = `*Opção 1: Painel Completo*\nSeu painel com *Fire Stick, instalação, estrutura e frete inclusos*, sem custo adicional.\n\n*Opção 2: Só o Painel*\nPara quem já tem estrutura e instalação resolvidas: o mesmo painel, com o desconto da Black Friday.`;
+const BF_CONDICOES = `• *20% de desconto* no pagamento à vista\n• *5% de desconto* no parcelado sem juros`;
+// Envio avulso para quem já tinha orçamento antes da campanha (pop-up "Black Friday"). Não conta como toque do follow-up.
+const msgBlackFriday = (o) => {
+  const n = primeiroNome(o.cliente_nome), eu = primeiroNome(state.usuario?.nome) || 'a equipe';
+  return `Olá, ${n}! Aqui é ${eu}, da OnTrade.\n\nLembra do orçamento que fizemos para ${o.produto}? Ele entrou na nossa *Black Friday*, e preparamos duas opções para você escolher a que faz mais sentido:\n\n${BF_OPCOES}\n\nNas duas opções, as condições são:\n${BF_CONDICOES}\n\nA condição vale até *${CAMPANHA_BF.fimTxt}*. Quer que eu atualize seu orçamento com a opção que preferir?`;
+};
+const msgOrcBF = (n, eu, produto, e) => [
+  `Oi, ${n}, tudo bem? Aqui é ${eu}, da OnTrade. Faz alguns dias que te enviei o orçamento de ${produto}. Conseguiu dar uma olhada?\n\nTenho uma boa notícia: ele entrou na nossa *Black Friday*. Você pode escolher entre duas opções:\n\n${BF_OPCOES}\n\nNas duas opções:\n${BF_CONDICOES}\n\nVale até *${CAMPANHA_BF.fimTxt}*. Quer que eu atualize seu orçamento com a opção que preferir?`,
+  `Oi, ${n}! ${eu} da OnTrade de novo. Pensando no seu projeto, posso te mandar o orçamento de ${produto} já calculado nas duas opções da Black Friday, lado a lado, para você comparar:\n\n• *Opção 1:* painel completo, com Fire Stick, instalação, estrutura e frete inclusos. Você recebe tudo pronto para ligar.\n• *Opção 2:* só o painel, com o desconto da Black Friday.\n\nÀ vista sai com *20% de desconto*, e no parcelado sem juros com *5%*. Quer que eu te mande a comparação?`,
+  `Oi, ${n}, tudo bem? Passando para avisar que a nossa *Black Friday termina na sexta, 27/11*. Depois disso, o orçamento de ${produto} volta para o valor normal, sem os *20% à vista* e sem a opção com instalação, estrutura e frete inclusos.\n\nSe ainda faz sentido para você, consigo garantir a condição agora. Posso reservar?`,
+  `Oi, ${n}, ${eu} aqui da OnTrade. Não quero te incomodar, então este é meu último lembrete: a condição de Black Friday para o orçamento de ${produto} vale só *até 27/11*.\n\nSe quiser aproveitar, é só me responder por aqui que eu resolvo na hora. Se não for o momento, deixo seu orçamento guardado e fico à disposição. Agradeço a atenção!`,
+][e];
 const msgOrc = (o) => {
   const n = primeiroNome(o.cliente_nome), eu = primeiroNome(state.usuario?.nome) || 'a equipe', item = `${o.produto}${o.numero ? ` (orçamento ${o.numero})` : ''}`, e = Math.min(o.qtd_contatos || 0, 3);
+  if (bfAtiva()) return msgOrcBF(n, eu, item, e);
   return [
     `Oi, ${n}, tudo bem? Aqui é ${eu}, da OnTrade. Faz alguns dias que te enviei o orçamento de ${item}. Conseguiu dar uma olhada? Se tiver qualquer dúvida sobre valores, prazo ou instalação, me chama por aqui que eu te ajudo.`,
     `Oi, ${n}! ${eu} da OnTrade de novo. Pensando no seu projeto, posso te enviar as condições de pagamento, o prazo de entrega e exemplos de instalações parecidas com a sua. Também consigo ajustar o orçamento de ${item} se algo não ficou do jeito que você imaginava. Quer que eu te mande?`,
@@ -994,6 +1013,38 @@ function janelaEncerrar(o, depois) {
   }, 'Orçamento atualizado');
 }
 
+// ---- pop-up da Black Friday: envio avulso, um orçamento por vez, sem adiar. Não conta como toque do follow-up. ----
+function janelaBlackFriday(o, { pos = 0, total = 1, faltam = [], aoConcluir }) {
+  const restam = total - pos - 1;
+  const m = modal(`<h2>Black Friday ${pos + 1} de ${total}</h2>
+    <p class="legenda"><b>${esc(o.cliente_nome)}</b> · orçamento ${esc(o.numero || '—')} · ${esc(o.produto)} · ${brl(o.valor)}<br>${contatoCli(o)}</p>
+    ${faltam.length ? `<p class="legenda" style="margin-top:8px"><b>Ainda faltam ${faltam.length}:</b> ${faltam.slice(0, 8).map(esc).join(', ')}${faltam.length > 8 ? ` e mais ${faltam.length - 8}` : ''}. O painel só é liberado quando todas forem enviadas.</p>` : ''}
+    <p class="legenda" style="margin-top:8px">Mensagem especial da promoção, enviada uma única vez. O follow-up continua no mesmo toque; o próximo fica para daqui a pelo menos 3 dias.</p>
+    <label style="margin-top:12px">Mensagem (pode ajustar antes de enviar)</label>
+    <textarea id="msg" rows="12" style="width:100%">${esc(msgBlackFriday(o))}</textarea>
+    <div class="row" style="margin:10px 0 0"><button class="sec" id="cp">Copiar mensagem</button>${zap(o.cliente_telefone) ? '<button class="sec" id="zap">Abrir WhatsApp</button>' : '<small class="mut">Cliente sem WhatsApp cadastrado: ligue ou envie por e-mail.</small>'}
+      <div><label>Canal</label><select id="canal"><option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option><option value="email">E-mail</option><option value="presencial">Presencial</option></select></div></div>
+    <label class="check-resp" style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;text-transform:none;font-size:13.5px"><input type="checkbox" id="resp" style="margin-top:3px"><span>Enviei esta mensagem ao cliente e me responsabilizo pelo envio.</span></label>
+    <div class="modal-acoes"><button class="sec" id="enc">Encerrar Orçamento</button><span style="flex:1"></span><button id="ok" disabled>${restam > 0 ? `Confirmar e Ir para a Próxima (${restam})` : 'Confirmar e Concluir'}</button></div>`, 600, true);
+  const msg = m.el.querySelector('#msg'), resp = m.el.querySelector('#resp'), ok = m.el.querySelector('#ok');
+  resp.onchange = () => { ok.disabled = !resp.checked; };
+  m.el.querySelector('#cp').onclick = async () => { try { await navigator.clipboard.writeText(msg.value); } catch { msg.select(); document.execCommand('copy'); } toast('Mensagem copiada: é só colar na conversa'); };
+  const z = m.el.querySelector('#zap'); if (z) z.onclick = () => window.open(`${zap(o.cliente_telefone)}?text=${encodeURIComponent(msg.value)}`, '_blank', 'noopener');
+  m.el.querySelector('#enc').onclick = () => janelaEncerrar(o, async () => { m.fechar(); await aoConcluir(); });
+  ok.onclick = () => acao(async () => {
+    await api(`/api/comercial/orcamentos/${o.id}/black-friday`, { method: 'POST', body: { canal: m.el.querySelector('#canal').value, mensagem: msg.value, responsabilidade: true } });
+    m.fechar(); await aoConcluir();
+  }, 'Mensagem de Black Friday registrada');
+}
+function filaBlackFriday(lista, depois) {
+  state.filaAtiva = true;
+  const passo = (i) => {
+    if (i >= lista.length) { state.filaAtiva = false; toast('Mensagens de Black Friday concluídas'); return depois(); }
+    janelaBlackFriday(lista[i], { pos: i, total: lista.length, faltam: lista.slice(i + 1).map((x) => x.cliente_nome), aoConcluir: () => passo(i + 1) });
+  };
+  passo(0);
+}
+
 // ---- pop-up de follow-up (3 dias depois do orçamento) ----
 let _fuTimer = null;
 function atualizarBadge(n) {
@@ -1005,6 +1056,11 @@ function atualizarBadge(n) {
 // Administração: não abre pop-up, só mostra o contador no menu e a página Follow-up.
 async function verificarFollowups() {
   if (!temArea('comercial') || document.querySelector('.modal-fundo')) return;
+  // a Black Friday vem antes da fila de follow-up
+  if (state.usuario?.papel === 'comercial' && !state.filaAtiva && bfAtiva()) {
+    const bf = await api('/api/comercial/black-friday').catch(() => null);
+    if (bf?.pendentes.length && !document.querySelector('.modal-fundo') && !state.filaAtiva) return filaBlackFriday(bf.pendentes, () => { rota(); verificarFollowups(); });
+  }
   const lista = await api('/api/comercial/followups').catch(() => null);
   if (!lista) return;
   state.followups = lista; atualizarBadge(lista.length);
@@ -1051,6 +1107,7 @@ const camposFicha = (c = {}, pre = '') => CAMPOS_FICHA.map(([k, r, t]) => campoO
 // ---- roteiros de atendimento: mensagem pronta para copiar e mandar ao cliente antes de registrar ----
 function roteiroOrcamento() {
   const eu = primeiroNome(state.usuario?.nome) || 'a equipe';
+  if (bfAtiva()) return `Olá! Aqui é ${eu}, da OnTrade. Que bom ter você por aqui!\n\nE você chegou na hora certa: estamos na nossa *Black Friday*, com *20% de desconto à vista* ou *5% no parcelado sem juros*, e ainda a opção de levar o painel com *Fire Stick, instalação, estrutura e frete inclusos*. Vale até *27/11*.\n\nPara eu montar a melhor proposta para você, me conta rapidinho:\n\n• Qual o seu nome (e o da empresa, se for o caso)?\n• Onde você viu a gente? (Instagram, Google, indicação, anúncio na rua, feira...)\n• O que você está buscando e onde pretende usar?\n• Para quando você precisa?\n• Qual o melhor WhatsApp e e-mail para eu te enviar a proposta?\n\nAssim que você me responder, já preparo tudo com as condições da Black Friday.`;
   return `Olá! Aqui é ${eu}, da OnTrade. Que bom ter você por aqui!\n\nPara eu montar a melhor proposta para você, me conta rapidinho:\n\n• Qual o seu nome (e o da empresa, se for o caso)?\n• Onde você viu a gente? (Instagram, Google, indicação, anúncio na rua, feira...)\n• O que você está buscando e onde pretende usar?\n• Para quando você precisa?\n• Qual o melhor WhatsApp e e-mail para eu te enviar a proposta?\n\nAssim que você me responder, já preparo tudo com carinho.`;
 }
 function roteiroCliente() {
@@ -1506,6 +1563,17 @@ async function comercial() {
       <div class="card"><h2>Aniversários de clientes (30 dias)</h2>${d.aniversarios.length ? d.aniversarios.map((c) => `<p style="margin:7px 0;font-size:13.5px"><b>${dataBR(c.data).slice(0, 5)}</b> · ${esc(c.nome)} <span class="mut">${esc(c.telefone || '')}</span></p>`).join('') : '<p class="mut">Nenhum aniversário nos próximos 30 dias.</p>'}</div>
     </div>
     <div class="card"><h2>Orçamentos de hoje</h2>${d.orcamentos_hoje.length ? `<div class="tbl"><table><tbody>${d.orcamentos_hoje.map((o) => `<tr><td>${esc(o.cliente_nome)} ${o.cliente_tipo === 'recorrente' ? '<span class="tag">recorrente</span>' : '<span class="tag com_nota">novo</span>'}</td><td>${esc(o.produto)}</td><td class="n">${brl(o.valor)}</td><td>${tagOrc(o.status)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento lançado hoje ainda.</p>'}</div>`;
+  if (bfAtiva()) {
+    const bf = await api('/api/comercial/black-friday').catch(() => null);
+    const r = bf?.resumo;
+    $app.querySelector('#bf-card')?.remove(); // a tela pode ser desenhada duas vezes seguidas
+    if (r?.total) $app.querySelector('.grid')?.insertAdjacentHTML('afterend', `<div class="card" id="bf-card"><h2>Black Friday</h2>
+      <p class="legenda">Mensagem especial para os orçamentos que já estavam em aberto. Vale até ${dataBR(r.fim)}; depois as mensagens normais voltam sozinhas.</p>
+      <div class="grid" style="margin-top:6px">
+        <div class="card kpi"><div class="l">Enviadas</div><div class="v">${r.enviados} de ${r.total}</div><small class="mut">${r.faltam ? `faltam ${r.faltam}` : 'todas enviadas'}</small></div>
+        ${r.por_pessoa.map((p) => `<div class="card kpi"><div class="l">${esc(p.nome)}</div><div class="v">${p.n}</div><small class="mut">última às ${String(p.ultimo).slice(11, 16)} de ${dataBR(String(p.ultimo).slice(0, 10)).slice(0, 5)}</small></div>`).join('')}
+      </div></div>`);
+  }
   const recarrega = async () => { await comercial(); verificarFollowups(); };
   document.getElementById('novo').onclick = () => novoOrcamento(recarrega);
   $app.querySelectorAll('[data-cc]').forEach((el) => {
