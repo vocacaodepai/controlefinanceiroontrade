@@ -997,15 +997,51 @@ function filaFollowups(lista) {
   };
   passo(0);
 }
+// Orçamento aprovado: o comercial confirma que o cliente fechou e informa valor fechado e condição; o orçamento passa ao financeiro
+const CONDICOES_PAG = { a_vista: 'À vista', parcelado_sem_juros: 'Parcelado sem juros', outra: 'Outra condição' };
+const PROMOCOES = { bf_completo: 'Black Friday: Painel Completo (Fire Stick, instalação, estrutura e frete)', bf_painel: 'Black Friday: Só o Painel', nenhuma: 'Sem promoção' };
+function janelaAprovar(o, depois) {
+  const bf = bfAtiva();
+  const m = modal(`<h2>Aprovado: Enviar ao Financeiro</h2>
+    <p class="legenda"><b>${esc(o.cliente_nome)}</b> · orçamento ${esc(o.numero || '—')} · ${esc(o.produto)} · orçado em ${brl(o.valor)}</p>
+    <form class="form" id="fa" style="margin-top:14px" autocomplete="off" novalidate>
+      ${bf ? `<div class="cheio"><label>Promoção ${ast}</label><select name="promocao" data-obrig="select"><option value="">Escolha</option>${Object.entries(PROMOCOES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>` : ''}
+      <div><label>Condição de pagamento ${ast}</label><select name="condicao_pagamento" data-obrig="select"><option value="">Escolha</option>${Object.entries(CONDICOES_PAG).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div><label>Valor fechado (R$) ${ast}</label><input name="valor_aprovado" inputmode="decimal" value="${brlInput(o.valor)}" data-obrig="text"><small class="mut" id="sug"></small></div>
+      <div class="cheio"><label>Observação para o financeiro</label><input name="obs" placeholder="Ex.: entrada de 50% e restante na entrega; enviar boleto por e-mail"></div></form>
+    <label class="check-resp" style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;text-transform:none;font-size:13.5px"><input type="checkbox" id="resp" style="margin-top:3px"><span>Confirmo que o cliente aprovou o orçamento e fechou o contrato. A partir daqui o orçamento fica com o financeiro.</span></label>
+    <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok" disabled>Enviar ao Financeiro</button></div>`, 600);
+  const fm = m.el.querySelector('#fa'), resp = m.el.querySelector('#resp'), ok = m.el.querySelector('#ok'), val = fm.querySelector('[name=valor_aprovado]'), sug = m.el.querySelector('#sug');
+  resp.onchange = () => { ok.disabled = !resp.checked; };
+  // Black Friday: sugere o valor com desconto (20% à vista, 5% no parcelado sem juros); dá para ajustar
+  const sugerir = () => {
+    const pr = fm.querySelector('[name=promocao]')?.value, cd = fm.querySelector('[name=condicao_pagamento]').value;
+    const desc = pr && pr !== 'nenhuma' ? ({ a_vista: 0.2, parcelado_sem_juros: 0.05 })[cd] : null;
+    if (desc) { val.value = brlInput(Math.round(o.valor * (1 - desc))); sug.textContent = `${desc * 100}% de desconto da Black Friday sobre ${brl(o.valor)}`; }
+    else { sug.textContent = ''; }
+  };
+  fm.querySelectorAll('select').forEach((x) => x.addEventListener('change', sugerir));
+  m.el.querySelector('#x').onclick = m.fechar;
+  ok.onclick = () => {
+    if (!validarObrigatorios(fm)) return;
+    const v = Object.fromEntries(new FormData(fm)), c = paraCentavos(v.valor_aprovado);
+    if (!(c > 0)) return toast('Valor fechado inválido', true);
+    if (v.condicao_pagamento === 'outra' && !v.obs.trim()) return toast('Descreva a condição de pagamento na observação', true);
+    acao(async () => {
+      await api(`/api/comercial/orcamentos/${o.id}/aprovar`, { method: 'POST', body: { ...v, valor_aprovado: c, confirmacao: true } });
+      m.fechar(); await depois();
+    }, 'Orçamento enviado ao financeiro');
+  };
+}
 function janelaEncerrar(o, depois) {
   const m = modal(`<h2>Encerrar orçamento</h2>
     <p class="legenda">${esc(o.cliente_nome)} · ${esc(o.produto)} · ${brl(o.valor)}</p>
+    <div class="aviso-box" style="margin-top:12px"><span>O cliente aprovou? Use <b>Aprovado: Enviar ao Financeiro</b>.</span><button class="mini" id="ap" style="margin-left:auto">Enviar ao Financeiro</button></div>
     <form class="form" id="fe" style="margin-top:14px">
-      <div><label>Resultado</label><select name="status"><option value="ganho">Ganho (vendeu)</option><option value="perdido">Perdido (comprou de outro / não fechou)</option><option value="cancelado">Cancelado</option></select></div>
-      <div class="cheio" id="mot" hidden><label>Motivo</label><input name="motivo" placeholder="Ex.: preço, prazo de entrega, desistiu do projeto"></div></form>
+      <div><label>Resultado</label><select name="status"><option value="perdido">Perdido (comprou de outro / não fechou)</option><option value="cancelado">Cancelado</option></select></div>
+      <div class="cheio" id="mot"><label>Motivo</label><input name="motivo" placeholder="Ex.: preço, prazo de entrega, desistiu do projeto"></div></form>
     <div class="modal-acoes"><span style="flex:1"></span><button class="sec" id="x">Cancelar</button><button id="ok">Confirmar</button></div>`);
-  const sel = m.el.querySelector('[name=status]'), mot = m.el.querySelector('#mot');
-  sel.onchange = () => { mot.hidden = sel.value === 'ganho'; };
+  m.el.querySelector('#ap').onclick = () => { m.fechar(); janelaAprovar(o, depois); };
   m.el.querySelector('#x').onclick = m.fechar;
   m.el.querySelector('#ok').onclick = () => acao(async () => {
     await api(`/api/comercial/orcamentos/${o.id}/status`, { method: 'POST', body: Object.fromEntries(new FormData(m.el.querySelector('#fe'))) });
@@ -1306,7 +1342,7 @@ async function orcamentos() {
         <td>${tagOrc(o.status)}${o.status === 'ganho' && o.cobranca_status ? `<br><small class="mut">${tagCobranca(o)}</small>` : ''}${o.motivo ? `<br><small class="mut">${esc(o.motivo)}</small>` : ''}</td>
         <td>${o.status === 'aberto' ? (o.followup_em ? `<span class="${o.followup_em <= hojeISO() ? 'neg' : ''}">${dataBR(o.followup_em)}</span><br><small class="mut">follow-up ${Math.min(o.qtd_contatos + 1, 4)} de 4</small>` : '<span class="neg">Cadência concluída</span><br><small class="mut">decidir: encerrar ou retomar</small>') : '<span class="mut">—</span>'}</td>
         <td><small>${esc(o.criado_por_nome || '—')}<br><span class="mut">${quandoLancou(o.criado_em)}</span></small></td>
-        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
+        <td class="n" style="white-space:nowrap">${o.status === 'aberto' ? `<button class="mini" data-ap="${o.id}">Aprovado: Enviar ao Financeiro</button> <button class="mini sec" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Contato</button> <button class="mini sec" data-e="${o.id}">Encerrar</button>` : `<button class="mini sec" data-r="${o.id}">Reabrir</button>`}
           <button class="mini sec" data-ed="${o.id}">Editar</button></td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="3">${lista.length} orçamento(s)</td><td class="n">${brl(soma)}</td><td colspan="3"></td></tr></tfoot></table></div>` : '<p class="mut">Nenhum orçamento com este filtro.</p>'}</div>`;
   const recarrega = async () => { await orcamentos(); verificarFollowups(); };
@@ -1320,6 +1356,7 @@ async function orcamentos() {
   $app.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => janelaFollowup(achar(b.dataset.m), { aoConcluir: recarrega })));
   $app.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => janelaContato(achar(b.dataset.c), recarrega)));
   $app.querySelectorAll('[data-e]').forEach((b) => (b.onclick = () => janelaEncerrar(achar(b.dataset.e), recarrega)));
+  $app.querySelectorAll('[data-ap]').forEach((b) => (b.onclick = () => janelaAprovar(achar(b.dataset.ap), recarrega)));
   $app.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => confirm('Reabrir este orçamento? O aviso volta em 3 dias.') && acao(async () => { await api(`/api/comercial/orcamentos/${b.dataset.r}/status`, { method: 'POST', body: { status: 'aberto' } }); await recarrega(); }, 'Orçamento reaberto')));
   $app.querySelectorAll('[data-ed]').forEach((b) => (b.onclick = () => {
     const o = achar(b.dataset.ed);
@@ -1817,8 +1854,9 @@ async function cobranca() {
     <div class="row"><div><label>Mostrar</label><select id="fs"><option value="abertos" ${f === 'abertos' ? 'selected' : ''}>Em aberto</option><option value="pagos" ${f === 'pagos' ? 'selected' : ''}>Pagos</option><option value="todos" ${f === 'todos' ? 'selected' : ''}>Todos</option></select></div></div>
     <div class="card">${d.lista.length ? `<div class="tbl"><table><thead><tr><th>Cliente</th><th>Orçamento</th><th class="n">Valor</th><th class="n">Recebido</th><th class="n">Saldo</th><th>Situação</th><th>Próxima cobrança</th><th></th></tr></thead><tbody>
       ${d.lista.map((o) => `<tr><td><b>${esc(o.cliente_nome)}</b><br><small>${contatoCli(o)}</small></td>
-        <td>${esc(o.produto)}<br><small class="mut">nº ${esc(o.numero || '—')} · vendedor ${esc(o.vendedor_nome || '—')}</small></td>
-        <td class="n">${brl(o.valor)}</td><td class="n">${brl(o.recebido)}</td><td class="n">${brl(o.saldo)}</td>
+        <td>${esc(o.produto)}<br><small class="mut">nº ${esc(o.numero || '—')} · vendedor ${esc(o.vendedor_nome || '—')}${o.aprovado_por_nome ? ` · enviado por ${esc(o.aprovado_por_nome)}` : ''}</small>
+          ${o.condicao_pagamento ? `<br><small>${esc(CONDICOES_PAG[o.condicao_pagamento] || o.condicao_pagamento)}${o.promocao ? ' · ' + esc(PROMOCOES[o.promocao] || o.promocao) : ''}</small>` : ''}${o.obs_aprovacao ? `<br><small class="mut">${esc(o.obs_aprovacao)}</small>` : ''}</td>
+        <td class="n">${brl(o.valor)}${o.valor_orcado && o.valor_orcado !== o.valor ? `<br><small class="mut">orçado ${brl(o.valor_orcado)}</small>` : ''}</td><td class="n">${brl(o.recebido)}</td><td class="n">${brl(o.saldo)}</td>
         <td>${tagSitCobr(o)}${o.cobranca_vencimento ? `<br><small class="mut">vence ${dataBR(o.cobranca_vencimento)}</small>` : ''}</td>
         <td>${o.cobranca_status === 'pago' ? '<span class="mut">—</span>' : o.cobranca_followup_em ? `<span class="${o.vence_hoje_ou_antes ? 'neg' : ''}">${dataBR(o.cobranca_followup_em)}</span><br><small class="mut">toque ${Math.min(o.qtd_cobrancas + 1, 4)} de 4</small>` : '<span class="neg">Sem aviso</span>'}</td>
         <td class="n" style="white-space:nowrap">${o.cobranca_status === 'pago' ? `<button class="mini sec" data-h="${o.id}">Histórico</button>` : `<button class="mini" data-m="${o.id}">Mensagem</button> <button class="mini sec" data-c="${o.id}">Cobrança</button> <button class="mini" data-p="${o.id}">Recebido</button> <button class="mini sec" data-h="${o.id}">Histórico</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum orçamento aprovado nesta lista.</p>'}</div>`;
