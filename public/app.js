@@ -29,6 +29,7 @@ Object.assign(ICONES, {
   cobranca: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   acessos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   followup: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m9 10 2 2 4-4"/>',
+  fornecedores: '<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2.2"/><path d="M4.8 16c.6-1.6 1.8-2.4 3.2-2.4s2.6.8 3.2 2.4"/><path d="M14 10h5M14 13.5h4"/>',
   estoque: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
   orcamentos: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
   clientes: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -182,13 +183,16 @@ async function sair() { clearInterval(_fuTimer); clearInterval(_cbTimer); state.
 document.getElementById('sair').onclick = sair;
 
 // ---------- roteamento ----------
-const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, followup, estoque, fluxo, cadastros, roadmap };
+// Fornecedores (Feira de Cantão): módulo carregado só quando a página é aberta
+async function fornecedores() { const M = await import('./fornecedores.js'); await M.pagina($app, { api, esc, modal, toast, state }); }
+const rotas = { painel, lancar, fechar, extratos, mensal, patrimonio, societario, dp, marketing, perfil, comercial, aovivo, orcamentos, clientes, cobranca, acessos, followup, estoque, fornecedores, fluxo, cadastros, roadmap };
 // Menu lateral por área. Cada item só aparece se o perfil tem acesso E a página existe.
 const MENU = [
   ['Financeiro', [['painel', 'Painel'], ['lancar', 'Lançar'], ['fechar', 'Fechar o Dia'], ['extratos', 'Extratos'], ['mensal', 'Controle Mensal'], ['patrimonio', 'Patrimônio'], ['cobranca', 'Orçamentos Aprovados']]],
   ['Comercial', [['comercial', 'Painel'], ['followup', 'Follow-up', 'comercial'], ['aovivo', 'Ao vivo'], ['orcamentos', 'Orçamentos', 'comercial'], ['clientes', 'Clientes', 'comercial']]],
   ['Marketing', [['marketing', 'Painel']]],
   ['Estoque', [['estoque', 'Estoque']]],
+  ['Compras', [['fornecedores', 'Fornecedores']]],
   ['Sociedade', [['societario', 'Quadro Societário']]],
   ['Pessoas', [['dp', 'Funcionários']]],
   ['Sistema', [['acessos', 'Acessos'], ['fluxo', 'Mapa do Fluxo'], ['cadastros', 'Cadastros'], ['roadmap', 'Roadmap']]],
@@ -197,7 +201,7 @@ const areaDaRota = (r) => MENU.flatMap(([, itens]) => itens).find(([n]) => n ===
 const rotasPermitidas = () => MENU.flatMap(([, itens]) => itens).filter(([n, , area]) => rotas[n] && temArea(area || n)).map(([n]) => n);
 // Cada grupo vira um bloco: título + itens. No computador o bloco é invisível (display: contents) e o menu fica como sempre foi;
 // no celular o título vira uma aba da barra de baixo e os itens abrem numa bandeja acima dela.
-const GRUPO_ICO = { Financeiro: 'cobranca', Comercial: 'orcamentos', Marketing: 'marketing', Estoque: 'estoque', Sociedade: 'societario', Pessoas: 'dp', Sistema: 'cadastros' };
+const GRUPO_ICO = { Financeiro: 'cobranca', Comercial: 'orcamentos', Marketing: 'marketing', Estoque: 'estoque', Compras: 'fornecedores', Sociedade: 'societario', Pessoas: 'dp', Sistema: 'cadastros' };
 const noCelular = () => matchMedia('(max-width: 820px)').matches;
 const fechaBandeja = () => document.querySelectorAll('#nav .nav-bloco.aberto').forEach((b) => b.classList.remove('aberto'));
 function renderMenu() {
@@ -2129,7 +2133,7 @@ function ajustaTitulos(raiz) {
   if (!raiz) return; // texto que já saiu da página
   const alvos = raiz.nodeType === 1 ? [...(raiz.matches?.(SEL_TITULOS) ? [raiz] : []), ...raiz.querySelectorAll(SEL_TITULOS)] : [];
   for (const el of alvos) {
-    if (el.closest('.tema, .chips, .trilha, .pp-pg')) continue; // a proposta em PDF tem os textos do modelo // valores do estoque (medidas, lotes) ficam como estão
+    if (el.closest('.tema, .chips, .trilha, .pp-pg, .fc-card, .fc-foto, .fc-ficha-top')) continue; // a proposta em PDF tem os textos do modelo // valores do estoque (medidas, lotes) ficam como estão
     const ehBotao = el.matches('button, a.zap, a.btn');
     for (const n of el.childNodes) {
       if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;
