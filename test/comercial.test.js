@@ -245,3 +245,22 @@ test('Black Friday: envio avulso uma vez por orçamento, não conta como toque e
   const novo = await CO.criarOrcamento({ ...O, cliente: fic('Cliente Novo BF'), produto_nome: 'Painel P5', valor: 900000 }, ju);
   if (hoje >= '2026-11-11') assert.ok(!(await CO.blackFridayPendentes(ju, dia)).some((x) => x.id === novo.id));
 });
+
+test('Aprovado: Enviar ao Financeiro exige confirmação e o financeiro cobra o valor fechado (com desconto)', async () => {
+  const CB = await import('../src/cobranca.js');
+  const o = await CO.criarOrcamento({ ...O, cliente: fic('Cliente Aprovado'), produto_nome: 'Painel P3.9', valor: 1000000 });
+  await assert.rejects(CO.aprovarOrcamento(o.id, { condicao_pagamento: 'a_vista' }, null), /Confirme que o cliente aprovou/);
+  await assert.rejects(CO.aprovarOrcamento(o.id, { confirmacao: true }, null), /condição de pagamento/);
+  await assert.rejects(CO.aprovarOrcamento(o.id, { confirmacao: true, condicao_pagamento: 'outra' }, null), /Descreva/);
+  const a = await CO.aprovarOrcamento(o.id, { confirmacao: true, condicao_pagamento: 'a_vista', promocao: 'bf_completo', valor_aprovado: 800000, obs: 'PIX na assinatura' }, null);
+  assert.equal(a.status, 'ganho'); assert.equal(a.followup_em, null);
+  const c = (await CB.listar()).find((x) => x.id === o.id);
+  assert.equal(c.valor, 800000); assert.equal(c.valor_orcado, 1000000); assert.equal(c.saldo, 800000);
+  assert.equal(c.condicao_pagamento, 'a_vista'); assert.equal(c.promocao, 'bf_completo'); assert.equal(c.obs_aprovacao, 'PIX na assinatura');
+  assert.equal(c.cobranca_status, 'a_cobrar');
+  await assert.rejects(CO.aprovarOrcamento(o.id, { confirmacao: true, condicao_pagamento: 'a_vista' }, null), /em aberto/);
+  // reabrir limpa a aprovação
+  await CO.mudarStatus(o.id, { status: 'aberto' }, null);
+  const r = (await CO.listarOrcamentos({})).find((x) => x.id === o.id);
+  assert.equal(r.status, 'aberto'); assert.equal(r.cobranca_status, null);
+});

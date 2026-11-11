@@ -11,14 +11,15 @@ export const SITUACOES = { a_cobrar: 'A cobrar', em_cobranca: 'Em cobrança', pa
 export const RESULTADOS_COBRANCA = { sem_resposta: 'Não respondeu', combinou_data: 'Combinou data de pagamento', enviou_comprovante: 'Enviou comprovante', dificuldade: 'Pediu condição / dificuldade' };
 const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
 
-const BASE = `SELECT o.id, o.numero, o.valor, o.status, o.data, o.fechado_em, o.cobranca_status, o.cobranca_followup_em, o.cobranca_vencimento,
+// o financeiro cobra o valor fechado na aprovação (com desconto, se houver); o valor orçado fica para referência
+const BASE = `SELECT o.id, o.numero, coalesce(o.valor_aprovado, o.valor) AS valor, o.valor AS valor_orcado, o.condicao_pagamento, o.promocao, o.obs_aprovacao, uf.nome AS aprovado_por_nome, o.status, o.data, o.fechado_em, o.cobranca_status, o.cobranca_followup_em, o.cobranca_vencimento,
     c.id AS cliente_id, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
     coalesce(p.nome, o.produto_desc, 'Sem produto') AS produto, uv.nome AS vendedor_nome,
     (SELECT coalesce(sum(g.valor),0)::bigint FROM pagamentos g WHERE g.orcamento_id = o.id) AS recebido,
     (SELECT count(*)::int FROM contatos t WHERE t.orcamento_id = o.id AND t.tipo = 'cobranca') AS qtd_cobrancas,
     (SELECT max(t.criado_em) FROM contatos t WHERE t.orcamento_id = o.id AND t.tipo = 'cobranca') AS ultima_cobranca
   FROM orcamentos o JOIN clientes c ON c.id = o.cliente_id
-  LEFT JOIN produtos_catalogo p ON p.id = o.produto_id LEFT JOIN usuarios uv ON uv.id = o.criado_por_id`;
+  LEFT JOIN produtos_catalogo p ON p.id = o.produto_id LEFT JOIN usuarios uv ON uv.id = o.criado_por_id LEFT JOIN usuarios uf ON uf.id = o.fechado_por_id`;
 
 const enriquecer = (o) => ({
   ...o,
@@ -44,7 +45,7 @@ export async function pendentes() {
 export async function resumo() {
   const h = hoje();
   const r = await one(`SELECT count(*) FILTER (WHERE cobranca_status IN ('a_cobrar','em_cobranca'))::int AS abertos,
-      coalesce(sum(valor - (SELECT coalesce(sum(g.valor),0) FROM pagamentos g WHERE g.orcamento_id = orcamentos.id)) FILTER (WHERE cobranca_status IN ('a_cobrar','em_cobranca')),0)::bigint AS a_receber,
+      coalesce(sum(coalesce(valor_aprovado, valor) - (SELECT coalesce(sum(g.valor),0) FROM pagamentos g WHERE g.orcamento_id = orcamentos.id)) FILTER (WHERE cobranca_status IN ('a_cobrar','em_cobranca')),0)::bigint AS a_receber,
       count(*) FILTER (WHERE cobranca_status IN ('a_cobrar','em_cobranca') AND cobranca_followup_em <= $1)::int AS para_hoje,
       count(*) FILTER (WHERE cobranca_status = 'pago')::int AS pagos
     FROM orcamentos WHERE cobranca_status IS NOT NULL`, [h]);
@@ -109,7 +110,7 @@ export async function historico({ de, ate, por } = {}) {
   if (por) { p.push(Number(por)); fp = ' AND x.usuario_id = $' + p.length; }
   const enviados = await query(`SELECT * FROM (
       SELECT t.id, t.criado_em, t.canal, t.resultado, t.nota, t.mensagem, t.usuario_id, u.nome AS usuario_nome,
-        o.id AS orcamento_id, o.numero, o.valor, c.nome AS cliente_nome,
+        o.id AS orcamento_id, o.numero, coalesce(o.valor_aprovado, o.valor) AS valor, c.nome AS cliente_nome,
         row_number() OVER (PARTITION BY t.orcamento_id ORDER BY t.id)::int AS etapa
       FROM contatos t JOIN orcamentos o ON o.id = t.orcamento_id JOIN clientes c ON c.id = o.cliente_id
       LEFT JOIN usuarios u ON u.id = t.usuario_id WHERE t.tipo = 'cobranca') x
@@ -124,7 +125,7 @@ export async function historico({ de, ate, por } = {}) {
 
 // Registra o recebimento (total ou parcial). Por padrão já lança a ENTRADA no caixa, na conta escolhida.
 export async function registrarPagamento(id, { valor, data, conta_id, lancar = true, obs }, usuario) {
-  const o = await one(`SELECT o.id, o.numero, o.valor, o.cobranca_status, c.nome AS cliente, (SELECT coalesce(sum(g.valor),0)::bigint FROM pagamentos g WHERE g.orcamento_id = o.id) AS recebido
+  const o = await one(`SELECT o.id, o.numero, coalesce(o.valor_aprovado, o.valor) AS valor, o.cobranca_status, c.nome AS cliente, (SELECT coalesce(sum(g.valor),0)::bigint FROM pagamentos g WHERE g.orcamento_id = o.id) AS recebido
     FROM orcamentos o JOIN clientes c ON c.id = o.cliente_id WHERE o.id = $1`, [id]);
   if (!o || !o.cobranca_status) throw new ErroNegocio('Orçamento aprovado não encontrado.', 404);
   if (o.cobranca_status === 'pago') throw new ErroNegocio('Este orçamento já está pago.');

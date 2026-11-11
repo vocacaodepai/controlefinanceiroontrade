@@ -165,7 +165,12 @@ app.post('/api/comercial/orcamentos', trabCom, h(async (req, res) => {
   res.status(201).json(await CO.criarOrcamento(req.body, req.usuario));
 }));
 app.put('/api/comercial/orcamentos/:id', trabCom, h(async (req, res) => res.json(await CO.editarOrcamento(idNum(req.params.id), req.body))));
-app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario))));
+// aprovado só pelo botão "Enviar ao Financeiro" (com confirmação, valor fechado e condição de pagamento)
+app.post('/api/comercial/orcamentos/:id/status', trabCom, h(async (req, res) => {
+  if (req.body?.status === 'ganho') throw new S.ErroNegocio('Para aprovar, use o botão "Aprovado: Enviar ao Financeiro".');
+  res.json(await CO.mudarStatus(idNum(req.params.id), req.body, req.usuario));
+}));
+app.post('/api/comercial/orcamentos/:id/aprovar', trabCom, h(async (req, res) => res.json(await CO.aprovarOrcamento(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/contato', trabCom, h(async (req, res) => res.json(await CO.registrarContato(idNum(req.params.id), req.body, req.usuario))));
 app.post('/api/comercial/orcamentos/:id/adiar', trabCom, h(async (req, res) => res.json(await CO.adiar(idNum(req.params.id), req.body.dias, req.usuario))));
 // ---------- pendências: dúvidas que aparecem no painel até serem resolvidas ----------

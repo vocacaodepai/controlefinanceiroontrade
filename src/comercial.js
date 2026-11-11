@@ -126,7 +126,7 @@ export async function buscarClientes(q, filtros = {}) {
   return query(`${BASE_CLIENTES} ${w.length ? 'WHERE ' + w.join(' AND ') : ''} GROUP BY c.id, uc.nome ORDER BY ${filtros.cadastrado_em || filtros.por ? 'c.criado_em DESC' : 'lower(c.nome)'} LIMIT ${t ? 30 : 500}`, p);
 }
 const BASE_CLIENTES = `SELECT c.*, uc.nome AS criado_por_nome, count(o.id)::int AS qtd_orcamentos, coalesce(sum(o.valor),0)::bigint AS valor_orcado,
-    coalesce(sum(CASE WHEN o.status='ganho' THEN o.valor END),0)::bigint AS valor_comprado, max(o.data) AS ultimo_orcamento
+    coalesce(sum(CASE WHEN o.status='ganho' THEN coalesce(o.valor_aprovado, o.valor) END),0)::bigint AS valor_comprado, max(o.data) AS ultimo_orcamento
   FROM clientes c LEFT JOIN orcamentos o ON o.cliente_id = c.id LEFT JOIN usuarios uc ON uc.id = c.criado_por_id`;
 export const listarClientes = (filtros) => buscarClientes('', filtros);
 
@@ -252,13 +252,35 @@ export async function mudarStatus(id, { status, motivo }, usuario) {
   if (atual.pagamentos > 0 && status !== 'ganho') throw new ErroNegocio('Este orçamento já tem pagamento registrado pelo financeiro; não dá para reabrir ou encerrar de outra forma.', 409);
   if (status === 'aberto') {
     // volta para o follow-up, reiniciando a cadência a partir de hoje (sai da fila de cobrança do financeiro)
-    await query(`UPDATE orcamentos SET status='aberto', motivo=NULL, fechado_em=NULL, fechado_por_id=NULL, followup_em=$2, cobranca_status=NULL, cobranca_followup_em=NULL, cobranca_vencimento=NULL WHERE id=$1`, [id, addDias(hoje(), PRAZO_FOLLOWUP)]);
+    await query(`UPDATE orcamentos SET status='aberto', motivo=NULL, fechado_em=NULL, fechado_por_id=NULL, valor_aprovado=NULL, condicao_pagamento=NULL, promocao=NULL, obs_aprovacao=NULL, followup_em=$2, cobranca_status=NULL, cobranca_followup_em=NULL, cobranca_vencimento=NULL WHERE id=$1`, [id, addDias(hoje(), PRAZO_FOLLOWUP)]);
   } else if (status === 'ganho') {
     // aprovado: sai do follow-up do comercial e entra na cobrança do financeiro (primeiro contato no dia seguinte)
     await query(`UPDATE orcamentos SET status='ganho', motivo=NULL, fechado_em=${AGORA}, fechado_por_id=$2, followup_em=NULL, cobranca_status=coalesce(cobranca_status,'a_cobrar'), cobranca_followup_em=coalesce(cobranca_followup_em,$3) WHERE id=$1`, [id, usuario?.id ?? null, addDias(hoje(), 1)]);
   } else {
     await query(`UPDATE orcamentos SET status=$2, motivo=$3, fechado_em=${AGORA}, fechado_por_id=$4, followup_em=NULL WHERE id=$1`, [id, status, m, usuario?.id ?? null]);
   }
+  return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
+}
+
+// ---------- Orçamento aprovado: enviar ao financeiro ----------
+// Quem aprova confirma que o cliente fechou o contrato e informa o valor fechado (com o desconto, se houver),
+// a condição de pagamento e, durante a Black Friday, qual opção da promoção. O financeiro passa a cobrar o valor fechado.
+export const CONDICOES_PAGAMENTO = { a_vista: 'À vista', parcelado_sem_juros: 'Parcelado sem juros', outra: 'Outra condição' };
+export const PROMOCOES = { bf_completo: 'Black Friday: Painel Completo (Fire Stick, instalação, estrutura e frete)', bf_painel: 'Black Friday: Só o Painel', nenhuma: 'Sem promoção' };
+export async function aprovarOrcamento(id, { valor_aprovado, condicao_pagamento, promocao, obs, confirmacao }, usuario) {
+  if (confirmacao !== true) throw new ErroNegocio('Confirme que o cliente aprovou o orçamento e fechou o contrato.');
+  const o = await one('SELECT id, status, valor FROM orcamentos WHERE id = $1', [id]);
+  if (!o) throw new ErroNegocio('Orçamento não encontrado.', 404);
+  if (o.status !== 'aberto') throw new ErroNegocio('Só dá para enviar ao financeiro um orçamento em aberto.');
+  const v = valor_aprovado == null || valor_aprovado === '' ? Number(o.valor) : Math.round(Number(valor_aprovado));
+  if (!Number.isFinite(v) || v <= 0) throw new ErroNegocio('Informe o valor fechado com o cliente.');
+  if (!CONDICOES_PAGAMENTO[condicao_pagamento]) throw new ErroNegocio('Informe a condição de pagamento.');
+  if (promocao && !PROMOCOES[promocao]) throw new ErroNegocio('Promoção inválida.');
+  if (condicao_pagamento === 'outra' && !txt(obs)) throw new ErroNegocio('Descreva a condição de pagamento na observação.');
+  await tx(async () => {
+    await query('UPDATE orcamentos SET valor_aprovado=$2, condicao_pagamento=$3, promocao=$4, obs_aprovacao=$5 WHERE id=$1', [id, v, condicao_pagamento, promocao && promocao !== 'nenhuma' ? promocao : null, txt(obs)]);
+    await mudarStatus(id, { status: 'ganho' }, usuario);
+  });
   return one(`${BASE_ORC} WHERE o.id = $1`, [id]);
 }
 
@@ -312,7 +334,7 @@ export async function periodo(de, ate) {
       count(DISTINCT cliente_id) FILTER (WHERE cliente_tipo='novo')::int AS clientes_novos,
       count(DISTINCT cliente_id) FILTER (WHERE cliente_tipo='recorrente')::int AS clientes_recorrentes
     FROM orcamentos WHERE data BETWEEN $1 AND $2`, [de, ate]);
-  const f = await one(`SELECT count(*) FILTER (WHERE status='ganho')::int AS qtd_ganho, coalesce(sum(valor) FILTER (WHERE status='ganho'),0)::bigint AS valor_ganho,
+  const f = await one(`SELECT count(*) FILTER (WHERE status='ganho')::int AS qtd_ganho, coalesce(sum(coalesce(valor_aprovado, valor)) FILTER (WHERE status='ganho'),0)::bigint AS valor_ganho,
       count(*) FILTER (WHERE status='perdido')::int AS qtd_perdido, coalesce(sum(valor) FILTER (WHERE status='perdido'),0)::bigint AS valor_perdido,
       count(*) FILTER (WHERE status='cancelado')::int AS qtd_cancelado, coalesce(sum(valor) FILTER (WHERE status='cancelado'),0)::bigint AS valor_cancelado
     FROM orcamentos WHERE status <> 'aberto' AND fechado_em::date BETWEEN $1 AND $2`, [de, ate]);
@@ -323,7 +345,7 @@ export async function periodo(de, ate) {
 
 export const produtosDoPeriodo = (de, ate) => query(`SELECT coalesce(p.nome, o.produto_desc, 'Sem produto') AS nome, count(*)::int AS qtd,
     coalesce(sum(o.valor),0)::bigint AS valor_orcado,
-    coalesce(sum(o.valor) FILTER (WHERE o.status='ganho'),0)::bigint AS valor_ganho, count(*) FILTER (WHERE o.status='ganho')::int AS qtd_ganho
+    coalesce(sum(coalesce(o.valor_aprovado, o.valor)) FILTER (WHERE o.status='ganho'),0)::bigint AS valor_ganho, count(*) FILTER (WHERE o.status='ganho')::int AS qtd_ganho
   FROM orcamentos o LEFT JOIN produtos_catalogo p ON p.id = o.produto_id WHERE o.data BETWEEN $1 AND $2
   GROUP BY 1 ORDER BY valor_orcado DESC, qtd DESC LIMIT 12`, [de, ate]);
 
@@ -339,7 +361,7 @@ export async function serieMensal(mesFim, n = 12) {
   let m = mesFim; const meses = [];
   for (let i = 0; i < n; i++) { meses.unshift(m); m = mesAnt(m); }
   const orc = await query(`SELECT to_char(data,'YYYY-MM') AS mes, count(*)::int AS qtd, coalesce(sum(valor),0)::bigint AS orcado FROM orcamentos WHERE data BETWEEN $1 AND $2 GROUP BY 1`, [`${meses[0]}-01`, intervaloMes(mesFim).ate]);
-  const ven = await query(`SELECT to_char(fechado_em,'YYYY-MM') AS mes, count(*)::int AS qtd, coalesce(sum(valor),0)::bigint AS vendido FROM orcamentos WHERE status='ganho' AND fechado_em::date BETWEEN $1 AND $2 GROUP BY 1`, [`${meses[0]}-01`, intervaloMes(mesFim).ate]);
+  const ven = await query(`SELECT to_char(fechado_em,'YYYY-MM') AS mes, count(*)::int AS qtd, coalesce(sum(coalesce(valor_aprovado, valor)),0)::bigint AS vendido FROM orcamentos WHERE status='ganho' AND fechado_em::date BETWEEN $1 AND $2 GROUP BY 1`, [`${meses[0]}-01`, intervaloMes(mesFim).ate]);
   return meses.map((mes) => ({ mes, qtd: orc.find((x) => x.mes === mes)?.qtd || 0, orcado: orc.find((x) => x.mes === mes)?.orcado || 0, vendido: ven.find((x) => x.mes === mes)?.vendido || 0, qtd_vendas: ven.find((x) => x.mes === mes)?.qtd || 0 }));
 }
 

@@ -574,6 +574,11 @@ ALTER TABLE contatos ADD COLUMN IF NOT EXISTS mensagem text;
 ALTER TABLE contatos ADD COLUMN IF NOT EXISTS canal text;
 ALTER TABLE contatos ADD COLUMN IF NOT EXISTS resultado text;
 ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS cobranca_status text;
+-- Aprovação (Enviar ao Financeiro): valor fechado (com desconto, se houver), condição de pagamento, promoção e observação
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS valor_aprovado bigint;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS condicao_pagamento text;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS promocao text;
+ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS obs_aprovacao text;
 ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS cobranca_followup_em date;
 ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS cobranca_vencimento date;
 DO $$ BEGIN
