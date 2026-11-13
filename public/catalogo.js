@@ -49,6 +49,8 @@ const CSS = `
 .ct-banner{grid-column:1/-1;margin-top:8px;border-radius:10px;background-size:cover;background-position:center 35%;position:relative;overflow:hidden;color:#fff}
 .ct-banner>div{position:absolute;left:0;right:0;bottom:0;padding:60px 30px 26px;background:linear-gradient(180deg,rgba(10,12,10,0),rgba(10,12,10,.88) 45%)}
 .ct-banner h2{font-size:28px}.ct-banner p{font-size:13.5px;line-height:1.55;color:#e5e5ea;margin:8px 0 0}.ct-banner .ctt{color:#fff;font-weight:600}
+.ct-ac .cx{padding:24px 48px 0}.ct-ac .fts{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ct-ac .ft{height:330px;border-radius:8px;background-size:cover;background-position:center}
+.ct-ac p{font-size:13px;line-height:1.6;color:#3a3a3c;margin:18px 0 4px}.ct-ac .ls{display:grid;grid-template-columns:1fr 1fr;gap:6px 34px}.ct-ac h3{font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#7a4b00;margin:16px 0 6px}.ct-ac ul{margin:0;padding-left:18px;font-size:12.5px;line-height:1.7}
 .ct-fim{background:#0f1210;color:#fff}.ct-fim .bg{position:absolute;inset:0;background-size:cover;background-position:center}
 .ct-fim .vel{position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,12,10,0) 40%,rgba(10,12,10,.9) 75%)}
 .ct-fim .tx{position:absolute;left:56px;right:56px;bottom:70px}.ct-fim h2{font-size:34px}.ct-fim p{font-size:14px;color:#d2d2d7;line-height:1.6;margin:10px 0 0}
@@ -106,6 +108,14 @@ export function paginas(c, modo, url) {
     <div><h2>Animatrônicos Realistas</h2><p>${h(C.intro)}</p><h3>Linhas de Produto</h3><ul>${C.linhas.map((l) => `<li>${h(l)}</li>`).join('')}</ul><div class="nota">${h(C.medidas_nota)}</div></div>
     <div><div class="mov" style="background-image:url('${img('movimentos')}')"></div><h3>Movimentos</h3><ol>${C.movimentos.map((m) => `<li>${h(m)}</li>`).join('')}</ol></div>
   </div>${rod(rodTxt)}</div>`);
+  if (C.acessorios) {
+    const A = C.acessorios, lst = (t, l) => `<div><h3>${t}</h3><ul>${l.map((x) => `<li>${h(x)}</li>`).join('')}</ul></div>`;
+    out.push(`<div class="ct-pg ct-ac"><div class="ct-cab"><h2>Acessórios e Projetos</h2><span></span></div><div class="cx">
+      <div class="fts">${['acessorios', 'paisagismo'].filter((k) => C.herois[k]).map((k) => `<div class="ft" style="background-image:url('${img(k)}')"></div>`).join('')}</div>
+      <p>Cada peça sai com os equipamentos para funcionar no local e pode vir com cenografia completa. Também fazemos o projeto do espaço, do estudo em 3D ao parque pronto.</p>
+      <div class="ls">${lst('Animatrônicos', A.animatronicos)}${lst('Montáveis e Interativos', A.interativos)}${lst('Itens Complementares', A.extras)}${lst('Projeto do Espaço', A.projetos)}</div>
+    </div>${rod(rodTxt)}</div>`);
+  }
   // as seções correm em sequência: uma seção nova começa na mesma página se couber, para não sobrar página quase vazia
   const ALT = 940, LINHA = 214, TIT = 46;
   const blocos = [];
@@ -168,9 +178,9 @@ export async function gerarPDF(c, modo, url, progresso = () => {}) {
     const pgs = [...caixa.querySelectorAll('.ct-pg')];
     for (let k = 0; k < pgs.length; k++) {
       progresso(k + 1, pgs.length);
-      const cv = await window.html2canvas(pgs[k], { scale: 1.6, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      const cv = await window.html2canvas(pgs[k], { scale: 1.35, backgroundColor: '#ffffff', useCORS: true, logging: false });
       if (k) pdf.addPage();
-      pdf.addImage(cv.toDataURL('image/jpeg', 0.84), 'JPEG', 0, 0, 595.28, 841.89);
+      pdf.addImage(cv.toDataURL('image/jpeg', 0.8), 'JPEG', 0, 0, 595.28, 841.89);
     }
     return pdf.output('blob');
   } finally { caixa.remove(); }
