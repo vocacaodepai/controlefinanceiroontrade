@@ -63,7 +63,7 @@ function modal(conteudo, largura = 480, fixo = false) {
   fundo.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:${largura}px">${conteudo}</div>`;
   document.body.appendChild(fundo);
   const fechar = () => { fundo.remove(); document.removeEventListener('keydown', aoTeclar); };
-  const aoTeclar = (e) => { if (e.key === 'Escape') fechar(); };
+  const aoTeclar = (e) => { if (e.key === 'Escape' && fundo === [...document.querySelectorAll('.modal-fundo')].pop()) fechar(); }; // Esc fecha só a janela de cima
   if (!fixo) { document.addEventListener('keydown', aoTeclar); fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(); }); }
   return { el: fundo.querySelector('.modal'), fechar };
 }
@@ -2133,7 +2133,7 @@ function ajustaTitulos(raiz) {
   if (!raiz) return; // texto que já saiu da página
   const alvos = raiz.nodeType === 1 ? [...(raiz.matches?.(SEL_TITULOS) ? [raiz] : []), ...raiz.querySelectorAll(SEL_TITULOS)] : [];
   for (const el of alvos) {
-    if (el.closest('.tema, .chips, .trilha, .pp-pg, .fc-card, .fc-foto, .fc-ficha-top')) continue; // a proposta em PDF tem os textos do modelo // valores do estoque (medidas, lotes) ficam como estão
+    if (el.closest('.tema, .chips, .trilha, .pp-pg, .ct-pg, .ct-lista, .ct-visor, .fc-card, .fc-foto, .fc-ficha-top')) continue; // a proposta em PDF tem os textos do modelo // valores do estoque (medidas, lotes) ficam como estão
     const ehBotao = el.matches('button, a.zap, a.btn');
     for (const n of el.childNodes) {
       if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;

@@ -70,7 +70,7 @@ function cartao(f, idioma, esc, grande = false) {
   return `<div class="fc-card ${grande ? 'grande' : ''} fc-${d.estilo === 'escuro' ? 'escuro' : 'claro'} fc-faixa-${d.faixa || 'nenhuma'} ${d.alinhamento === 'centro' ? 'fc-centro' : ''} ${d.fonte === 'serif' ? 'fc-serif' : ''}" style="${esc(estilo)}" data-f="${esc(f.id)}">
     <div class="fc-barra"></div>
     <div class="fc-corpo">
-      <div class="fc-logo">${esc(logo)}</div>
+      ${f.catalogo ? '<span class="fc-cat">Catálogo Digital</span>' : ''}<div class="fc-logo">${esc(logo)}</div>
       <div class="fc-emp">${esc(t.empresa)}${t.empresa2 ? `<small>${esc(t.empresa2)}</small>` : ''}</div>
       ${p ? `<div class="fc-pessoa"><b>${esc(p.pessoa)}</b>${p.cargo ? `<span>${esc(p.cargo)}</span>` : ''}${t.pessoas.length > 1 ? `<span class="fc-mais">+${t.pessoas.length - 1} contato${t.pessoas.length > 2 ? 's' : ''}</span>` : ''}</div>` : ''}
       <ul class="fc-cont">${contatosDo(f).slice(0, grande ? 6 : 4).map(([k, v]) => `<li>${ic(k)}<span>${esc(v)}</span></li>`).join('')}</ul>
@@ -145,11 +145,27 @@ export async function pagina($app, U) {
             ${bloco('Produtos', t.produtos)}${bloco('Endereço', t.endereco)}${bloco('Certificações', t.certificacoes)}${bloco('Pedido mínimo (MOQ)', t.moq)}${bloco('Fundação', t.fundacao)}${bloco('Fábrica', t.fabrica)}${bloco('Observações', t.outros)}
             ${t.incertezas.length ? `<div class="fc-bloco fc-conferir"><h3>A conferir</h3><ul>${t.incertezas.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
           </div></div>
+        ${f.catalogo ? `<div class="fc-bloco fc-catalogo"><img src="/api/fornecedores/catalogo/${esc(f.catalogo)}/h/capa.jpg" alt="" loading="lazy"><div><h3>Catálogo Digital</h3><p>O folder foi digitalizado: cada produto recortado e ampliado, com nome e medida em português, em páginas prontas para ver aqui ou baixar em PDF. A versão para o cliente sai sem nome, contatos, site e endereço do fornecedor.</p>
+          <div class="fc-acoes"><button id="fcat">Abrir Catálogo</button><button class="sec" id="fcat-c">Baixar PDF Para Cliente</button></div></div></div>` : ''}
         ${(f.fotos || []).length ? `<div class="fc-bloco"><h3>Fotos (${f.fotos.length})</h3><div class="fc-fotos">${f.fotos.map((ph, i) => `<button class="fc-foto" data-i="${i}" title="${esc(ph.tipo)}"><img loading="lazy" src="${foto(ph.src)}" alt=""><span>${esc(ph.tipo)}</span></button>`).join('')}</div></div>` : ''}
         <div class="modal-acoes"><span style="flex:1"></span><button id="fx">Fechar</button></div>`;
       corpo.querySelectorAll('[data-l]').forEach((b) => (b.onclick = () => { lang = b.dataset.l; render(); }));
       corpo.querySelector('#fx').onclick = m.fechar;
       corpo.querySelectorAll('.fc-foto').forEach((b) => (b.onclick = () => verFoto(f, +b.dataset.i)));
+      if (f.catalogo) {
+        corpo.querySelector('#fcat').onclick = async () => { const C = await import('./catalogo.js'); await C.abrir(f, U); };
+        corpo.querySelector('#fcat-c').onclick = async (e) => {
+          const b = e.currentTarget, rot = b.textContent; b.disabled = true;
+          try {
+            const C = await import('./catalogo.js');
+            const c = await api(`/api/fornecedores/catalogo/${f.catalogo}`);
+            const blob = await C.gerarPDF(c, 'cliente', (p) => `/api/fornecedores/catalogo/${f.catalogo}/${p}`, (k, n) => { b.textContent = `Gerando ${k} de ${n}...`; });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'Catalogo de Animatronicos.pdf';
+            document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+            toast('PDF do cliente baixado (sem dados do fornecedor)');
+          } catch (err) { toast(err.message || 'Não foi possível gerar o PDF', true); } finally { b.disabled = false; b.textContent = rot; }
+        };
+      }
     };
     render();
   };
