@@ -20,3 +20,22 @@ export function caminhoFoto(pasta, arquivo) {
   const p = join(BASE, 'fornecedores', rel);
   return existsSync(p) ? p : null;
 }
+
+// Catálogos digitalizados (folders fotografados e recortados produto a produto): src/data/catalogos/<id>/
+// catalogo.json + i/ (produtos) + h/ (fotos grandes). A versão para cliente é montada no navegador sem os dados do fornecedor.
+const CAT_OK = /^[a-z0-9-]+$/;
+const catCache = new Map();
+export function catalogo(id) {
+  if (!CAT_OK.test(String(id))) return null;
+  if (!catCache.has(id)) {
+    const p = join(BASE, 'catalogos', id, 'catalogo.json');
+    catCache.set(id, existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null);
+  }
+  return catCache.get(id);
+}
+const ARQ_OK = /^[A-Za-z0-9._-]+\.jpg$/;
+export function caminhoCatalogo(id, pasta, arquivo) {
+  if (!CAT_OK.test(String(id)) || !['i', 'h'].includes(pasta) || !ARQ_OK.test(String(arquivo)) || arquivo.includes('..')) return null;
+  const p = join(BASE, 'catalogos', id, pasta, arquivo);
+  return existsSync(p) ? p : null;
+}

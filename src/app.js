@@ -200,6 +200,16 @@ app.get('/api/fornecedores/foto/:pasta/:arquivo', forn, h(async (req, res) => {
   res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
   res.sendFile(p);
 }));
+app.get('/api/fornecedores/catalogo/:id', forn, h(async (req, res) => {
+  const c = FO.catalogo(req.params.id);
+  return c ? res.json(c) : res.status(404).json({ erro: 'Catálogo não encontrado' });
+}));
+app.get('/api/fornecedores/catalogo/:id/:pasta/:arquivo', forn, h(async (req, res) => {
+  const p = FO.caminhoCatalogo(req.params.id, req.params.pasta, req.params.arquivo);
+  if (!p) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
+  res.sendFile(p);
+}));
 const cobr = A.exigirArea('cobranca');
 app.get('/api/cobranca', cobr, h(async (req, res) => res.json({ resumo: await CB.resumo(), lista: await CB.listar(req.query), cadencia: CB.CADENCIA_COBRANCA, resultados: CB.RESULTADOS_COBRANCA })));
 app.get('/api/cobranca/pendentes', cobr, h(async (_, res) => res.json(await CB.pendentes())));
