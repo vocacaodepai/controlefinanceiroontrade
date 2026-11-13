@@ -9,7 +9,7 @@ const PROIBIDO = /gengu|jude|bunny|zigong|jinchuan|gengutech|zggengu|亘古|187 
 
 test('catálogo: dados, imagens e vínculo com a ficha do fornecedor', () => {
   const c = FO.catalogo('gengu');
-  assert.ok(c.itens.length >= 280);
+  assert.ok(c.itens.length >= 600);
   for (const it of c.itens) assert.ok(FO.caminhoCatalogo('gengu', 'i', it.img), 'imagem existe: ' + it.img);
   for (const [k, v] of Object.entries(c.herois)) assert.ok(FO.caminhoCatalogo('gengu', 'h', v.img), 'foto grande existe: ' + k);
   const ids = new Set(c.itens.map((i) => i.id));
